@@ -1,0 +1,10 @@
+# Ignore all CSV files
+*.csv
+
+# Allow specific CSVs if needed by negating
+#!nextlegend/data/wyscout_players_cleaned.csv
+
+# Ignore the codex folder
+codex/
+
+venv/

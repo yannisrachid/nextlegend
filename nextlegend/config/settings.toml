@@ -1,0 +1,19 @@
+[min_thresholds]
+minutes = 450
+
+[index_weights]
+finition = 0.05
+creation = 0.25
+offensif = 0.15
+construction = 0.15
+precision = 0.10
+defense = 0.20
+aerien = 0.10
+
+[ui]
+theme = "dark"
+primary_color = "#7BD389"
+accent_color = "#FF7A59"
+font_family = "Inter, sans-serif"
+logo_path = "assets/logo_nextlegend.png"
+favicon_path = "assets/favicon.ico"

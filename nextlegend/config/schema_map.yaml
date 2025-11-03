@@ -1,0 +1,135 @@
+player_id:
+  - player_id
+  - player_uid
+  - player_slug
+  - wy_id
+  - wyscout_id
+  - player
+player_name:
+  - player_name
+  - name
+  - display_name
+  - player
+age:
+  - age
+height_cm:
+  - height_cm
+  - height
+weight_kg:
+  - weight_kg
+  - weight
+nationality:
+  - nationality
+  - birth_country
+  - passport_country
+strong_foot:
+  - strong_foot
+  - foot
+team:
+  - team
+  - current_team
+  - team_in_selected_period
+league:
+  - league
+  - competition_name
+  - competition
+season:
+  - season
+  - calendar
+matches:
+  - matches
+  - matches_played
+minutes:
+  - minutes
+  - minutes_played
+  - mins_played
+position:
+  - position
+role_primary:
+  - role_primary
+role_secondary:
+  - role_secondary
+goals:
+  - goals
+assists:
+  - assists
+xg:
+  - xg
+xa:
+  - xa
+assists_per_90:
+  - assists_per_90
+xg_per_90:
+  - xg_per_90
+  - xg_per90
+xa_per_90:
+  - xa_per_90
+  - xa_per90
+key_passes_per_90:
+  - key_passes_per_90
+smart_passes_per_90:
+  - smart_passes_per_90
+passes_to_penalty_area_per_90:
+  - passes_to_penalty_area_per_90
+passes_to_final_third_per_90:
+  - passes_to_final_third_per_90
+progressive_passes_per_90:
+  - progressive_passes_per_90
+deep_completions_per_90:
+  - deep_completions_per_90
+progressive_runs_per_90:
+  - progressive_runs_per_90
+accelerations_per_90:
+  - accelerations_per_90
+dribbles_per_90:
+  - dribbles_per_90
+successful_dribbles_percent:
+  - successful_dribbles_percent
+passes_per_90:
+  - passes_per_90
+accurate_passes_percent:
+  - accurate_passes_percent
+accurate_forward_passes_percent:
+  - accurate_forward_passes_percent
+accurate_backward_passes_percent:
+  - accurate_backward_passes_percent
+accurate_lateral_passes_percent:
+  - accurate_lateral_passes_percent
+accurate_long_passes_percent:
+  - accurate_long_passes_percent
+through_passes_per_90:
+  - through_passes_per_90
+shot_assists_per_90:
+  - shot_assists_per_90
+passes_to_penalty_area_percent:
+  - accurate_passes_to_penalty_area_percent
+passes_to_final_third_percent:
+  - accurate_passes_to_final_third_percent
+goals_per_90:
+  - goals_per_90
+shots_per_90:
+  - shots_per_90
+shots_on_target_percent:
+  - shots_on_target_percent
+goal_conversion_rate:
+  - goal_conversion_rate
+touches_in_penalty_area_per_90:
+  - touches_in_penalty_area_per_90
+interceptions_per_90:
+  - interceptions_per_90
+sliding_tackles_per_90:
+  - sliding_tackles_per_90
+blocked_shots_per_90:
+  - blocked_shots_per_90
+successful_def_actions_per_90:
+  - successful_def_actions_per_90
+def_duels_per_90:
+  - def_duels_per_90
+def_duels_won_percent:
+  - def_duels_won_percent
+aerial_duels_per_90:
+  - aerial_duels_per_90
+aerial_duels_won_percent:
+  - aerial_duels_won_percent
+headed_goals_per_90:
+  - headed_goals_per_90
