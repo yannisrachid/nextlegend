@@ -313,6 +313,8 @@ def render_radar(
     label_map: dict[str, str],
     dataset: pd.DataFrame,
     use_percentiles: bool,
+    context: str,
+    player_league: Optional[str],
 ) -> None:
     metrics = roles_map.get(role_name, []) if role_name else []
     if metrics:
@@ -328,19 +330,23 @@ def render_radar(
 
     round_flags: List[bool] = []
 
+    preferred_suffix = PCT_SUFFIX_LEAGUE if context == "League" else PCT_SUFFIX_GLOBAL
+    fallback_suffix = PCT_SUFFIX_GLOBAL if preferred_suffix == PCT_SUFFIX_LEAGUE else PCT_SUFFIX_LEAGUE
+
+    comp_col = None
+    if "competition_name" in dataset.columns:
+        comp_col = "competition_name"
+    elif "league" in dataset.columns:
+        comp_col = "league"
+
     if use_percentiles:
         for metric_key, display in metric_pairs:
-            league_col = f"{metric_key}{PCT_SUFFIX_LEAGUE}"
-            global_col = f"{metric_key}{PCT_SUFFIX_GLOBAL}"
-            value = None
-            if league_col in row.index:
-                value = safe_float(row.get(league_col))
+            value = safe_float(row.get(f"{metric_key}{preferred_suffix}"))
+            source_label = context.lower()
+            if value is None:
+                value = safe_float(row.get(f"{metric_key}{fallback_suffix}"))
                 if value is not None:
-                    source_label = "league"
-            if value is None and global_col in row.index:
-                value = safe_float(row.get(global_col))
-                if value is not None:
-                    source_label = "global"
+                    source_label = "league" if fallback_suffix == PCT_SUFFIX_LEAGUE else "global"
             if value is None:
                 continue
             selected_labels.append(display)
@@ -349,15 +355,27 @@ def render_radar(
         max_range = [100.0] * len(selected_labels)
         round_flags = [True] * len(selected_labels)
     else:
-        source_label = "raw"
+        source_label = context.lower()
+        subset = dataset
+        if context == "League" and comp_col and player_league:
+            filtered = dataset[dataset[comp_col].astype(str) == str(player_league)]
+            if not filtered.empty:
+                subset = filtered
         for metric_key, display in metric_pairs:
             raw_value = safe_float(row.get(metric_key))
             if raw_value is None:
                 continue
+
+            is_percent_metric = metric_key.endswith("percent") or metric_key.endswith("_pct")
+            if is_percent_metric:
+                raw_value = float(np.clip(raw_value, 0.0, 100.0))
+
             selected_labels.append(display)
             selected_values.append(float(raw_value))
 
-            series = pd.to_numeric(dataset.get(metric_key, pd.Series(dtype=float)), errors="coerce")
+            series = pd.to_numeric(subset.get(metric_key, pd.Series(dtype=float)), errors="coerce")
+            if is_percent_metric:
+                series = series.clip(lower=0.0, upper=100.0)
             series = series.dropna()
             if not series.empty:
                 min_val = float(series.min())
@@ -373,8 +391,15 @@ def render_radar(
             padding = span * 0.05
             if padding <= 0:
                 padding = abs(max_val) * 0.05 or 1.0
-            min_range.append(min_val - padding)
-            max_range.append(max_val + padding)
+            min_adj = min_val - padding
+            max_adj = max_val + padding
+            if is_percent_metric:
+                min_adj = max(0.0, min_adj)
+                max_adj = min(100.0, max_adj)
+                if max_adj - min_adj < 1e-6:
+                    max_adj = min(100.0, min_adj + 1.0)
+            min_range.append(min_adj)
+            max_range.append(max_adj)
         round_flags = [False] * len(selected_labels)
 
     if not selected_labels:
@@ -819,6 +844,13 @@ with right:
         key="report_percentile_view",
         help="Toggle between percentile or raw value view for the radar.",
     )
+    context_choice = st.selectbox(
+        "Context",
+        ("League", "Global"),
+        index=0,
+        key="report_radar_context",
+        help="Choose whether to compare the player within their league or across all leagues.",
+    )
     render_radar(
         row,
         right,
@@ -827,6 +859,8 @@ with right:
         role_label_map,
         dataset=df,
         use_percentiles=percentile_view,
+        context=context_choice,
+        player_league=row.get("competition_name"),
     )
 
 st.divider()

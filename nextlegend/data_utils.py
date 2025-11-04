@@ -70,9 +70,9 @@ PER90_SOURCE_METRICS = [
 
 logger = logging.getLogger("nextlegend.data")
 if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-logger.addHandler(handler)
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+    logger.addHandler(_handler)
 logger.setLevel(logging.INFO)
 
 
