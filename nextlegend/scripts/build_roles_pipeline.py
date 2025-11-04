@@ -34,6 +34,8 @@ DEFAULT_OUT_SCORES = "players_scores.csv"
 DEFAULT_OUT_LEAGUE = "roles_scores_league.csv"
 DEFAULT_OUT_GLOBAL = "roles_scores_global.csv"
 SIMILARITY_PREFIX = "data/similarity"
+LEAGUE_META_KEY = "data/league_translation_meta.csv"
+LEAGUE_FACTOR_COL = "league_strength_factor"
 
 _ZSCORE_CACHE: Dict[str, pd.Series] = {}
 PLAYER_PATTERN = re.compile(r"\(([-\d]+)\)")
@@ -113,6 +115,64 @@ def clean_players_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         insert_pos = working.columns.get_loc("age")
         working.insert(insert_pos, "birth_year", birth_years)
     return working
+
+
+def aggregate_player_rows(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    key_cols: list[str] = []
+    if "player_id" in df.columns and df["player_id"].notna().any():
+        key_cols.append("player_id")
+    elif "player" in df.columns:
+        key_cols.append("player")
+
+    for extra in ("competition_name", "calendar"):
+        if extra in df.columns:
+            key_cols.append(extra)
+
+    if not key_cols:
+        return df
+
+    working = df.copy()
+    working["_agg_minutes"] = pd.to_numeric(working.get("minutes_played"), errors="coerce").fillna(-1)
+    working["_agg_complete"] = working.notna().sum(axis=1)
+    working["_agg_order"] = np.arange(len(working))
+
+    sort_cols = key_cols + ["_agg_minutes", "_agg_complete", "_agg_order"]
+    ascending = [True] * len(key_cols) + [False, False, True]
+
+    reduced = (
+        working.sort_values(sort_cols, ascending=ascending)
+        .drop_duplicates(subset=key_cols, keep="first")
+        .drop(columns=["_agg_minutes", "_agg_complete", "_agg_order"])
+        .reset_index(drop=True)
+    )
+    return reduced
+
+
+def load_league_strength_factors(path: str | os.PathLike[str]) -> dict[str, float]:
+    try:
+        meta_df = _read_csv_any(path)
+    except FileNotFoundError:
+        return {}
+
+    if "competition" not in meta_df.columns or "difficulty" not in meta_df.columns:
+        return {}
+
+    difficulty = pd.to_numeric(meta_df["difficulty"], errors="coerce")
+    if difficulty.isna().all():
+        return {}
+
+    mean_val = difficulty.mean(skipna=True)
+    if not np.isfinite(mean_val) or mean_val == 0:
+        return {}
+
+    normalized = (difficulty / mean_val).clip(lower=0.5, upper=1.5)
+    return {
+        str(comp): float(norm) if np.isfinite(norm) else 1.0
+        for comp, norm in zip(meta_df["competition"], normalized)
+    }
 
 
 def load_profiles(path: Path) -> dict:
@@ -622,13 +682,31 @@ def main() -> None:
         raw_df = _read_csv_any(raw_key)
         print("RAW_CLEAN")
         cleaned_df = clean_players_dataframe(raw_df)
+        cleaned_df = aggregate_player_rows(cleaned_df)
         print("RAW_WRITE")
         _write_csv_any(cleaned_df, args.input_path, index=False)
-        df = cleaned_df
-        print("LOAD")
+        df = cleaned_df.copy()
+        print("LOAD (from cleaned in-memory)")
     else:
         print("LOAD")
         df = _read_csv_any(args.input_path)
+        df = aggregate_player_rows(df)
+
+    league_strength = load_league_strength_factors(LEAGUE_META_KEY)
+    if league_strength:
+        comp_series = None
+        if "competition_name" in df.columns:
+            comp_series = df["competition_name"].astype(str)
+        elif "league" in df.columns:
+            comp_series = df["league"].astype(str)
+
+        if comp_series is not None:
+            factors = comp_series.map(league_strength).fillna(1.0)
+        else:
+            factors = pd.Series(1.0, index=df.index, dtype=float)
+        df[LEAGUE_FACTOR_COL] = pd.to_numeric(factors, errors="coerce").fillna(1.0)
+    else:
+        df[LEAGUE_FACTOR_COL] = 1.0
     profiles = load_profiles(args.profiles_path)
 
     print("SPLIT")
@@ -636,6 +714,8 @@ def main() -> None:
 
     print("SCORES_RAW")
     raw_scores = compute_raw_scores(df, profiles)
+    if LEAGUE_FACTOR_COL in df.columns:
+        raw_scores = raw_scores.mul(df[LEAGUE_FACTOR_COL], axis=0)
     scores_pct = compute_scores_percentiles(raw_scores)
 
     print("ASSIGN")
