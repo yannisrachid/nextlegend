@@ -36,6 +36,51 @@ DEFAULT_OUT_GLOBAL = "roles_scores_global.csv"
 SIMILARITY_PREFIX = "data/similarity"
 LEAGUE_META_KEY = "data/league_translation_meta.csv"
 LEAGUE_FACTOR_COL = "league_strength_factor"
+PCT_SUFFIX_GLOBAL = "_pct_global"
+
+SUMMARY_DEFINITIONS: dict[str, tuple[str, ...]] = {
+    "summary_finishing": (
+        "goals_per_90",
+        "shots_per_90",
+        "shots_on_target_percent",
+        "goal_conversion_rate",
+        "xg_per_90",
+        "touches_in_penalty_area_per_90",
+    ),
+    "summary_aerial": (
+        "aerial_duels_per_90",
+        "aerial_duels_won_percent",
+        "headed_goals_per_90",
+    ),
+    "summary_defense": (
+        "successful_def_actions_per_90",
+        "def_duels_won_percent",
+        "interceptions_per_90",
+        "sliding_tackles_per_90",
+        "blocked_shots_per_90",
+    ),
+    "summary_technique": (
+        "successful_dribbles_percent",
+        "dribbles_per_90",
+        "progressive_runs_per_90",
+        "touches_in_penalty_area_per_90",
+    ),
+    "summary_creation": (
+        "assists_per_90",
+        "xa_per_90",
+        "key_passes_per_90",
+        "smart_passes_per_90",
+        "passes_to_penalty_area_per_90",
+        "deep_completions_per_90",
+    ),
+    "summary_construction": (
+        "passes_per_90",
+        "progressive_passes_per_90",
+        "passes_to_final_third_per_90",
+        "through_passes_per_90",
+        "accurate_passes_percent",
+    ),
+}
 
 _ZSCORE_CACHE: Dict[str, pd.Series] = {}
 PLAYER_PATTERN = re.compile(r"\(([-\d]+)\)")
@@ -640,6 +685,20 @@ def compute_metric_percentiles(df: pd.DataFrame, group: Optional[pd.Series]) -> 
     return league_pct, global_pct
 
 
+def compute_summary_scores(metrics_global_pct: pd.DataFrame) -> pd.DataFrame:
+    summary_frames = {}
+    for column, metric_tuple in SUMMARY_DEFINITIONS.items():
+        candidate_columns = [f"{metric}{PCT_SUFFIX_GLOBAL}" for metric in metric_tuple]
+        existing = [metrics_global_pct[col] for col in candidate_columns if col in metrics_global_pct]
+        if not existing:
+            continue
+        combined = pd.concat(existing, axis=1)
+        summary_frames[column] = combined.mean(axis=1, skipna=True)
+    if not summary_frames:
+        return pd.DataFrame(index=metrics_global_pct.index)
+    return pd.DataFrame(summary_frames, index=metrics_global_pct.index)
+
+
 def _run_tests() -> None:
     df_pos = pd.DataFrame({"position": ["RCB, RB", "CF"]})
     res_pos = split_positions_cols(df_pos)
@@ -673,7 +732,7 @@ def main() -> None:
     parser.add_argument("--out_scores", dest="out_scores", default=DEFAULT_OUT_SCORES, type=str)
     parser.add_argument("--out_league", dest="out_league", default=DEFAULT_OUT_LEAGUE, type=str)
     parser.add_argument("--out_global", dest="out_global", default=DEFAULT_OUT_GLOBAL, type=str)
-    parser.add_argument("--sim_topk", dest="sim_topk", default=10, type=int)
+    parser.add_argument("--sim_topk", dest="sim_topk", default=30, type=int)
     args = parser.parse_args()
 
     raw_key = (args.raw_input or "").strip()
@@ -749,6 +808,8 @@ def main() -> None:
     metrics_league_pct, metrics_global_pct = compute_metric_percentiles(metrics_base, league_group)
     scores_league_pct, scores_global_pct = compute_metric_percentiles(raw_scores, league_group)
 
+    summary_scores = compute_summary_scores(metrics_global_pct)
+
     enriched = df.copy()
     enriched = enriched.drop(columns=["_elig_league"], errors="ignore")
     enriched["assigned_role"] = assigned_role
@@ -771,6 +832,7 @@ def main() -> None:
             scores_global_pct,
             role_league_pct.rename("assigned_role_pct_league"),
             role_global_pct.rename("assigned_role_pct_global"),
+            summary_scores,
         ],
         axis=1,
     )

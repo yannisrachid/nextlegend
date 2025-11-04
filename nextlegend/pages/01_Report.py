@@ -56,6 +56,15 @@ CATEGORY_RULES: list[tuple[str, tuple[str, ...]]] = [
 
 CATEGORY_ORDER = [name for name, _ in CATEGORY_RULES] + ["Other"]
 
+SUMMARY_COLUMNS = {
+    "summary_finishing": "Finishing",
+    "summary_aerial": "Aerial",
+    "summary_defense": "Defence",
+    "summary_technique": "Technique",
+    "summary_creation": "Creation",
+    "summary_construction": "Construction",
+}
+
 
 def safe_float(value: object) -> Optional[float]:
     if value is None:
@@ -285,6 +294,10 @@ def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGene
     birth_year_value = safe_int(row.get("birth_year"))
     matches_value = safe_int(row.get("matches_played"))
     minutes_value = safe_int(row.get("minutes_played"))
+    market_value = row.get("market_value")
+    contract_expires = row.get("contract_expires")
+    goals_value = safe_int(row.get("goals"))
+    assists_value = safe_int(row.get("assists"))
 
     info_pairs = [
         ("Club", row.get("team")),
@@ -294,12 +307,18 @@ def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGene
         ("Position", position_text),
         ("Matches", matches_value),
         ("Minutes", minutes_value),
+        ("Goals", goals_value),
+        ("Assists", assists_value),
+        ("Market value", market_value),
+        ("Contract expires", contract_expires),
     ]
 
     cols = container.columns(2)
     for idx, (label, value) in enumerate(info_pairs):
         if value is None or (isinstance(value, float) and np.isnan(value)):
             display = "—"
+        elif isinstance(value, float):
+            display = value if not value.is_integer() else int(value)
         else:
             display = value
         cols[idx % 2].markdown(f"**{label}:** {display}")
@@ -615,6 +634,24 @@ def render_percentile_table(
     st.dataframe(styled, use_container_width=True)
 
 
+def render_summary_cards(row: pd.Series) -> None:
+    summary_values = {
+        column: safe_float(row.get(column))
+        for column in SUMMARY_COLUMNS.keys()
+    }
+    available_items = [(SUMMARY_COLUMNS[col], val) for col, val in summary_values.items() if val is not None]
+    if not available_items:
+        st.markdown("### Summary")
+        st.info("No summary scores available.")
+        return
+
+    st.markdown("### Summary")
+    cols = st.columns(len(available_items))
+    for (label, value), container in zip(available_items, cols):
+        display_value = f"{value:.1f}" if value is not None else "—"
+        container.metric(label, display_value)
+
+
 def render_similar_players(
     row: pd.Series,
     assigned_role: Optional[str],
@@ -638,7 +675,7 @@ def render_similar_players(
         st.info("No similar players found for this profile.")
         return
 
-    matches = matches.sort_values(by="similarity", ascending=False).head(10)
+    matches = matches.sort_values(by="similarity", ascending=False).head(30)
 
     details: list[dict] = []
     for _, sim_row in matches.iterrows():
@@ -868,5 +905,6 @@ render_role_cards(row, role_columns, assigned_role=assigned_role)
 render_role_metrics_section(row, assigned_role, role_metrics_map, role_label_map)
 st.divider()
 render_percentile_table(row, role_metrics_map, role_label_map)
+render_summary_cards(row)
 st.divider()
 render_similar_players(row, assigned_role, df, big5_competitions=big5_set)
