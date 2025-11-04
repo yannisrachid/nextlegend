@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import re
-from typing import Dict, Iterable, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
 import yaml
+
+from s3_utils import object_exists, read_csv_from_s3
 
 try:  # Python 3.11+ ships tomllib natively
     import tomllib  # type: ignore[attr-defined]
@@ -34,7 +37,7 @@ except ImportError as exc:  # pragma: no cover - make missing dependency obvious
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-DATA_PATH = PROJECT_ROOT / "data" / "wyscout_players_cleaned.csv"
+DATA_SOURCE = "data/wyscout_players_cleaned.csv"
 SCHEMA_PATH = PROJECT_ROOT / "config" / "schema_map.yaml"
 SETTINGS_PATH = PROJECT_ROOT / "config" / "settings.toml"
 
@@ -69,8 +72,34 @@ logger = logging.getLogger("nextlegend.data")
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-    logger.addHandler(handler)
+logger.addHandler(handler)
 logger.setLevel(logging.INFO)
+
+
+def _use_local_path(path: Union[str, Path]) -> bool:
+    if isinstance(path, Path):
+        return True
+    text = str(path)
+    return os.path.isabs(text) or text.startswith("./") or text.startswith("../")
+
+
+def _load_raw_dataset(source: Union[str, Path, None], *, n_rows: Optional[int] = None) -> pd.DataFrame:
+    target = source or DATA_SOURCE
+    if isinstance(target, Path) or _use_local_path(target):
+        path_obj = Path(target)
+        if not path_obj.exists():
+            raise FileNotFoundError(f"Data file not found: {path_obj}")
+        logger.info("Loading dataset from local path %s", path_obj)
+        return pd.read_csv(path_obj, nrows=n_rows)
+
+    key = str(target)
+    logger.info("Loading dataset from S3 key %s", key)
+    try:
+        return read_csv_from_s3(key, nrows=n_rows)
+    except FileNotFoundError as exc:
+        available = object_exists(key)
+        hint = "" if available else " (object missing from S3)"
+        raise FileNotFoundError(f"S3 data file not found: {key}{hint}") from exc
 
 
 @dataclass(frozen=True)
@@ -340,7 +369,7 @@ def add_rate_metrics(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_player_dataset(
-    csv_path: Optional[Path] = None,
+    csv_path: Optional[Union[str, Path]] = None,
     *,
     competitions: Optional[Sequence[str]] = None,
     n_rows: Optional[int] = None,
@@ -356,12 +385,7 @@ def load_player_dataset(
         Optional maximum number of rows to read from disk (sampling utility for tests).
     """
 
-    path = csv_path or DATA_PATH
-    if not path.exists():
-        raise FileNotFoundError(f"Data file not found: {path}")
-
-    logger.info("Loading dataset from %s", path)
-    df = pd.read_csv(path, nrows=n_rows)
+    df = _load_raw_dataset(csv_path, n_rows=n_rows)
 
     if competitions:
         competition_col = "competition_name" if "competition_name" in df.columns else None

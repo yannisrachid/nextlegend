@@ -11,3 +11,5 @@ mplsoccer>=1.2
 streamlit-option-menu>=0.3
 streamlit-aggrid>=0.3
 pydeck>=0.8
+boto3>=1.28
+python-dotenv>=1.0

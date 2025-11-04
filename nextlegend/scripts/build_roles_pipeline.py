@@ -8,23 +8,111 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
+import re
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+PACKAGE_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = PACKAGE_ROOT.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT = ROOT_DIR / "data" / "wyscout_players_cleaned.csv"
-DEFAULT_PROFILES = ROOT_DIR / "player_profiles.json"
-DEFAULT_OUT_ENRICHED = ROOT_DIR / "data" / "wyscout_players_cleaned.csv"
-DEFAULT_OUT_SCORES = ROOT_DIR / "players_scores.csv"
-DEFAULT_OUT_LEAGUE = ROOT_DIR / "roles_scores_league.csv"
-DEFAULT_OUT_GLOBAL = ROOT_DIR / "roles_scores_global.csv"
-SIMILARITY_DIR = ROOT_DIR / "data" / "similarity"
+from nextlegend.s3_utils import read_csv_from_s3, write_csv_to_s3
+
+
+DEFAULT_RAW_INPUT = "data/wyscout_players_final.csv"
+DEFAULT_INPUT = "data/wyscout_players_cleaned.csv"
+DEFAULT_PROFILES = PACKAGE_ROOT / "player_profiles.json"
+DEFAULT_OUT_ENRICHED = "data/wyscout_players_cleaned.csv"
+DEFAULT_OUT_SCORES = "players_scores.csv"
+DEFAULT_OUT_LEAGUE = "roles_scores_league.csv"
+DEFAULT_OUT_GLOBAL = "roles_scores_global.csv"
+SIMILARITY_PREFIX = "data/similarity"
 
 _ZSCORE_CACHE: Dict[str, pd.Series] = {}
+PLAYER_PATTERN = re.compile(r"\(([-\d]+)\)")
+AGE_PATTERN = re.compile(r"'?(\d{2})(?:\s*\((\d{1,2})\))?")
+
+
+def _use_local_path(path: str | os.PathLike[str]) -> bool:
+    if isinstance(path, Path):
+        return True
+    text = str(path)
+    return os.path.isabs(text) or text.startswith("./") or text.startswith("../")
+
+
+def _read_csv_any(path: str | os.PathLike[str]) -> pd.DataFrame:
+    if _use_local_path(path):
+        return pd.read_csv(Path(path))
+    return read_csv_from_s3(str(path))
+
+
+def _write_csv_any(df: pd.DataFrame, path: str | os.PathLike[str], *, index: bool = False) -> None:
+    if _use_local_path(path):
+        destination = Path(path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(destination, index=index)
+        return
+    write_csv_to_s3(df, str(path), index=index)
+
+
+def _split_player_cell(cell: object) -> tuple[str, Optional[str]]:
+    if cell is None or (isinstance(cell, float) and np.isnan(cell)):
+        return "", None
+    text = str(cell)
+    base_name = text.split(";", 1)[0].strip()
+    match = PLAYER_PATTERN.search(text)
+    identifier = match.group(1) if match else None
+    return base_name, identifier
+
+
+def _interpret_age_cell(cell: object) -> tuple[Optional[int], Optional[int]]:
+    if cell is None or (isinstance(cell, float) and np.isnan(cell)):
+        return None, None
+    text = str(cell).strip()
+    if not text:
+        return None, None
+    match = AGE_PATTERN.search(text)
+    if not match:
+        return None, None
+    two_digit_year = match.group(1)
+    age_value = match.group(2)
+    year_int = int(two_digit_year)
+    birth_year = 2000 + year_int if year_int <= 24 else 1900 + year_int
+    age = int(age_value) if age_value else None
+    return birth_year, age
+
+
+def clean_players_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    working = df.copy()
+    if "player" in working.columns:
+        tuples = working["player"].apply(_split_player_cell).tolist()
+        names = [name for name, _ in tuples]
+        identifiers = [identifier for _, identifier in tuples]
+        working["player"] = names
+        if "player_id" in working.columns:
+            working = working.drop(columns=["player_id"])
+        insert_pos = working.columns.get_loc("player") + 1
+        working.insert(insert_pos, "player_id", identifiers)
+    if "age" in working.columns:
+        birth_years: list[Optional[int]] = []
+        ages: list[Optional[int]] = []
+        for value in working["age"]:
+            birth, age = _interpret_age_cell(value)
+            birth_years.append(birth)
+            ages.append(age)
+        working["age"] = ages
+        if "birth_year" in working.columns:
+            working = working.drop(columns=["birth_year"])
+        insert_pos = working.columns.get_loc("age")
+        working.insert(insert_pos, "birth_year", birth_years)
+    return working
 
 
 def load_profiles(path: Path) -> dict:
@@ -344,7 +432,7 @@ def profile_similarity(
             zvalues = -zvalues
         feature_blocks.append(zvalues.loc[indices].to_numpy(dtype=float))
 
-    # Additional contextual features
+    # Additional contextual features (age removed per updated requirements)
     height_base = df.get("height", df.get("height_cm", pd.Series(np.nan, index=df.index)))
     weight_base = df.get("weight", df.get("weight_kg", pd.Series(np.nan, index=df.index)))
     height_z = _zscore(height_base) if isinstance(height_base, pd.Series) else pd.Series(0.0, index=df.index)
@@ -397,30 +485,71 @@ def profile_similarity(
     similarities = normed @ normed.T
     np.fill_diagonal(similarities, -np.inf)
 
+    player_ids = df.get("player_id", pd.Series(index=df.index, dtype="object"))
+
     records = []
     for row_pos, player_idx in enumerate(indices):
         row = similarities[row_pos]
         if not np.isfinite(row).any():
             continue
-        top = np.argpartition(-row, kth=min(topk, len(row) - 1))[:topk]
-        top = top[np.argsort(-row[top])]
-        for col_pos in top:
+        order = np.argsort(-row)
+        neighbours_added = 0
+        raw_id_a = player_ids.at[player_idx] if player_idx in player_ids.index else None
+        player_id_a = raw_id_a if pd.notna(raw_id_a) else None
+        player_name_a = df.at[player_idx, "player"] if "player" in df.columns else player_idx
+        seen_indices: set[int] = set()
+        seen_ids: set[object] = set()
+        seen_names: set[str] = set()
+        for col_pos in order:
+            if neighbours_added >= topk:
+                break
             value = row[col_pos]
             if not np.isfinite(value) or value <= -np.inf:
                 continue
             neighbour_idx = indices[col_pos]
+            if neighbour_idx == player_idx:
+                continue
+            if neighbour_idx in seen_indices:
+                continue
+            raw_id_b = player_ids.at[neighbour_idx] if neighbour_idx in player_ids.index else None
+            player_id_b = raw_id_b if pd.notna(raw_id_b) else None
+            if (
+                player_id_a is not None
+                and player_id_b is not None
+                and player_id_a == player_id_b
+            ):
+                continue
+            player_name_b = df.at[neighbour_idx, "player"] if "player" in df.columns else neighbour_idx
+            if (
+                (player_id_a is None or player_id_b is None)
+                and str(player_name_b) == str(player_name_a)
+            ):
+                continue
+            if player_id_b is not None:
+                if player_id_b in seen_ids:
+                    continue
+            else:
+                if str(player_name_b) in seen_names:
+                    continue
+
             records.append(
                 {
-                    "player_a": df.at[player_idx, "player"] if "player" in df.columns else player_idx,
+                    "player_a": player_name_a,
                     "team_a": df.at[player_idx, "team"] if "team" in df.columns else "",
                     "competition_name_a": df.at[player_idx, "competition_name"] if "competition_name" in df.columns else "",
-                    "player_b": df.at[neighbour_idx, "player"] if "player" in df.columns else neighbour_idx,
+                    "player_b": player_name_b,
                     "team_b": df.at[neighbour_idx, "team"] if "team" in df.columns else "",
                     "competition_name_b": df.at[neighbour_idx, "competition_name"] if "competition_name" in df.columns else "",
                     "profile": profile_name,
                     "similarity": float(value),
                 }
             )
+            neighbours_added += 1
+            seen_indices.add(neighbour_idx)
+            if player_id_b is not None:
+                seen_ids.add(player_id_b)
+            else:
+                seen_names.add(str(player_name_b))
     return pd.DataFrame(records)
 
 
@@ -477,17 +606,29 @@ def _run_tests() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build NextLegend roles pipeline.")
-    parser.add_argument("--in", dest="input_path", default=DEFAULT_INPUT, type=Path)
+    parser.add_argument("--raw_in", dest="raw_input", default=DEFAULT_RAW_INPUT, type=str)
+    parser.add_argument("--in", dest="input_path", default=DEFAULT_INPUT, type=str)
     parser.add_argument("--profiles", dest="profiles_path", default=DEFAULT_PROFILES, type=Path)
-    parser.add_argument("--out_enriched", dest="out_enriched", default=DEFAULT_OUT_ENRICHED, type=Path)
-    parser.add_argument("--out_scores", dest="out_scores", default=DEFAULT_OUT_SCORES, type=Path)
-    parser.add_argument("--out_league", dest="out_league", default=DEFAULT_OUT_LEAGUE, type=Path)
-    parser.add_argument("--out_global", dest="out_global", default=DEFAULT_OUT_GLOBAL, type=Path)
+    parser.add_argument("--out_enriched", dest="out_enriched", default=DEFAULT_OUT_ENRICHED, type=str)
+    parser.add_argument("--out_scores", dest="out_scores", default=DEFAULT_OUT_SCORES, type=str)
+    parser.add_argument("--out_league", dest="out_league", default=DEFAULT_OUT_LEAGUE, type=str)
+    parser.add_argument("--out_global", dest="out_global", default=DEFAULT_OUT_GLOBAL, type=str)
     parser.add_argument("--sim_topk", dest="sim_topk", default=10, type=int)
     args = parser.parse_args()
 
-    print("LOAD")
-    df = pd.read_csv(args.input_path)
+    raw_key = (args.raw_input or "").strip()
+    if raw_key:
+        print("RAW_LOAD")
+        raw_df = _read_csv_any(raw_key)
+        print("RAW_CLEAN")
+        cleaned_df = clean_players_dataframe(raw_df)
+        print("RAW_WRITE")
+        _write_csv_any(cleaned_df, args.input_path, index=False)
+        df = cleaned_df
+        print("LOAD")
+    else:
+        print("LOAD")
+        df = _read_csv_any(args.input_path)
     profiles = load_profiles(args.profiles_path)
 
     print("SPLIT")
@@ -512,22 +653,16 @@ def main() -> None:
     roles_scores_global = roles_global_percentiles(df, raw_scores, assigned_role, profiles, min_minutes=270)
 
     print("SIM_OUT")
-    SIMILARITY_DIR.mkdir(parents=True, exist_ok=True)
     for profile_name in profiles.keys():
         sim_df = profile_similarity(df, profiles, assigned_role, profile_name, topk=args.sim_topk)
-        sim_path = SIMILARITY_DIR / f"similarity_{slugify_profile(profile_name)}.csv"
-        sim_df.to_csv(sim_path, index=False)
+        sim_key = f"{SIMILARITY_PREFIX}/similarity_{slugify_profile(profile_name)}.csv"
+        _write_csv_any(sim_df, sim_key, index=False)
 
     print("WRITE")
-    args.out_scores.parent.mkdir(parents=True, exist_ok=True)
-    args.out_enriched.parent.mkdir(parents=True, exist_ok=True)
-    args.out_league.parent.mkdir(parents=True, exist_ok=True)
-    args.out_global.parent.mkdir(parents=True, exist_ok=True)
-
     scores_pct_out = scores_pct.copy()
     if "player" in df.columns:
         scores_pct_out.insert(0, "player", df["player"])
-    scores_pct_out.to_csv(args.out_scores, index=False)
+    _write_csv_any(scores_pct_out, args.out_scores, index=False)
 
     league_group = _league_group(df)
     metrics_base = df.drop(columns=["_elig_league"], errors="ignore")
@@ -562,7 +697,7 @@ def main() -> None:
     overlapping = set(enriched.columns).intersection(enriched_extra.columns)
     enriched_extra = enriched_extra.drop(columns=list(overlapping), errors="ignore")
     enriched = pd.concat([enriched, enriched_extra], axis=1)
-    enriched.to_csv(args.out_enriched, index=False)
+    _write_csv_any(enriched, args.out_enriched, index=False)
 
     roles_scores_league_out = pd.concat(
         [
@@ -573,7 +708,7 @@ def main() -> None:
         axis=1,
     )
     roles_scores_league_out = roles_scores_league_out.dropna(subset=list(profiles.keys()), how="all")
-    roles_scores_league_out.to_csv(args.out_league, index=False)
+    _write_csv_any(roles_scores_league_out, args.out_league, index=False)
 
     roles_scores_global_out = pd.concat(
         [
@@ -584,7 +719,7 @@ def main() -> None:
         axis=1,
     )
     roles_scores_global_out = roles_scores_global_out.dropna(subset=list(profiles.keys()), how="all")
-    roles_scores_global_out.to_csv(args.out_global, index=False)
+    _write_csv_any(roles_scores_global_out, args.out_global, index=False)
 
     print("DONE")
 
