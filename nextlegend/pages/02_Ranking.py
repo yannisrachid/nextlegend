@@ -339,6 +339,8 @@ if filtered.empty:
     st.info("No ranked players available after applying filters.")
     st.stop()
 
+st.divider()
+
 st.write(f"Displaying top {len(filtered)} players")
 
 for idx, player_row in filtered.iterrows():
