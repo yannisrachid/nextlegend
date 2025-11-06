@@ -13,6 +13,7 @@ import streamlit as st
 from mplsoccer import Radar
 
 from s3_utils import read_csv_from_s3
+from utils import load_prospects_csv, save_prospects_csv
 
 PAGES_DIR = Path(__file__).resolve().parent
 ROOT_DIR = PAGES_DIR.parent
@@ -908,3 +909,30 @@ render_percentile_table(row, role_metrics_map, role_label_map)
 render_summary_cards(row)
 st.divider()
 render_similar_players(row, assigned_role, df, big5_competitions=big5_set)
+
+# ---------------------------------------------------------------------------
+# Prospect integration
+# ---------------------------------------------------------------------------
+prospects_records = load_prospects_csv()
+
+current_record = {
+    "player": row.get("player"),
+    "team": row.get(team_column),
+    "competition_name": row.get("competition_name"),
+    "position": row.get("position"),
+    "role": assigned_role,
+}
+
+if st.button("Add to prospect list", key="report_add_prospect"):
+    if not current_record["player"]:
+        st.warning("Unable to add prospect (missing player).")
+    elif not prospects_records[
+        (prospects_records["player"] == current_record["player"])
+        & (prospects_records["team"] == current_record["team"])
+        & (prospects_records["competition_name"] == current_record["competition_name"])
+    ].empty:
+        st.info("This player is already in the prospect list.")
+    else:
+        updated = pd.concat([prospects_records, pd.DataFrame([current_record])], ignore_index=True)
+        save_prospects_csv(updated)
+        st.success("Prospect added.")

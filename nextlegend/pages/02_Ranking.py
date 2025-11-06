@@ -277,7 +277,16 @@ if comp_column is None:
     st.error("Competition column not found in dataset.")
     st.stop()
 
-available_leagues = ["All competitions"] + sorted(df_players[comp_column].dropna().unique().tolist())
+# Big 5 leagues
+BIG5_LEAGUES = {
+    "England. Premier League",
+    "France. Ligue 1",
+    "Germany. Bundesliga",
+    "Italy. Serie A",
+    "Spain. La Liga",
+}
+
+available_leagues = ["All competitions", "Big 5 Leagues"] + sorted(df_players[comp_column].dropna().unique().tolist())
 if not available_leagues:
     st.info("No leagues available in the dataset.")
     st.stop()
@@ -310,6 +319,8 @@ context_choice = filter_col4.selectbox("Context", options=["League", "Global"], 
 
 if selected_league == "All competitions":
     filtered = df_players.copy()
+elif selected_league == "Big 5 Leagues":
+    filtered = df_players[df_players[comp_column].astype(str).isin(BIG5_LEAGUES)].copy()
 else:
     filtered = df_players[df_players[comp_column].astype(str) == str(selected_league)].copy()
 if filtered.empty:
@@ -320,11 +331,17 @@ filtered = filtered[pd.to_numeric(filtered.get("age"), errors="coerce") <= float
 
 if mode_choice == "Poste":
     filtered = filtered[filtered.get("position").astype(str) == str(selected_value)]
-    ranking_column = "assigned_role_pct_league"
+    if selected_league in {"All competitions", "Big 5 Leagues"}:
+        ranking_column = "assigned_role_pct_global"
+    else:
+        ranking_column = "assigned_role_pct_league"
 else:
     filtered = filtered[filtered.get("assigned_role").astype(str) == str(selected_value)]
-    candidate_column = f"{selected_value}{PCT_SUFFIX_LEAGUE}"
-    ranking_column = candidate_column if candidate_column in filtered.columns else "assigned_role_pct_league"
+    if selected_league in {"All competitions", "Big 5 Leagues"}:
+        ranking_column = "assigned_role_pct_global"
+    else:
+        candidate_column = f"{selected_value}{PCT_SUFFIX_LEAGUE}"
+        ranking_column = candidate_column if candidate_column in filtered.columns else "assigned_role_pct_league"
 
 if filtered.empty:
     st.info("No players match the selected filters.")
