@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from mplsoccer import Radar
 
+from components.sidebar import render_sidebar_logo
 from s3_utils import read_csv_from_s3
 from scripts.positions_glossary import positions_glossary
 
@@ -262,6 +263,7 @@ def render_radar(
 
 
 st.set_page_config(page_title="Ranking", layout="wide", initial_sidebar_state="collapsed")
+render_sidebar_logo()
 
 df_players = load_players()
 roles_options = load_roles_options(df_players)

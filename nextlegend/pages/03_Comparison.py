@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 from mplsoccer import Radar
 
+from components.sidebar import render_sidebar_logo
 from scripts.positions_glossary import positions_glossary
 from s3_utils import read_csv_from_s3
 
@@ -329,6 +330,7 @@ def render_comparison_radar(
 
 
 st.set_page_config(page_title="Comparison", layout="wide", initial_sidebar_state="collapsed")
+render_sidebar_logo()
 
 df_players = load_players()
 if df_players.empty:

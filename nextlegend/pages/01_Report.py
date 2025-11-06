@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from mplsoccer import Radar
 
+from components.sidebar import render_sidebar_logo
 from s3_utils import read_csv_from_s3
 from utils import load_prospects_csv, save_prospects_csv
 
@@ -286,6 +287,17 @@ def select_top_profiles(row: pd.Series, role_cols: Sequence[str], top_n: Optiona
     return sorted_entries
 
 
+def get_role_percentiles(row: pd.Series, role_name: Optional[str]) -> tuple[Optional[float], Optional[float]]:
+    if not role_name:
+        return None, None
+    label = str(role_name).strip()
+    if not label:
+        return None, None
+    league_value = safe_float(row.get(f"{label}{PCT_SUFFIX_LEAGUE}"))
+    global_value = safe_float(row.get(f"{label}{PCT_SUFFIX_GLOBAL}"))
+    return league_value, global_value
+
+
 def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGenerator) -> None:
     container.image(PLACEHOLDER_IMG, width=120)
     container.markdown(f"### {row.get('player', 'Unknown player')}")
@@ -323,6 +335,29 @@ def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGene
         else:
             display = value
         cols[idx % 2].markdown(f"**{label}:** {display}")
+
+    role_label_raw = row.get("assigned_role") or ""
+    role_label = str(role_label_raw).strip() or "Role fit"
+    cohort_league, cohort_global = get_role_percentiles(row, role_label)
+    if any(val is not None for val in (cohort_league, cohort_global)):
+        percentile_block = container.container()
+        percentile_block.markdown(f"#### Percentile overview — {role_label}")
+        metric_cols = percentile_block.columns(2)
+
+        def render_big_metric(column, label: str, value: Optional[float], accent: str) -> None:
+            display_value = format_percentile(value)
+            column.markdown(
+                f"""
+                <div style="background-color:#0F172A;padding:10px 12px;border-radius:10px;">
+                    <div style="font-size:0.85rem;color:#94A3B8;text-transform:uppercase;letter-spacing:0.05em;">{label}</div>
+                    <div style="font-size:1.9rem;font-weight:700;color:{accent};margin-top:4px;">{display_value}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        render_big_metric(metric_cols[0], "League percentile", cohort_league, "#38BDF8")
+        render_big_metric(metric_cols[1], "Global percentile", cohort_global, "#34D399")
 
 
 def render_radar(
@@ -487,21 +522,44 @@ def render_role_cards(
         league_pct = profile.get("league_pct")
         global_pct = profile.get("global_pct")
         display_name = profile["label"]
+        highlight = bool(assigned_role and base == assigned_role)
+
+        role_fit_display = f"{score:.1f}%" if score is not None else "—"
+        league_display = format_percentile(league_pct)
+        global_display = format_percentile(global_pct)
+        border_color = "#22C55E" if highlight else "#1F2937"
 
         with col:
-            card = st.container(border=True)
-            card.markdown(f"**{display_name}**")
-            if assigned_role and base == assigned_role:
-                card.caption("Assigned role")
-
-            global_score_display = f"{score:.1f}" if score is not None else "—"
-            card.metric("Global score", global_score_display)
-
-            league_display = f"{league_pct:.1f}" if league_pct is not None else "—"
-            card.metric("League percentile", league_display)
-
-            # if global_pct is not None:
-            #     card.caption(f"Global percentile: {global_pct:.1f}")
+            st.markdown(
+                f"""
+                <div style="
+                    border:1.5px solid {border_color};
+                    border-radius:14px;
+                    padding:16px 18px;
+                    background-color:#0F172A;
+                    height:100%;
+                ">
+                    <div style="font-weight:600; font-size:1rem; color:#E2E8F0;">{display_name}</div>
+                    <div style="margin-top:12px; font-size:0.85rem; color:#94A3B8; letter-spacing:0.04em; text-transform:uppercase;">
+                        Role fit score
+                    </div>
+                    <div style="font-size:2rem; font-weight:700; color:#F8FAFC; margin-top:2px;">
+                        {role_fit_display}
+                    </div>
+                    <div style="display:flex; gap:12px; margin-top:18px;">
+                        <div style="flex:1; background-color:#111827; border-radius:10px; padding:10px 12px;">
+                            <div style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase; letter-spacing:0.05em;">League pct</div>
+                            <div style="font-size:1.35rem; font-weight:600; color:#7BD389;">{league_display}</div>
+                        </div>
+                        <div style="flex:1; background-color:#111827; border-radius:10px; padding:10px 12px;">
+                            <div style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase; letter-spacing:0.05em;">Global pct</div>
+                            <div style="font-size:1.35rem; font-weight:600; color:#38BDF8;">{global_display}</div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 def render_role_metrics_section(
@@ -534,7 +592,8 @@ def render_role_metrics_section(
 
     if not records:
         return
-
+    
+    st.divider()
     st.markdown("### Role metrics focus")
     df_records = pd.DataFrame(records)
     styled = (
@@ -646,6 +705,7 @@ def render_summary_cards(row: pd.Series) -> None:
         st.info("No summary scores available.")
         return
 
+    st.divider()
     st.markdown("### Summary")
     cols = st.columns(len(available_items))
     for (label, value), container in zip(available_items, cols):
@@ -778,6 +838,8 @@ def render_similar_players(
 
 
 st.set_page_config(page_title="Report", layout="wide", initial_sidebar_state="collapsed")
+render_sidebar_logo()
+st.title("Report")
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -858,6 +920,8 @@ st.session_state["report_player"] = selected_player
 if not selected_player:
     st.info("Select a player to display the scouting report.")
     st.stop()
+
+st.divider()
 
 # ---------------------------------------------------------------------------
 # Player selection

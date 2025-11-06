@@ -13,6 +13,7 @@ import streamlit as st
 from matplotlib.font_manager import FontProperties
 from mplsoccer import PyPizza
 
+from components.sidebar import render_sidebar_logo
 from s3_utils import read_csv_from_s3
 from scripts.positions_glossary import positions_glossary
 
@@ -493,6 +494,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+render_sidebar_logo()
 
 df_players = load_players()
 label_map = load_metric_labels()

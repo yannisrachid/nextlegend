@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+import base64
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from data_utils import (
     load_player_dataset,
     load_settings,
 )
+from components.sidebar import LOGO_PATH, render_sidebar_logo
 
 
 @st.cache_resource(show_spinner=False)
@@ -26,9 +28,7 @@ def _get_settings() -> dict[str, Any]:
 
 
 def _render_sidebar() -> None:
-    with st.sidebar:
-        st.markdown("### NextLegend")
-        st.caption("Player intelligence powered by Your Legend.")
+    render_sidebar_logo()
 
 
 DEFAULT_FILTERS = {"season": None, "leagues": [], "min_minutes": 0}
@@ -88,6 +88,23 @@ def main() -> None:
     st.session_state["feature_groups"] = FEATURE_GROUPS
     st.session_state["index_weights"] = weights
 
+    if LOGO_PATH.exists():
+        image_bytes = LOGO_PATH.read_bytes()
+        encoded_logo = base64.b64encode(image_bytes).decode("utf-8")
+        st.markdown(
+            f"""
+            <div style="text-align:center; margin-bottom:0.5rem;">
+                <img src="data:image/png;base64,{encoded_logo}" style="width:170px;" />
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div style='text-align:center; font-size:1.5rem; color:#e2e8f0; font-weight:600;'>Your Legend FC</div>",
+            unsafe_allow_html=True,
+        )
+
     st.markdown(
         """
         <div style="text-align:center; padding: 2rem 0 1.5rem;">
@@ -118,7 +135,13 @@ def main() -> None:
     for col, (label, value) in zip(cols, stats):
         col.markdown(
             f"""
-            <div class="nextlegend-card" style="text-align:center; padding:1.8rem 1.2rem;">
+            <div class="nextlegend-card" style="
+                text-align:center;
+                padding:1.8rem 1.2rem;
+                border:2px solid #22C55E;
+                border-radius:16px;
+                background-color:#0F172A;
+            ">
                 <div style="font-size:2.4rem; font-weight:700; color:#7BD389;">{value}</div>
                 <div style="margin-top:0.4rem; font-size:1rem; letter-spacing:0.05em; text-transform:uppercase; color:#cbd5f5;">{label}</div>
             </div>

@@ -3,18 +3,82 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
+from components.sidebar import render_sidebar_logo
 from scripts.positions_glossary import positions_glossary
 from s3_utils import read_csv_from_s3
 from utils import load_prospects_csv, save_prospects_csv
 
 PLAYERS_DATA_KEY = "data/wyscout_players_cleaned.csv"
 PLACEHOLDER_IMG = "https://placehold.co/160x160?text=No+Photo"
+PCT_SUFFIX_LEAGUE = "_pct_league"
+PCT_SUFFIX_GLOBAL = "_pct_global"
+
+
+def normalize_label(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    label = str(value).strip()
+    lowered = label.lower()
+    if not label or lowered in {"nan", "none", "<na>"}:
+        return None
+    return label
+
+
+def safe_percentile_value(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return float(number) if np.isfinite(number) else None
+
+
+def get_role_percentiles(player_row: pd.Series, role_name: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
+    role_label = normalize_label(role_name)
+    if not role_label:
+        return None, None
+    league_value = safe_percentile_value(player_row.get(f"{role_label}{PCT_SUFFIX_LEAGUE}"))
+    global_value = safe_percentile_value(player_row.get(f"{role_label}{PCT_SUFFIX_GLOBAL}"))
+    return league_value, global_value
+
+
+def render_percentile_group(
+    container: DeltaGenerator,
+    title: str,
+    role_label: Optional[str],
+    league_value: Optional[float],
+    global_value: Optional[float],
+) -> None:
+    role_text = role_label or "N/A"
+    container.markdown(
+        f"<p style='font-size:0.95rem;color:#94A3B8;margin-bottom:0.2rem;'>{title}: "
+        f"<strong style='color:#E2E8F0;'>{role_text}</strong></p>",
+        unsafe_allow_html=True,
+    )
+    value_cols = container.columns(2)
+
+    def render_value(column, label: str, value: Optional[float], accent: str) -> None:
+        display = "N/A" if value is None else f"{value:.1f}"
+        column.markdown(
+            f"""
+            <div style="background-color:#0F172A;padding:10px 12px;border-radius:10px;">
+                <div style="font-size:0.8rem;color:#94A3B8;text-transform:uppercase;letter-spacing:0.05em;">{label}</div>
+                <div style="font-size:1.8rem;font-weight:700;color:{accent};margin-top:4px;">{display}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    render_value(value_cols[0], "League", league_value, "#38BDF8")
+    render_value(value_cols[1], "Global", global_value, "#34D399")
 
 
 @st.cache_data(show_spinner=False)
@@ -42,6 +106,7 @@ players_df = load_players()
 prospects_df = load_prospects_csv()
 
 st.set_page_config(page_title="Prospect", layout="wide", initial_sidebar_state="collapsed")
+render_sidebar_logo()
 st.title("Prospect List")
 
 filter_col1, filter_col2 = st.columns(2)
@@ -167,7 +232,7 @@ for idx, row in filtered_prospects.iterrows():
                 save_prospects_csv(updated_df)
                 st.rerun()
 
-        info_cols = st.columns([1.2, 1, 1.8])
+        info_cols = st.columns([1.2, 1, 1])
         with info_cols[0]:
             st.image(PLACEHOLDER_IMG, width=120)
             st.markdown(f"**Role:** {player_row.get('assigned_role', 'N/A')}")
@@ -179,5 +244,36 @@ for idx, row in filtered_prospects.iterrows():
             st.markdown(f"Matches: {player_row.get('matches_played', 'N/A')}")
             st.markdown(f"Goals: {player_row.get('goals', 'N/A')}")
             st.markdown(f"Assists: {player_row.get('assists', 'N/A')}")
+        percentile_column = info_cols[2].container()
+        assigned_role_label = normalize_label(player_row.get("assigned_role"))
+        assigned_league_pct = safe_percentile_value(player_row.get("assigned_role_pct_league"))
+        assigned_global_pct = safe_percentile_value(player_row.get("assigned_role_pct_global"))
+
+        percentile_column.markdown("**Percentile scores**")
+        render_percentile_group(
+            percentile_column,
+            "Assigned role percentile",
+            assigned_role_label,
+            assigned_league_pct,
+            assigned_global_pct,
+        )
+
+        if filter_type == "Role":
+            focus_role_label = normalize_label(current_filter) or normalize_label(row.get("role"))
+            focus_title = "Filtered role percentile" if current_filter else "Prospect focus role percentile"
+        else:
+            focus_role_label = normalize_label(row.get("role"))
+            focus_title = "Prospect focus role percentile"
+
+        focus_league_pct, focus_global_pct = get_role_percentiles(player_row, focus_role_label)
+        if focus_role_label:
+            percentile_column.markdown("<div style='margin:8px 0;'></div>", unsafe_allow_html=True)
+            render_percentile_group(
+                percentile_column,
+                focus_title,
+                focus_role_label,
+                focus_league_pct,
+                focus_global_pct,
+            )
 
         st.divider()
