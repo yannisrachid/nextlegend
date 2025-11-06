@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
+import random
+from collections import deque
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -469,33 +471,393 @@ with layout_right:
 st.divider()
 
 # Comparison table
-metric_rows = []
+metric_rows_display: List[Dict[str, object]] = []
+metric_rows_numeric: List[Dict[str, Optional[float]]] = []
 for metric in selected_metrics:
     metric_label = metric_display_name(metric, label_map)
-    row_dict = {"Metric": metric_label}
+    row_display: Dict[str, object] = {"Metric": metric_label}
+    row_numeric: Dict[str, Optional[float]] = {"Metric": metric_label}
     for player_row, color in zip(selected_rows, comparison_colors):
         player_name = player_row.get("player", "Player")
-        row_dict[player_name] = display_value(player_row.get(metric))
-    metric_rows.append(row_dict)
+        raw_value = safe_float(player_row.get(metric))
+        row_display[player_name] = display_value(player_row.get(metric))
+        row_numeric[player_name] = raw_value
+    metric_rows_display.append(row_display)
+    metric_rows_numeric.append(row_numeric)
 
-if metric_rows:
-    df_comparison = pd.DataFrame(metric_rows)
+df_comparison_numeric = (
+    pd.DataFrame(metric_rows_numeric).set_index("Metric")
+    if metric_rows_numeric
+    else pd.DataFrame()
+)
+
+if metric_rows_display:
+    df_comparison = pd.DataFrame(metric_rows_display)
     st.subheader("Metric comparison")
-    st.dataframe(df_comparison.set_index("Metric"), use_container_width=True)
+
+    def highlight_max(row: pd.Series) -> list[str]:
+        try:
+            numeric = pd.to_numeric(row, errors="coerce")
+        except Exception:
+            numeric = row
+        max_val = numeric.max(skipna=True) if hasattr(numeric, "max") else None
+        styles = []
+        for value in numeric:
+            if max_val is not None and pd.notna(value) and value == max_val:
+                styles.append("background-color: rgba(123, 211, 137, 0.45); color: #0F172A; font-weight:600;")
+            else:
+                styles.append("")
+        return styles
+
+    styled = (
+        df_comparison.set_index("Metric")
+        .style
+        .apply(highlight_max, axis=1)
+    )
+    st.dataframe(styled, use_container_width=True)
 
 st.divider()
 
 # Summary scores comparison
-summary_rows = []
+summary_rows_display: List[Dict[str, object]] = []
+summary_rows_numeric: List[Dict[str, Optional[float]]] = []
 for key, label in SUMMARY_LABELS.items():
-    row_dict = {"Summary": label}
+    row_display: Dict[str, object] = {"Summary": label}
+    row_numeric: Dict[str, Optional[float]] = {"Summary": label}
     for player_row in selected_rows:
         player_name = player_row.get("player", "Player")
-        row_dict[player_name] = display_value(player_row.get(key))
-    summary_rows.append(row_dict)
+        raw_value = safe_float(player_row.get(key))
+        row_display[player_name] = display_value(player_row.get(key))
+        row_numeric[player_name] = raw_value
+    summary_rows_display.append(row_display)
+    summary_rows_numeric.append(row_numeric)
 
-if summary_rows:
-    df_summary = pd.DataFrame(summary_rows)
+df_summary_numeric = (
+    pd.DataFrame(summary_rows_numeric).set_index("Summary")
+    if summary_rows_numeric
+    else pd.DataFrame()
+)
+
+if summary_rows_display:
+    df_summary = pd.DataFrame(summary_rows_display)
     st.subheader("Aggregated summary scores")
-    styled = df_summary.set_index("Summary").style.format(display_value)
+    def highlight_summary_max(row: pd.Series) -> list[str]:
+        try:
+            numeric = pd.to_numeric(row, errors="coerce")
+        except Exception:
+            numeric = row
+        max_val = numeric.max(skipna=True) if hasattr(numeric, "max") else None
+        styles = []
+        for value in numeric:
+            if max_val is not None and pd.notna(value) and value == max_val:
+                styles.append("background-color: rgba(123, 211, 137, 0.45); color: #0F172A; font-weight:600;")
+            else:
+                styles.append("")
+        return styles
+
+    styled = (
+        df_summary.set_index("Summary")
+        .style
+        .format(display_value)
+        .apply(highlight_summary_max, axis=1)
+    )
     st.dataframe(styled, use_container_width=True)
+
+st.divider()
+
+if "comparison_language" not in st.session_state:
+    st.session_state["comparison_language"] = "English"
+
+language_default = st.session_state.get("comparison_language", "English")
+language_choice = st.radio(
+    "Interpretation language",
+    options=("English", "Français"),
+    horizontal=True,
+    index=("English", "Français").index(language_default),
+    key="comparison_language",
+)
+
+
+st.subheader("Interpretation")
+
+
+def build_metric_highlights(table: pd.DataFrame) -> Dict[str, List[Dict[str, object]]]:
+    highlights: Dict[str, List[Dict[str, object]]] = {}
+    if table is None or table.empty:
+        return highlights
+    for metric, row in table.iterrows():
+        row = row.dropna()
+        if row.empty:
+            continue
+        sorted_vals = row.sort_values(ascending=False)
+        best_player = sorted_vals.index[0]
+        best_value = float(sorted_vals.iloc[0])
+        runner_name = sorted_vals.index[1] if len(sorted_vals) > 1 else None
+        gap = float(best_value - sorted_vals.iloc[1]) if runner_name is not None else None
+        highlights.setdefault(best_player, []).append(
+            {
+                "metric": metric,
+                "value": best_value,
+                "runner": runner_name,
+                "gap": gap,
+            }
+        )
+    for player, items in highlights.items():
+        highlights[player] = sorted(
+            items,
+            key=lambda item: item["gap"] if item["gap"] is not None else 0.0,
+            reverse=True,
+        )[:2]
+    return highlights
+
+
+metric_highlights = build_metric_highlights(df_comparison_numeric)
+
+
+def scout_analyst_summary(
+    players: List[pd.Series],
+    metric_highlights: Dict[str, List[Dict[str, object]]],
+    context: str,
+    language: str,
+) -> str:
+    if not players:
+        return "No players selected to compare."
+
+    player_names = [player.get("player", f"Player {idx + 1}") for idx, player in enumerate(players)]
+    lines: List[str] = []
+
+    if language == "Français":
+        lines.append(
+            "Coach, l'analyse statistique dans le contexte {} met en lumière les axes suivants pour {} :".format(
+                context.lower(),
+                ", ".join(player_names),
+            )
+        )
+    else:
+        lines.append(
+            "Coach, within the {} frame the numbers carve out the following edges for {}:".format(
+                context.lower(),
+                ", ".join(player_names),
+            )
+        )
+
+    if language == "Français":
+        openings_pool = deque([
+            "impose son influence via",
+            "prend l'ascendant grâce à",
+            "se démarque par",
+            "met en évidence une constance supérieure sur",
+            "affiche un volume stabilisé sur",
+        ])
+        summary_pool = deque([
+            "L'indicateur composite **{}** reste orienté vers {} ({:.1f}).",
+            "Sur l'agrégat **{}**, {} affiche toujours la note la plus élevée ({:.1f}).",
+            "Le score combiné **{}** confirme la supériorité de {} ({:.1f}).",
+            "La mesure consolidée **{}** maintient {} en tête ({:.1f}).",
+            "La synthèse globale **{}** situe {} un cran au-dessus ({:.1f}).",
+        ])
+    else:
+        openings_pool = deque([
+            "dictates the tempo through",
+            "continues to separate himself with",
+            "builds his advantage around",
+            "shows a steadier level on",
+            "keeps an elevated profile across",
+        ])
+        summary_pool = deque([
+            "Composite indicator **{}** stays tilted toward {} ({:.1f}).",
+            "The **{}** aggregate continues to favour {} ({:.1f}).",
+            "The combined score **{}** underlines {}'s stronger output ({:.1f}).",
+            "The consolidated index **{}** keeps pointing to {} ({:.1f}).",
+            "The blended summary **{}** still sets {} above the rest ({:.1f}).",
+        ])
+
+    openings_fallback = openings_pool[-1] if openings_pool else ""
+    summary_fallback = summary_pool[-1] if summary_pool else ""
+
+    for player_name in player_names:
+        strengths = metric_highlights.get(player_name, [])
+        if not strengths:
+            continue
+        descriptors = []
+        for item in strengths:
+            metric = item["metric"]
+            value = item["value"]
+            runner = item["runner"]
+            gap = item["gap"]
+            if language == "Français":
+                if runner and gap is not None:
+                    descriptors.append(
+                        f"{metric} ({value:.1f}, +{gap:.1f} vs {runner})"
+                    )
+                else:
+                    descriptors.append(f"{metric} ({value:.1f})")
+            else:
+                if runner and gap is not None:
+                    descriptors.append(
+                        f"{metric} ({value:.1f}, +{gap:.1f} vs {runner})"
+                    )
+                else:
+                    descriptors.append(f"{metric} ({value:.1f})")
+        if descriptors:
+            phrase = openings_pool.popleft() if openings_pool else openings_fallback
+            lines.append(f"- **{player_name}** {phrase} {', '.join(descriptors)}.")
+
+    if not df_summary_numeric.empty:
+        for summary_label, row in df_summary_numeric.iterrows():
+            row = row.dropna()
+            if row.empty:
+                continue
+            leader = row.idxmax()
+            best_value = row[leader]
+            sentence_template = summary_pool.popleft() if summary_pool else summary_fallback
+            sentence = sentence_template.format(summary_label, leader, best_value)
+            lines.append(f"- {sentence}")
+
+    if language == "Français":
+        lines.append(
+            "Ces observations reposent sur les données disponibles ; il reste essentiel de les croiser avec le contexte tactique, la qualité de l'opposition et l'analyse vidéo pour confirmer la pertinence du profil."
+        )
+    else:
+        lines.append(
+            "These takeaways stem from the available data; blending them with tactical context, opposition level, and video remains essential before validating fit."
+        )
+
+    return "\n".join(lines)
+
+
+interpretation_text = scout_analyst_summary(
+    selected_rows,
+    metric_highlights,
+    context_choice,
+    language_choice,
+)
+st.markdown(interpretation_text)
+
+
+def scouting_report_paragraph(
+    players: List[pd.Series],
+    language: str,
+    context: str,
+    league: Optional[str],
+    metric_highlights: Dict[str, List[Dict[str, object]]],
+) -> str:
+    names = [player.get("player", f"Player {idx + 1}") for idx, player in enumerate(players)]
+    fragments: List[str] = []
+
+    if language == "Français":
+        lead_pool = deque([
+            "affiche actuellement une maîtrise notable sur",
+            "présente des repères supérieurs sur",
+            "se situe à un niveau intéressant sur",
+            "maintient un rendement solide sur",
+            "témoigne d'une constance appréciable sur",
+        ])
+        summary_pool = deque([
+            "sur l'agrégat {}, {} demeure le point de repère ({:.1f})",
+            "sur l'indicateur composite {}, {} affiche pour l'instant la meilleure note ({:.1f})",
+            "sur la synthèse statistique {}, {} se stabilise au-dessus de la concurrence ({:.1f})",
+            "sur l'index consolidé {}, {} conserve un niveau supérieur ({:.1f})",
+            "sur la moyenne agrégée {}, {} se maintient en tête ({:.1f})",
+        ])
+    else:
+        lead_pool = deque([
+            "currently sustains higher levels on",
+            "produces reassuring signals across",
+            "operates above the peer baseline on",
+            "delivers steady outputs across",
+            "keeps a dependable profile on",
+        ])
+        summary_pool = deque([
+            "on the {} aggregate, {} remains the current reference ({:.1f})",
+            "for the composite metric {}, {} presently holds the highest mark ({:.1f})",
+            "across the summary score {}, {} stabilises above the comparison set ({:.1f})",
+            "on the merged index {}, {} maintains the top tier ({:.1f})",
+            "out of the blended benchmark {}, {} retains the upper profile ({:.1f})",
+        ])
+
+    lead_fallback = lead_pool[-1] if lead_pool else ""
+    summary_fallback = summary_pool[-1] if summary_pool else ""
+
+    for player_name in names:
+        strengths = metric_highlights.get(player_name, [])
+        if not strengths:
+            continue
+        descriptors = []
+        for item in strengths:
+            metric = item["metric"]
+            value = item["value"]
+            runner = item["runner"]
+            gap = item["gap"]
+            if runner and gap is not None:
+                descriptors.append(f"{metric} ({value:.1f}, +{gap:.1f} vs {runner})")
+            else:
+                descriptors.append(f"{metric} ({value:.1f})")
+        if descriptors:
+            phrase = lead_pool.popleft() if lead_pool else lead_fallback
+            fragments.append(f"{player_name} {phrase} {', '.join(descriptors)}")
+
+    if not df_summary_numeric.empty:
+        for summary_label, row in df_summary_numeric.iterrows():
+            row = row.dropna()
+            if row.empty:
+                continue
+            leader = row.idxmax()
+            best_value = row[leader]
+            sentence = summary_pool.popleft() if summary_pool else summary_fallback
+            fragments.append(sentence.format(summary_label, leader, best_value))
+
+    if language == "Français":
+        intro_templates = [
+            "Dans le contexte {context}{league}, {players} offrent un panorama nuancé des indicateurs de performance.",
+            "À l'échelle {context}{league}, {players} dessinent un profil statistique révélateur pour affiner la prise de décision.",
+            "En se concentrant sur le contexte {context}{league}, {players} proposent des repères chiffrés utiles à la préparation du projet de jeu.",
+        ]
+        intro = random.choice(intro_templates).format(
+            context=context.lower(),
+            league=f' ({league})' if league else "",
+            players=", ".join(names),
+        )
+        closing = (
+            "Les statistiques confirment les instincts de lecture mais ne doivent pas supplanter l'analyse vidéo. "
+            "Un suivi complémentaire est recommandé pour valider la répétabilité de ces performances et leur adéquation au projet de jeu."
+        )
+    else:
+        intro_templates = [
+            "Within the {context}{league} frame, {players} deliver a layered statistical picture for elite planning.",
+            "Focusing on the {context}{league} angle, {players} reveal data-driven cues that sharpen tactical foresight.",
+            "In the {context}{league} context, {players} outline a set of metrics worth integrating into the scouting narrative.",
+        ]
+        intro = random.choice(intro_templates).format(
+            context=context.lower(),
+            league=f' ({league})' if league else "",
+            players=", ".join(names),
+        )
+        closing = (
+            "The data supports the scouting impressions yet remains a reference point rather than a final verdict. "
+            "Further live/video assessment is advised to confirm sustainability and tactical fit."
+        )
+
+    body = ""
+    if fragments:
+        if language == "Français":
+            linkers = ["D'un point de vue chiffré,", "À la lecture des tendances,", "En synthèse,"]
+        else:
+            linkers = ["From a statistical angle,", "Interpreting the trends,", "In summary,"]
+        body = f"{random.choice(linkers)} " + " ".join(f"{frag}." for frag in fragments)
+
+    narrative = intro
+    if body:
+        narrative += "\n\n" + body
+    narrative += "\n\n" + closing
+    return narrative
+
+
+report_paragraph = scouting_report_paragraph(
+    selected_rows,
+    language_choice,
+    context_choice,
+    selected_rows[0].get("competition_name") if selected_rows else None,
+    metric_highlights,
+)
+st.markdown(report_paragraph)
