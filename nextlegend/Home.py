@@ -149,7 +149,9 @@ def main() -> None:
             unsafe_allow_html=True,
         )
 
+    st.divider()
     st.subheader("Tools for Advanced Analysis")
+    st.text(" ")
 
     tools = [
         {
@@ -172,13 +174,24 @@ def main() -> None:
             "title": "Projection",
             "description": "Project trajectories combining performance indicators, playing time trends and contextual data.",
         },
+        {
+            "title": "Vizualisation",
+            "description": "Curate pizza charts and radar-ready groupings tailored to positions, roles and percentile thresholds.",
+        },
     ]
 
-    card_columns = st.columns(5, gap="large")
-    for col, tool in zip(card_columns, tools):
+    card_columns = st.columns(3, gap="large")
+    for idx, tool in enumerate(tools):
+        col = card_columns[idx % 3]
         col.markdown(
             f"""
-            <div class="nextlegend-card" style="min-height:160px;">
+            <div class="nextlegend-card" style="
+                min-height:160px;
+                border:1.5px solid #22C55E;
+                border-radius:16px;
+                padding:1.2rem;
+                margin-bottom:1rem;
+            ">
                 <h4 style="margin-bottom:0.6rem; color:#7BD389;">{tool['title']}</h4>
                 <p style="margin:0; color:#e2e8f0; font-size:0.95rem;">{tool['description']}</p>
             </div>
