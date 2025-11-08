@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
+from auth import render_account_controls, require_authentication
 from components.sidebar import render_sidebar_logo
 from scripts.positions_glossary import positions_glossary
 from s3_utils import read_csv_from_s3
@@ -102,12 +103,14 @@ def load_players() -> pd.DataFrame:
     return df
 
 
+st.set_page_config(page_title="Prospect", layout="wide", initial_sidebar_state="collapsed")
+require_authentication()
+render_sidebar_logo()
+render_account_controls()
+st.title("Prospect List")
+
 players_df = load_players()
 prospects_df = load_prospects_csv()
-
-st.set_page_config(page_title="Prospect", layout="wide", initial_sidebar_state="collapsed")
-render_sidebar_logo()
-st.title("Prospect List")
 
 filter_col1, filter_col2 = st.columns(2)
 filter_type = filter_col1.selectbox("Filter type", options=["Role", "Poste"])

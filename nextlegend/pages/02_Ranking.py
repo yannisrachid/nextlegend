@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from mplsoccer import Radar
 
+from auth import render_account_controls, require_authentication
 from components.sidebar import render_sidebar_logo
 from s3_utils import read_csv_from_s3
 from scripts.positions_glossary import positions_glossary
@@ -22,6 +23,7 @@ DATA_KEY = "data/wyscout_players_cleaned.csv"
 PLACEHOLDER_IMG = "https://placehold.co/160x160?text=No+Photo"
 PCT_SUFFIX_LEAGUE = "_pct_league"
 PCT_SUFFIX_GLOBAL = "_pct_global"
+TRANSFERMARKT_BASE_URL = "https://www.transfermarkt.com"
 
 RADAR_STATS = {
     "goals_per_90": "Goals",
@@ -262,8 +264,37 @@ def render_radar(
     plt.close(fig)
 
 
+def pick_value(*candidates: object) -> Optional[str]:
+    for value in candidates:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            if text and text.lower() != "nan":
+                return text
+        elif isinstance(value, (int, float, np.number)) and not np.isnan(value):
+            return str(value)
+    return None
+
+
+def ensure_absolute_url(value: object, *, default_base: Optional[str] = None) -> Optional[str]:
+    text = pick_value(value)
+    if not text:
+        return None
+    if text.startswith(("http://", "https://")):
+        return text
+    if text.startswith("//"):
+        return f"https:{text}"
+    if text.startswith("/"):
+        base = default_base or TRANSFERMARKT_BASE_URL
+        return f"{base.rstrip('/')}{text}"
+    return f"https://{text}"
+
+
 st.set_page_config(page_title="Ranking", layout="wide", initial_sidebar_state="collapsed")
+require_authentication()
 render_sidebar_logo()
+render_account_controls()
 
 df_players = load_players()
 roles_options = load_roles_options(df_players)
@@ -387,8 +418,17 @@ for idx, player_row in filtered.iterrows():
 
         with left:
             st.markdown(f"### #{rank_position}")
-            st.image(PLACEHOLDER_IMG, width=120)
+            photo_url = ensure_absolute_url(
+                pick_value(
+                    player_row.get("tm_profile_image_url"),
+                    player_row.get("profile_image_url"),
+                )
+            ) or PLACEHOLDER_IMG
+            st.image(photo_url, width=120)
             st.markdown(f"**{display_name}**")
+            tm_profile = ensure_absolute_url(player_row.get("tm_profile_url"), default_base=TRANSFERMARKT_BASE_URL)
+            if tm_profile:
+                st.markdown(f"[Transfermarkt profile]({tm_profile})", unsafe_allow_html=False)
             st.caption(
                 f"League score: {display_value(league_score)} | Global score: {display_value(global_score)}"
             )
@@ -400,6 +440,16 @@ for idx, player_row in filtered.iterrows():
             st.markdown(f"Matches: {display_value(matches_value)}")
             st.markdown(f"Goals: {display_value(goals_value)}")
             st.markdown(f"Assists: {display_value(assists_value)}")
+            agent_name = pick_value(player_row.get("tm_agent_name"))
+            agent_url = ensure_absolute_url(
+                player_row.get("tm_agent_url"),
+                default_base=TRANSFERMARKT_BASE_URL,
+            )
+            if agent_name:
+                if agent_url:
+                    st.markdown(f"Agent: [{agent_name}]({agent_url})")
+                else:
+                    st.markdown(f"Agent: {agent_name}")
 
         with right:
             render_radar(

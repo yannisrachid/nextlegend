@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from auth import render_account_controls, require_authentication
 from analytics import FEATURE_GROUPS, build_enriched_dataset
 from data_utils import (
     SchemaMappingResult,
@@ -29,6 +30,37 @@ def _get_settings() -> dict[str, Any]:
 
 def _render_sidebar() -> None:
     render_sidebar_logo()
+    render_account_controls()
+
+
+def _render_home_header() -> None:
+    if LOGO_PATH.exists():
+        image_bytes = LOGO_PATH.read_bytes()
+        encoded_logo = base64.b64encode(image_bytes).decode("utf-8")
+        st.markdown(
+            f"""
+            <div style="text-align:center; margin-bottom:0.5rem;">
+                <img src="data:image/png;base64,{encoded_logo}" style="width:170px;" />
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div style='text-align:center; font-size:1.5rem; color:#e2e8f0; font-weight:600;'>Your Legend FC</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        """
+        <div style="text-align:center; padding: 2rem 0 1.5rem;">
+            <h1 style="font-size:3rem; margin-bottom:0.2rem;">NextLegend by Your Legend</h1>
+            <h3 style="margin-bottom:0.4rem; color:#7BD389;">Scout with Intelligence with NextLegend</h3>
+            <p style="font-size:1.05rem; color:#cbd5f5;">A tool designed by Your Legend for scouting</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 DEFAULT_FILTERS = {"season": None, "leagues": [], "min_minutes": 0}
@@ -55,6 +87,7 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
+    require_authentication()
     _render_sidebar()
 
     df, mapping = _get_dataset()
@@ -88,33 +121,7 @@ def main() -> None:
     st.session_state["feature_groups"] = FEATURE_GROUPS
     st.session_state["index_weights"] = weights
 
-    if LOGO_PATH.exists():
-        image_bytes = LOGO_PATH.read_bytes()
-        encoded_logo = base64.b64encode(image_bytes).decode("utf-8")
-        st.markdown(
-            f"""
-            <div style="text-align:center; margin-bottom:0.5rem;">
-                <img src="data:image/png;base64,{encoded_logo}" style="width:170px;" />
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            "<div style='text-align:center; font-size:1.5rem; color:#e2e8f0; font-weight:600;'>Your Legend FC</div>",
-            unsafe_allow_html=True,
-        )
-
-    st.markdown(
-        """
-        <div style="text-align:center; padding: 2rem 0 1.5rem;">
-            <h1 style="font-size:3rem; margin-bottom:0.2rem;">NextLegend by Your Legend</h1>
-            <h3 style="margin-bottom:0.4rem; color:#7BD389;">Scout with Intelligence with NextLegend</h3>
-            <p style="font-size:1.05rem; color:#cbd5f5;">A tool designed by Your Legend for scouting</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    _render_home_header()
 
     base_df = df.copy()
     players_count = int(len(base_df))

@@ -9,3 +9,5 @@ codex/
 
 venv/
 .env
+nextlegend/config/credentials.yaml
+nextlegend/__pycache__/

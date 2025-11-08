@@ -4,6 +4,7 @@ numpy>=1.24,<2
 plotly>=5.22
 scikit-learn>=1.2
 rapidfuzz>=3.5
+fuzzywuzzy>=0.18
 PyYAML>=6.0
 tomli>=1.2
 toml>=0.10

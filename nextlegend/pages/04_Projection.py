@@ -12,6 +12,7 @@ import pandas as pd
 import streamlit as st
 from mplsoccer import Radar
 
+from auth import render_account_controls, require_authentication
 from components.sidebar import render_sidebar_logo
 from scripts.positions_glossary import positions_glossary
 from s3_utils import read_csv_from_s3
@@ -421,7 +422,9 @@ def project_summary_scores(
 
 
 st.set_page_config(page_title="Projection", layout="wide", initial_sidebar_state="collapsed")
+require_authentication()
 render_sidebar_logo()
+render_account_controls()
 
 df_players = load_players()
 if df_players.empty:

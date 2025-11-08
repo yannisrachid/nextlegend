@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from base64 import b64encode
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Iterable, List, Optional, Sequence, Set
 
 import matplotlib.pyplot as plt
@@ -11,7 +13,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from mplsoccer import Radar
+import re
 
+from auth import render_account_controls, require_authentication
 from components.sidebar import render_sidebar_logo
 from s3_utils import read_csv_from_s3
 from utils import load_prospects_csv, save_prospects_csv
@@ -24,6 +28,8 @@ SIM_PREFIX = "data/similarity"
 BIG5_PATH = ROOT_DIR / "big_5_leagues.txt"
 ROLE_METRICS_PATH = ROOT_DIR / "roles_metrics.json"
 PLACEHOLDER_IMG = "https://placehold.co/160x160?text=No+Photo"
+INSTAGRAM_ICON_PATH = ROOT_DIR / "assets" / "instagram_logo.png"
+X_ICON_PATH = ROOT_DIR / "assets" / "X_logo.svg"
 PCT_SUFFIX_LEAGUE = "_pct_league"
 PCT_SUFFIX_GLOBAL = "_pct_global"
 
@@ -67,6 +73,202 @@ SUMMARY_COLUMNS = {
     "summary_construction": "Construction",
 }
 
+SOCIAL_PLATFORM_MAP = {
+    "instagram": {"label": "Instagram", "emoji": "📸", "icon_path": INSTAGRAM_ICON_PATH},
+    "threads": {"label": "Threads", "emoji": "🧵"},
+    "twitter": {"label": "Twitter / X", "emoji": "🐦", "icon_path": X_ICON_PATH},
+    "x.com": {"label": "Twitter / X", "emoji": "🐦", "icon_path": X_ICON_PATH},
+    "facebook": {"label": "Facebook", "emoji": "📘"},
+    "youtube": {"label": "YouTube", "emoji": "▶️"},
+    "tiktok": {"label": "TikTok", "emoji": "🎵"},
+    "linkedin": {"label": "LinkedIn", "emoji": "💼"},
+    "wechat": {"label": "WeChat", "emoji": "💬"},
+    "weibo": {"label": "Weibo", "emoji": "🈶"},
+}
+TRANSFERMARKT_BASE_URL = "https://www.transfermarkt.com"
+
+_ICON_DATA_CACHE: dict[Path, str] = {}
+
+
+def pick_value(*candidates: object) -> Optional[object]:
+    for value in candidates:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            if text and text.lower() != "nan":
+                return text
+            continue
+        if isinstance(value, (float, np.floating)):
+            if np.isnan(value):
+                continue
+            return float(value)
+        if isinstance(value, (int, np.integer)):
+            return int(value)
+        return value
+    return None
+
+
+def format_market_value(value: object) -> Optional[str]:
+    raw = pick_value(value)
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        amount = float(raw)
+        if not np.isfinite(amount):
+            return None
+        if amount >= 1_000_000:
+            return f"€{amount/1_000_000:.1f}M"
+        if amount >= 1_000:
+            return f"€{amount/1_000:.0f}k"
+        return f"€{int(amount):,}".replace(",", " ")
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.startswith("€"):
+        return text.replace(" ", "")
+    digits = re.sub(r"[^\d.]", "", text)
+    if not digits:
+        return text
+    try:
+        amount = float(digits)
+    except ValueError:
+        return text
+    return format_market_value(amount)
+
+
+def ensure_absolute_url(value: object, *, default_base: str | None = None) -> Optional[str]:
+    raw = pick_value(value)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text.startswith("http://") or text.startswith("https://"):
+        return text
+    if text.startswith("//"):
+        return f"https:{text}"
+    if text.startswith("/"):
+        base = default_base or TRANSFERMARKT_BASE_URL
+        return f"{base.rstrip('/')}{text}"
+    parsed = urlparse(text)
+    if parsed.scheme:
+        return text
+    return f"https://{text}"
+
+
+def format_date(value: object) -> Optional[str]:
+    raw = pick_value(value)
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    parsed = pd.to_datetime(text, errors="coerce", utc=False)
+    if pd.isna(parsed):
+        return text
+    return parsed.strftime("%d %b %Y")
+
+
+def _load_icon_data(path: Path) -> Optional[str]:
+    if not path or not path.exists():
+        return None
+    if path in _ICON_DATA_CACHE:
+        return _ICON_DATA_CACHE[path]
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    mime = "image/svg+xml" if path.suffix.lower() == ".svg" else "image/png"
+    encoded = b64encode(data).decode("ascii")
+    uri = f"data:{mime};base64,{encoded}"
+    _ICON_DATA_CACHE[path] = uri
+    return uri
+
+
+def detect_social_platform(url: str) -> tuple[str, str]:
+    lower = url.lower()
+    for key, meta in SOCIAL_PLATFORM_MAP.items():
+        if key in lower:
+            label = meta.get("label", "Profile")
+            icon_path = meta.get("icon_path")
+            if icon_path:
+                data_uri = _load_icon_data(icon_path)
+                if data_uri:
+                    icon_html = (
+                        f'<img src="{data_uri}" width="18" height="18" '
+                        f'style="vertical-align:middle;border-radius:4px;" alt="{label} icon" />'
+                    )
+                    return label, icon_html
+            return label, meta.get("emoji", "🔗")
+    return "Website", "🔗"
+
+
+def parse_social_links(raw: object) -> List[dict]:
+    text = pick_value(raw)
+    if text is None:
+        return []
+    links: list[str] = []
+
+    def add(url: Optional[str]) -> None:
+        if not url:
+            return
+        url = url.strip()
+        if not url or url.lower() in {"nan", "none"}:
+            return
+        normalized = ensure_absolute_url(url)
+        if normalized:
+            links.append(normalized)
+
+    if isinstance(text, str):
+        stripped = text.strip()
+        if stripped.startswith("[") or stripped.startswith("{"):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, str):
+                        add(item)
+                    elif isinstance(item, dict):
+                        add(item.get("url") or item.get("link"))
+            elif isinstance(parsed, dict):
+                for value in parsed.values():
+                    if isinstance(value, str):
+                        add(value)
+        else:
+            for chunk in re.split(r"[;,]", stripped):
+                add(chunk)
+    elif isinstance(text, (list, tuple, set)):
+        for item in text:
+            add(str(item))
+
+    entries: List[dict] = []
+    seen: set[str] = set()
+    for link in links:
+        if link in seen:
+            continue
+        seen.add(link)
+        platform, icon = detect_social_platform(link)
+        entries.append({"platform": platform, "icon": icon, "url": link})
+    return entries
+
+
+def render_social_links(container: st.delta_generator.DeltaGenerator, links: List[dict]) -> None:
+    if not links:
+        return
+    badges = []
+    for entry in links:
+        badges.append(
+            f'<a href="{entry["url"]}" target="_blank" rel="noopener" '
+            f'style="text-decoration:none;font-size:1.25rem;margin-right:10px;" '
+            f'title="{entry["platform"]}">{entry["icon"]}</a>'
+        )
+    container.markdown(
+        f"<div><strong>Social media:</strong> {' '.join(badges)}</div>",
+        unsafe_allow_html=True,
+    )
 
 def safe_float(value: object) -> Optional[float]:
     if value is None:
@@ -299,25 +501,47 @@ def get_role_percentiles(row: pd.Series, role_name: Optional[str]) -> tuple[Opti
 
 
 def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGenerator) -> None:
-    container.image(PLACEHOLDER_IMG, width=120)
-    container.markdown(f"### {row.get('player', 'Unknown player')}")
+    photo_url = ensure_absolute_url(
+        pick_value(row.get("tm_profile_image_url"), row.get("profile_image_url"))
+    ) or PLACEHOLDER_IMG
+    photo_col, info_col = container.columns([1, 2])
+    photo_col.image(photo_url, width=140)
+    tm_profile_url = ensure_absolute_url(row.get("tm_profile_url"), default_base=TRANSFERMARKT_BASE_URL)
+    if tm_profile_url:
+        photo_col.markdown(f"[Transfermarkt profile]({tm_profile_url})")
+
+    player_name = row.get("player", "Unknown player")
+    club_display = pick_value(row.get("team_in_selected_period"), row.get("team"))
+    league_display = pick_value(row.get("competition_name"))
+    info_col.markdown(f"### {player_name}")
+    if club_display or league_display:
+        subtitle_bits = [bit for bit in [club_display, league_display] if bit]
+        info_col.markdown(f"*{' — '.join(map(str, subtitle_bits))}*")
 
     position_text = format_positions(row)
-    age_value = safe_int(row.get("age"))
-    birth_year_value = safe_int(row.get("birth_year"))
+    age_value = safe_int(pick_value(row.get("tm_age"), row.get("age")))
+    birth_date_value = format_date(pick_value(row.get("tm_birth_date"), row.get("birth_date")))
+    birth_city = pick_value(row.get("tm_birth_city"), row.get("birth_city"))
+    birth_country = pick_value(row.get("tm_birth_country"), row.get("birth_country"))
+    citizenship = pick_value(row.get("tm_citizenship"), row.get("passport_country"))
+    foot_value = pick_value(row.get("tm_foot"), row.get("foot"))
     matches_value = safe_int(row.get("matches_played"))
     minutes_value = safe_int(row.get("minutes_played"))
-    market_value = row.get("market_value")
-    contract_expires = row.get("contract_expires")
     goals_value = safe_int(row.get("goals"))
     assists_value = safe_int(row.get("assists"))
+    market_value = format_market_value(pick_value(row.get("tm_market_value"), row.get("market_value")))
+    contract_expires = format_date(pick_value(row.get("tm_club_contract_expires"), row.get("contract_expires")))
 
     info_pairs = [
-        ("Club", row.get("team")),
-        ("Birth Country", row.get("birth_country")),
+        ("Club", club_display),
+        ("League", league_display),
         ("Age", age_value),
-        ("Birth year", birth_year_value),
+        ("Birth date", birth_date_value),
+        ("Birth city", birth_city),
+        ("Birth country", birth_country),
+        ("Citizenship", citizenship),
         ("Position", position_text),
+        ("Foot", foot_value),
         ("Matches", matches_value),
         ("Minutes", minutes_value),
         ("Goals", goals_value),
@@ -335,6 +559,23 @@ def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGene
         else:
             display = value
         cols[idx % 2].markdown(f"**{label}:** {display}")
+
+    agent_name = pick_value(row.get("tm_agent_name"))
+    agent_url = ensure_absolute_url(row.get("tm_agent_url"), default_base=TRANSFERMARKT_BASE_URL) if agent_name else None
+    outfitter = pick_value(row.get("tm_outfitter"))
+    social_links = parse_social_links(row.get("tm_social_media"))
+
+    if agent_name or outfitter or social_links:
+        meta_block = container.container()
+        if agent_name:
+            if agent_url:
+                meta_block.markdown(f"**Agent:** [{agent_name}]({agent_url})")
+            else:
+                meta_block.markdown(f"**Agent:** {agent_name}")
+        if outfitter:
+            meta_block.markdown(f"**Outfitter:** {outfitter}")
+        if social_links:
+            render_social_links(meta_block, social_links)
 
     role_label_raw = row.get("assigned_role") or ""
     role_label = str(role_label_raw).strip() or "Role fit"
@@ -838,7 +1079,9 @@ def render_similar_players(
 
 
 st.set_page_config(page_title="Report", layout="wide", initial_sidebar_state="collapsed")
+require_authentication()
 render_sidebar_logo()
+render_account_controls()
 st.title("Report")
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from auth import render_account_controls, require_authentication
 from components.sidebar import render_sidebar_logo
 from scripts.positions_glossary import positions_glossary
 from s3_utils import read_csv_from_s3
@@ -124,7 +125,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+require_authentication()
 render_sidebar_logo()
+render_account_controls()
 
 df_players = load_players()
 if df_players.empty:
@@ -153,14 +156,35 @@ for spec in profiles_raw.values():
 
 st.title("Stats Research")
 
-filter_row1 = st.columns(3)
+filter_row1 = st.columns(4)
 selected_league = filter_row1[0].selectbox("Select league", options=league_options)
 selected_positions = filter_row1[1].multiselect(
     "Positions",
     options=position_options,
     default=["All"],
 )
-min_minutes = filter_row1[2].number_input(
+valid_ages = pd.to_numeric(df_players.get("age", pd.Series(dtype=float)), errors="coerce")
+if valid_ages.dropna().empty:
+    age_range = filter_row1[2].slider(
+        "Age range",
+        min_value=15,
+        max_value=40,
+        value=(18, 32),
+        step=1,
+    )
+else:
+    min_age = int(np.floor(valid_ages.min()))
+    max_age = int(np.ceil(valid_ages.max()))
+    default_min = max(min_age, 18)
+    default_max = min(max_age, 32) if default_min < min(max_age, 32) else max_age
+    age_range = filter_row1[2].slider(
+        "Age range",
+        min_value=min_age,
+        max_value=max_age,
+        value=(default_min, default_max),
+        step=1,
+    )
+min_minutes = filter_row1[3].number_input(
     "Minimum minutes played",
     min_value=0,
     max_value=5000,
@@ -206,10 +230,15 @@ def apply_filters(
     league_choice: str,
     positions_choice: List[str],
     minutes_threshold: int,
+    age_bounds: Tuple[int, int],
 ) -> pd.DataFrame:
     filtered = filter_by_league(df, league_choice, big5_leagues)
     if minutes_threshold > 0 and "minutes_played" in filtered.columns:
         filtered = filtered[pd.to_numeric(filtered["minutes_played"], errors="coerce") >= minutes_threshold]
+
+    if "age" in filtered.columns and age_bounds:
+        ages = pd.to_numeric(filtered["age"], errors="coerce")
+        filtered = filtered[(ages >= age_bounds[0]) & (ages <= age_bounds[1])]
 
     if positions_choice and "All" not in positions_choice:
         selected_codes = {
@@ -231,6 +260,7 @@ filtered_df = apply_filters(
     selected_league,
     selected_positions,
     int(min_minutes),
+    tuple(age_range),
 )
 
 if filtered_df.empty:
