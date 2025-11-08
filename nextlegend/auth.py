@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 import streamlit as st
 import toml
@@ -29,21 +29,68 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
-@st.cache_data(show_spinner=False)
-def load_credentials() -> Dict[str, Dict[str, str]]:
-    """Load credential entries from config/credentials.toml."""
+def _normalize_users(entries: Optional[Iterable]) -> list[dict]:
+    if not entries:
+        return []
+    normalized: list[dict] = []
+    for entry in entries:
+        if isinstance(entry, dict):
+            normalized.append(entry)
+        else:
+            try:
+                normalized.append(dict(entry))
+            except TypeError:
+                continue
+    return normalized
 
+
+def _load_users_from_secrets() -> list[dict]:
+    secrets_obj = getattr(st, "secrets", None)
+    if not secrets_obj:
+        return []
+
+    def _get_value(container: Any, key: str) -> Any:
+        if container is None:
+            return None
+        if isinstance(container, dict):
+            return container.get(key)
+        try:
+            return container[key]
+        except Exception:
+            return None
+
+    # Preferred structure: [credentials] with nested users
+    section = _get_value(secrets_obj, "credentials")
+    if section is not None:
+        users = _get_value(section, "users")
+        if users:
+            return _normalize_users(users)
+
+    # Fallback: allow [[users]] at the root
+    users = _get_value(secrets_obj, "users")
+    return _normalize_users(users)
+
+
+def _load_users_from_file() -> list[dict]:
     if not CREDENTIALS_PATH.exists():
-        return {}
+        return []
     try:
         data = toml.loads(CREDENTIALS_PATH.read_text(encoding="utf-8")) or {}
     except toml.TomlDecodeError:
-        return {}
+        return []
+    return _normalize_users(data.get("users"))
+
+
+@st.cache_data(show_spinner=False)
+def load_credentials() -> Dict[str, Dict[str, str]]:
+    """Load credential entries from secrets or config/credentials.toml."""
+
+    users = _load_users_from_secrets()
+    if not users:
+        users = _load_users_from_file()
 
     result: Dict[str, Dict[str, str]] = {}
-    for entry in data.get("users", []):
-        if not isinstance(entry, dict):
-            continue
+    for entry in users:
         username = str(entry.get("username", "")).strip()
         if not username:
             continue
@@ -113,8 +160,9 @@ def _render_login_form() -> None:
     credentials = load_credentials()
     if not credentials:
         st.warning(
-            "No credentials are configured yet. "
-            "Add your users to `nextlegend/config/credentials.toml`."
+            "No credentials detected. "
+            "Add your users to Streamlit secrets under `[credentials]` (with a `users` array) "
+            "or leave a local `nextlegend/config/credentials.toml`. The secrets option is recommended for deployment."
         )
 
     container = st.container()
