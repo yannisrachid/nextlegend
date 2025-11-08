@@ -1,5 +1,6 @@
 # Ignore all CSV files
 *.csv
+!nextlegend/prospects_data.csv
 
 # Allow specific CSVs if needed by negating
 #!nextlegend/data/wyscout_players_cleaned.csv
