@@ -10,5 +10,6 @@ codex/
 
 venv/
 .env
-nextlegend/config/credentials.yaml
+nextlegend/config/credentials.toml
 nextlegend/__pycache__/
+toml_file.toml

@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import streamlit as st
-import yaml
+import toml
 import base64
 
 from components.sidebar import LOGO_PATH
 
 ROOT_DIR = Path(__file__).resolve().parent
-CREDENTIALS_PATH = ROOT_DIR / "config" / "credentials.yaml"
+CREDENTIALS_PATH = ROOT_DIR / "config" / "credentials.toml"
 
 LOGIN_TITLE = "NextLegend by Your Legend"
 LOGIN_SUBTITLE = "Scout with Intelligence with NextLegend"
@@ -31,13 +31,13 @@ def hash_password(password: str) -> str:
 
 @st.cache_data(show_spinner=False)
 def load_credentials() -> Dict[str, Dict[str, str]]:
-    """Load credential entries from config/credentials.yaml."""
+    """Load credential entries from config/credentials.toml."""
 
     if not CREDENTIALS_PATH.exists():
         return {}
     try:
-        data = yaml.safe_load(CREDENTIALS_PATH.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
+        data = toml.loads(CREDENTIALS_PATH.read_text(encoding="utf-8")) or {}
+    except toml.TomlDecodeError:
         return {}
 
     result: Dict[str, Dict[str, str]] = {}
@@ -114,7 +114,7 @@ def _render_login_form() -> None:
     if not credentials:
         st.warning(
             "No credentials are configured yet. "
-            "Add your users to `nextlegend/config/credentials.yaml`."
+            "Add your users to `nextlegend/config/credentials.toml`."
         )
 
     container = st.container()
