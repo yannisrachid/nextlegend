@@ -68,7 +68,7 @@ def best_profile_for_player(score_df: pd.DataFrame, top_n: int = 3):
 
 def best_profile_by_position(df: pd.DataFrame, score_df: pd.DataFrame, profiles: dict, position_col: str = "position", top_n: int = 3):
     # Limite les profils aux position_groups compatibles avec le(s) poste(s) du joueur
-    # position_col peut contenir plusieurs postes séparés par des virgules.
+    # position_col peut contenir plusieurs postes séparés par des virgules
     pos_list = df[position_col].apply(_parse_positions)
 
     # Pré-calcul: map profil -> set(position_groups)
