@@ -5,11 +5,11 @@
 # Allow specific CSVs if needed by negating
 #!nextlegend/data/wyscout_players_cleaned.csv
 
-# Ignore the codex folder
-codex/
+docs/
 
 venv/
 .env
 nextlegend/config/credentials.toml
 nextlegend/__pycache__/
 toml_file.toml
+old_work/
