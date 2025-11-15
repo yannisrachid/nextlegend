@@ -13,3 +13,5 @@ nextlegend/config/credentials.toml
 nextlegend/__pycache__/
 toml_file.toml
 old_work/
+competitions.txt
+notebook.ipynb
