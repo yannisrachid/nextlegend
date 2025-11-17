@@ -5,6 +5,10 @@ Wyscout data exports with a dedicated data-engineering pipeline. The
 application lives in the `nextlegend/` directory and relies on the
 datasets produced by the preparation scripts.
 
+## Application demonstration
+
+[Watch the presentation video (Canva link)](https://www.canva.com/design/DAG4598F59g/XnSh9afNhjy9vpliZK5eOQ/watch?utm_content=DAG4598F59g&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=hc51be50cc1)
+
 ## Prerequisites
 
 The project runs on **Python 3.10+**. It is recommended to work within
