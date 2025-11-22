@@ -369,17 +369,10 @@ filtered = filtered[pd.to_numeric(filtered.get("age"), errors="coerce") <= float
 
 if mode_choice == "Poste":
     filtered = filtered[filtered.get("position").astype(str) == str(selected_value)]
-    if selected_league in {"All competitions", "Big 5 Leagues"}:
-        ranking_column = "assigned_role_pct_global"
-    else:
-        ranking_column = "assigned_role_pct_league"
+    ranking_column = "global_score_adjusted"
 else:
     filtered = filtered[filtered.get("assigned_role").astype(str) == str(selected_value)]
-    if selected_league in {"All competitions", "Big 5 Leagues"}:
-        ranking_column = "assigned_role_pct_global"
-    else:
-        candidate_column = f"{selected_value}{PCT_SUFFIX_LEAGUE}"
-        ranking_column = candidate_column if candidate_column in filtered.columns else "assigned_role_pct_league"
+    ranking_column = "global_score_adjusted"
 
 if filtered.empty:
     st.info("No players match the selected filters.")
@@ -405,11 +398,8 @@ for idx, player_row in filtered.iterrows():
     display_name = f"{player_name} - {team_name}" if team_name else player_name
 
     league_score = player_row.get(ranking_column)
-    if ranking_column.endswith(PCT_SUFFIX_LEAGUE):
-        companion = ranking_column.replace(PCT_SUFFIX_LEAGUE, PCT_SUFFIX_GLOBAL)
-        global_score = player_row.get(companion) if companion in player_row.index else player_row.get("assigned_role_pct_global")
-    else:
-        global_score = player_row.get("assigned_role_pct_global")
+    global_score = player_row.get("assigned_role_pct_global")
+    adjusted_score = player_row.get("global_score_adjusted")
 
     age_value = safe_int(player_row.get("age"))
     minutes_value = safe_int(player_row.get("minutes_played"))
@@ -419,7 +409,7 @@ for idx, player_row in filtered.iterrows():
 
     card = st.container()
     with card:
-        left, middle, right = st.columns([1.2, 1, 1.8])
+        left, middle, right = st.columns([1.2, 1.2, 1.6])
 
         with left:
             st.markdown(f"### #{rank_position}")
@@ -435,7 +425,7 @@ for idx, player_row in filtered.iterrows():
             if tm_profile:
                 st.markdown(f"[Transfermarkt profile]({tm_profile})", unsafe_allow_html=False)
             st.caption(
-                f"League score: {display_value(league_score)} | Global score: {display_value(global_score)}"
+                f"League score: {display_value(league_score)} | Global score: {display_value(global_score)} | Strength-adjusted: {display_value(adjusted_score)}"
             )
 
         with middle:

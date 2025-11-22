@@ -279,15 +279,11 @@ def compute_highlighted_subset(df: pd.DataFrame) -> pd.DataFrame:
     if metric_x in lower_is_better_metrics or metric_y in lower_is_better_metrics:
         return df.head(0)  # avoid highlighting when one metric rewards low values
 
-    ranks_x = df[metric_x].rank(pct=True)
-    ranks_y = df[metric_y].rank(pct=True)
+    qx = df[metric_x].quantile(0.75)
+    qy = df[metric_y].quantile(0.75)
 
-    mask = (ranks_x >= 0.85) & (ranks_y >= 0.5)
+    mask = (df[metric_x] >= qx) & (df[metric_y] >= qy)
     highlight = df[mask].copy()
-
-    idx_max_x = ranks_x.idxmax()
-    if pd.notna(idx_max_x) and idx_max_x not in highlight.index:
-        highlight = pd.concat([highlight, df.loc[[idx_max_x]]], axis=0)
 
     if highlight.empty:
         return highlight
@@ -356,6 +352,23 @@ def build_scatter() -> px.scatter:
             showlegend=False,
         )
         fig.add_traces(highlight_trace.data)
+
+    median_x = filtered_df[metric_x].median()
+    median_y = filtered_df[metric_y].median()
+
+    line_color = "rgba(148, 163, 184, 0.45)"
+    if pd.notna(median_x):
+        fig.add_vline(
+            x=float(median_x),
+            line=dict(color=line_color, width=1.5, dash="dot"),
+            opacity=0.7,
+        )
+    if pd.notna(median_y):
+        fig.add_hline(
+            y=float(median_y),
+            line=dict(color=line_color, width=1.5, dash="dot"),
+            opacity=0.7,
+        )
 
     fig.update_layout(
         plot_bgcolor="#0F172A",

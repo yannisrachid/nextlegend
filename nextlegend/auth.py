@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
@@ -13,6 +14,7 @@ import base64
 from components.sidebar import LOGO_PATH
 
 ROOT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = ROOT_DIR.parent
 CREDENTIALS_PATH = ROOT_DIR / "config" / "credentials.toml"
 
 LOGIN_TITLE = "NextLegend by Your Legend"
@@ -21,6 +23,23 @@ LOGIN_COPY = "A tool designed by Your Legend for scouting"
 
 AUTH_SESSION_KEY = "auth_user"
 AUTH_ERROR_KEY = "auth_error"
+
+# Environment/secret handling
+APP_ENV = os.environ.get("NEXTLEGEND_ENV", "dev").strip().lower()
+PRODUCTION_ENV_NAMES = {"prod", "production"}
+SECRETS_CANDIDATES = [
+    Path.home() / ".streamlit" / "secrets.toml",
+    PROJECT_ROOT / ".streamlit" / "secrets.toml",
+    ROOT_DIR / ".streamlit" / "secrets.toml",
+]
+
+
+def _secrets_config_available() -> bool:
+    return any(path.exists() for path in SECRETS_CANDIDATES)
+
+
+def _should_use_streamlit_secrets() -> bool:
+    return APP_ENV in PRODUCTION_ENV_NAMES or _secrets_config_available()
 
 
 def hash_password(password: str) -> str:
@@ -45,8 +64,18 @@ def _normalize_users(entries: Optional[Iterable]) -> list[dict]:
 
 
 def _load_users_from_secrets() -> list[dict]:
-    secrets_obj = getattr(st, "secrets", None)
-    if not secrets_obj:
+    if not _should_use_streamlit_secrets():
+        return []
+    try:
+        secrets_obj = st.secrets
+    except FileNotFoundError:
+        if APP_ENV in PRODUCTION_ENV_NAMES:
+            st.error(
+                "Streamlit secrets are required in production, but no `secrets.toml` file was found. "
+                "Falling back to local credentials for now."
+            )
+        return []
+    except Exception:
         return []
 
     def _get_value(container: Any, key: str) -> Any:
@@ -82,7 +111,7 @@ def _load_users_from_file() -> list[dict]:
 
 
 @st.cache_data(show_spinner=False)
-def load_credentials() -> Dict[str, Dict[str, str]]:
+def load_credentials(active_env: str = APP_ENV) -> Dict[str, Dict[str, str]]:
     """Load credential entries from secrets or config/credentials.toml."""
 
     users = _load_users_from_secrets()

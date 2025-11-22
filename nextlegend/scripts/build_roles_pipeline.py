@@ -773,8 +773,6 @@ def main() -> None:
 
     print("SCORES_RAW")
     raw_scores = compute_raw_scores(df, profiles)
-    if LEAGUE_FACTOR_COL in df.columns:
-        raw_scores = raw_scores.mul(df[LEAGUE_FACTOR_COL], axis=0)
     scores_pct = compute_scores_percentiles(raw_scores)
 
     print("ASSIGN")
@@ -784,6 +782,7 @@ def main() -> None:
     minutes_possible = estimate_minutes_possible(df)
     elig_league = eligibility_league(df, minutes_possible, frac=0.15)
     df["_elig_league"] = elig_league
+    elig_global = eligibility_global(df, min_minutes=270)
 
     print("LEAGUE_PCT")
     roles_scores_league = roles_league_percentiles(df, raw_scores, assigned_role, profiles)
@@ -823,6 +822,30 @@ def main() -> None:
             role_league_pct.loc[mask] = roles_scores_league.loc[mask, profile_name]
             role_global_pct.loc[mask] = roles_scores_global.loc[mask, profile_name]
 
+    factor_series = pd.to_numeric(df[LEAGUE_FACTOR_COL], errors="coerce").fillna(1.0)
+    baseline_strength = factor_series.mean(skipna=True)
+    if not np.isfinite(baseline_strength) or baseline_strength == 0:
+        baseline_strength = 1.0
+    ratio = (factor_series / baseline_strength).clip(lower=0.8, upper=1.2)
+    blended_multiplier = np.power(ratio, 0.5)
+
+    # Re-rank by role after league-strength adjustment to guarantee a unique top score per role.
+    global_score_adjusted_series = pd.Series(np.nan, index=df.index, dtype=float)
+    for profile_name in profiles.keys():
+        mask = (assigned_role == profile_name) & elig_global
+        if not mask.any():
+            continue
+        adj_raw = raw_scores.loc[mask, profile_name] * blended_multiplier.loc[mask]
+        valid_count = adj_raw.notna().sum()
+        if valid_count == 0:
+            continue
+        if valid_count == 1:
+            pct_vals = pd.Series(100.0, index=adj_raw.index)
+        else:
+            ranks = adj_raw.rank(method="first", ascending=False, na_option="keep")
+            pct_vals = (valid_count - ranks) / (valid_count - 1) * 100
+        global_score_adjusted_series.loc[mask] = pct_vals.clip(lower=0, upper=100)
+
     enriched_extra = pd.concat(
         [
             scores_pct,
@@ -832,6 +855,7 @@ def main() -> None:
             scores_global_pct,
             role_league_pct.rename("assigned_role_pct_league"),
             role_global_pct.rename("assigned_role_pct_global"),
+            global_score_adjusted_series.rename("global_score_adjusted"),
             summary_scores,
         ],
         axis=1,

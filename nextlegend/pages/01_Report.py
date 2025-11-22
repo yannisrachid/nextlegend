@@ -461,6 +461,7 @@ def prepare_dataset() -> tuple[pd.DataFrame, List[str]]:
             if " - " in str(col)
             and not col.endswith(PCT_SUFFIX_GLOBAL)
             and not col.endswith(PCT_SUFFIX_LEAGUE)
+            and not col.endswith(f"{PCT_SUFFIX_GLOBAL}_adjusted")
         }
     )
     return df, role_cols
@@ -489,15 +490,21 @@ def select_top_profiles(row: pd.Series, role_cols: Sequence[str], top_n: Optiona
     return sorted_entries
 
 
-def get_role_percentiles(row: pd.Series, role_name: Optional[str]) -> tuple[Optional[float], Optional[float]]:
+def get_role_percentiles(row: pd.Series, role_name: Optional[str]) -> tuple[Optional[float], Optional[float], Optional[float]]:
     if not role_name:
-        return None, None
+        return None, None, None
     label = str(role_name).strip()
     if not label:
-        return None, None
-    league_value = safe_float(row.get(f"{label}{PCT_SUFFIX_LEAGUE}"))
-    global_value = safe_float(row.get(f"{label}{PCT_SUFFIX_GLOBAL}"))
-    return league_value, global_value
+        return None, None, None
+    assigned_label = str(row.get("assigned_role") or "").strip()
+    if assigned_label and label == assigned_label:
+        league_value = safe_float(row.get("assigned_role_pct_league"))
+        global_value = safe_float(row.get("assigned_role_pct_global"))
+    else:
+        league_value = safe_float(row.get(f"{label}{PCT_SUFFIX_LEAGUE}"))
+        global_value = safe_float(row.get(f"{label}{PCT_SUFFIX_GLOBAL}"))
+    adjusted_value = safe_float(row.get("global_score_adjusted")) if label == assigned_label else None
+    return league_value, global_value, adjusted_value
 
 
 def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGenerator) -> None:
@@ -579,11 +586,17 @@ def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGene
 
     role_label_raw = row.get("assigned_role") or ""
     role_label = str(role_label_raw).strip() or "Role fit"
-    cohort_league, cohort_global = get_role_percentiles(row, role_label)
-    if any(val is not None for val in (cohort_league, cohort_global)):
+    cohort_league, cohort_global, cohort_adjusted = get_role_percentiles(row, role_label)
+    if any(val is not None for val in (cohort_league, cohort_global, cohort_adjusted)):
         percentile_block = container.container()
         percentile_block.markdown(f"#### Percentile overview — {role_label}")
-        metric_cols = percentile_block.columns(2)
+        percentile_block.markdown(
+            "League percentile: assigned-role score vs cohort in the same competition (≥15% minutes).<br>"
+            "Global percentile: assigned-role score vs global cohort (≥270 minutes).<br>"
+            "Strength-adjusted: global percentile scaled by league strength factor (clamped and capped at 100).",
+            unsafe_allow_html=True,
+        )
+        metric_cols = percentile_block.columns(3)
 
         def render_big_metric(column, label: str, value: Optional[float], accent: str) -> None:
             display_value = format_percentile(value)
@@ -599,6 +612,7 @@ def render_player_header(row: pd.Series, container: st.delta_generator.DeltaGene
 
         render_big_metric(metric_cols[0], "League percentile", cohort_league, "#38BDF8")
         render_big_metric(metric_cols[1], "Global percentile", cohort_global, "#34D399")
+        render_big_metric(metric_cols[2], "Strength-adjusted percentile", cohort_adjusted, "#F97316")
 
 
 def render_radar(
@@ -1006,6 +1020,7 @@ def render_similar_players(
         age_value = safe_int(candidate_row.get("age"))
         global_score = safe_float(candidate_row.get(f"{assigned_role}{PCT_SUFFIX_GLOBAL}"))
         league_score = safe_float(candidate_row.get(f"{assigned_role}{PCT_SUFFIX_LEAGUE}"))
+        adjusted_score = safe_float(candidate_row.get("global_score_adjusted"))
 
         details.append(
             {
@@ -1016,6 +1031,7 @@ def render_similar_players(
                 "Similarity": float(sim_row.get("similarity", 0.0)),
                 "Global score": global_score,
                 "League score": league_score,
+                "Adjusted global score": adjusted_score,
             }
         )
 
@@ -1069,10 +1085,24 @@ def render_similar_players(
     table["Similarity"] = table["Similarity"].apply(lambda x: f"{float(x):.3f}")
     table["Global score"] = table["Global score"].apply(lambda x: f"{x:.1f}" if x is not None else "—")
     table["League score"] = table["League score"].apply(lambda x: f"{x:.1f}" if x is not None else "—")
-    table["Age"] = table["Age"].apply(lambda x: int(x) if x is not None else "—")
+    table["Age"] = table["Age"].apply(lambda x: int(x) if pd.notna(x) else "—")
+    table["Adjusted global score"] = table["Adjusted global score"].apply(
+        lambda x: f"{x:.1f}" if x is not None else "—"
+    )
 
     st.dataframe(
-        table[["Player", "Team", "Competition", "Age", "Similarity", "Global score", "League score"]],
+        table[
+            [
+                "Player",
+                "Team",
+                "Competition",
+                "Age",
+                "Similarity",
+                "Global score",
+                "League score",
+                "Adjusted global score",
+            ]
+        ],
         hide_index=True,
         use_container_width=True,
     )
