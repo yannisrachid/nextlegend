@@ -3,15 +3,16 @@
 
 Steps implemented:
 1. Parse Transfermarkt profile descriptions to extract age/birth date.
-2. Build club-level correspondences (exact + fuzzy).
-3. Within each club, match players using names + fuzzy fallback + age checks.
+2. Apply the curated club mapping from ``nextlegend/data/club_mapping_dict.py`` (no fuzzy matching).
+3. Within each mapped club, match players using names + fuzzy fallback + age/birth checks.
 4. Merge Transfermarkt columns (prefixed with ``tm_``) into the Wyscout dataset.
-5. Emit reference CSVs so manual adjustments remain possible.
+5. Emit reference CSVs so manual adjustments remain possible (without overwriting the curated mapping).
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import logging
 import re
 import sys
@@ -42,6 +43,10 @@ DEFAULT_TM_PATH = ROOT_DIR / "data" / "transfermarkt_profiles.csv"
 DEFAULT_OUTPUT_LOCAL: Optional[Path] = None
 DEFAULT_CLUB_MAPPING = ROOT_DIR / "data" / "club_matching_reference.csv"
 DEFAULT_PLAYER_MAPPING = ROOT_DIR / "data" / "player_matching_reference.csv"
+DEFAULT_TM_CLUBS = ROOT_DIR / "data" / "tm_clubs_reference.csv"
+DEFAULT_CLUB_MAPPING_PY = ROOT_DIR / "data" / "club_mapping_dict.py"
+
+BREST_LOG_PATH = PROJECT_ROOT / "transfermarkt_brest_debug.log"
 
 
 logger = logging.getLogger("transfermarkt_matching")
@@ -138,6 +143,53 @@ def competition_country(value: str | float | None) -> str:
     return text.split(".")[0].strip()
 
 
+def is_brest(name: str | float | None) -> bool:
+    norm = normalise_name(name)
+    return "brest" in norm.split() or norm == "brest" or norm.startswith("brest")
+
+
+def log_brest(message: str) -> None:
+    try:
+        with BREST_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(message + "\n")
+    except Exception:
+        logger.debug("Unable to write Brest debug log.")
+
+
+def load_manual_club_mapping(path: Path) -> dict[tuple[str, str], tuple[int, str]]:
+    """Load the curated club mapping dictionary from a Python file."""
+    mapping: dict[tuple[str, str], tuple[int, str]] = {}
+    if not path.exists():
+        logger.warning("Club mapping dict not found at %s; clubs without mapping will stay unmatched.", path)
+        return mapping
+    spec = importlib.util.spec_from_file_location("club_mapping_dict", path)
+    if spec is None or spec.loader is None:
+        logger.warning("Unable to load club mapping module from %s", path)
+        return mapping
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    raw = getattr(module, "CLUB_MAPPING", {})
+    if not isinstance(raw, dict):
+        logger.warning("CLUB_MAPPING in %s is not a dictionary; skipping.", path)
+        return mapping
+    for key, value in raw.items():
+        try:
+            team_key, comp_key = key
+            tm_id_raw, tm_name_raw = value
+        except (ValueError, TypeError):
+            continue
+        team = str(team_key).strip()
+        competition = str(comp_key).strip()
+        try:
+            tm_id = int(tm_id_raw)
+        except (ValueError, TypeError):
+            tm_id = 0
+        tm_name = "" if tm_name_raw is None else str(tm_name_raw).strip()
+        mapping[(team, competition)] = (tm_id, tm_name)
+    logger.info("Loaded manual club mapping: %s entries from %s", len(mapping), path)
+    return mapping
+
+
 STOPWORDS = {
     "fc",
     "sc",
@@ -216,11 +268,8 @@ def load_existing_club_overrides(path: Path | None) -> dict[tuple[str, str], tup
         df = pd.read_csv(path)
     except Exception:
         return overrides
-    required_cols = {"team", "competition_country", "tm_club_name", "tm_club_id"}
-    if not required_cols.issubset(df.columns):
-        return overrides
     for _, row in df.iterrows():
-        team = str(row.get("team", "")).strip()
+        team = str(row.get("team_in_selected_period", row.get("team", ""))).strip()
         comp = str(row.get("competition_country", "")).strip()
         name = row.get("tm_club_name")
         club_id = row.get("tm_club_id")
@@ -373,66 +422,81 @@ class PlayerMatch:
 
 def build_club_mapping(
     wyscout_df: pd.DataFrame,
-    tm_df: pd.DataFrame,
-    threshold: int,
-    overrides: Optional[dict[tuple[str, str], tuple[str, int]]] = None,
+    manual_mapping: dict[tuple[str, str], tuple[int, str]],
 ) -> tuple[pd.DataFrame, dict[tuple[str, str], int]]:
-    overrides = overrides or {}
+    """Apply the curated club mapping without fuzzy matching."""
     if "team_in_selected_period" not in wyscout_df.columns:
         wyscout_df = wyscout_df.copy()
         wyscout_df["team_in_selected_period"] = wyscout_df["team"]
-
-    tm_records, token_index = prepare_tm_club_records(tm_df)
 
     rows: list[ClubMatch] = []
     lookup: dict[tuple[str, str], int] = {}
 
     clubs = (
-        wyscout_df[["team", "team_in_selected_period", "competition_name"]]
-        .dropna(subset=["team"])
+        wyscout_df[["team_in_selected_period", "competition_name"]]
+        .dropna(subset=["team_in_selected_period"])
         .drop_duplicates()
     )
 
     for _, row in clubs.iterrows():
-        team = str(row["team"]).strip()
+        team_main = str(row["team_in_selected_period"]).strip()
         comp = str(row.get("competition_name", "")).strip()
         comp_country = competition_country(comp)
-        alias = str(row.get("team_in_selected_period", "")).strip()
-        candidates: list[str] = []
-        for candidate in [team, alias]:
-            if candidate and candidate.lower() != "nan" and candidate not in candidates:
-                candidates.append(candidate)
-        tm_name = None
-        tm_id = None
-        method = "unmatched"
-        score = 0
 
-        override_key = (team, comp_country)
-        if override_key in overrides:
-            tm_name, tm_id = overrides[override_key]
-            method = "override"
-            score = 100
-        else:
-            for candidate in candidates:
-                tm_id, tm_name, method, score = smart_match_club_name(
-                    candidate,
-                    tm_records,
-                    token_index,
-                    threshold,
-                )
-                if tm_id:
-                    break
+        tm_id: Optional[int] = None
+        tm_name: Optional[str] = None
+        method = "dict"
+        score = 100
+
+        candidate_keys = [
+            (team_main, comp),
+            (team_main, comp_country),
+            (team_main, ""),
+        ]
+
+        chosen_key: Optional[tuple[str, str]] = None
+        for key in candidate_keys:
+            if key not in manual_mapping:
+                continue
+            tm_id_raw, tm_name_raw = manual_mapping[key]
+            tm_id_value = 0
+            try:
+                tm_id_value = int(tm_id_raw)
+            except (TypeError, ValueError):
+                tm_id_value = 0
+            tm_name_value = "" if tm_name_raw is None else str(tm_name_raw).strip()
+            if tm_id_value > 0:
+                chosen_key = key
+                tm_id = tm_id_value
+                tm_name = tm_name_value
+                break
+            else:
+                chosen_key = key
+                tm_id = None
+                tm_name = tm_name_value or None
+                method = "dict_unmatched"
+                score = 0
+                break
+
+        if chosen_key is None:
+            method = "no_mapping"
+            tm_id = None
+            tm_name = None
+            score = 0
+
+        if is_brest(team_main):
+            log_brest(
+                "[club] team=%r comp=%r chosen_key=%r tm_id=%s tm_name=%r method=%s score=%s"
+                % (team_main, comp, chosen_key, tm_id, tm_name, method, score)
+            )
 
         if tm_id is not None:
-            lookup[(team, comp_country)] = tm_id
-            lookup.setdefault((team, ""), tm_id)
-            if alias and alias not in {"", "nan"}:
-                lookup.setdefault((alias, comp_country), tm_id)
-                lookup.setdefault((alias, ""), tm_id)
+            lookup[(team_main, comp_country)] = tm_id
+            lookup[(team_main, "")] = tm_id
 
         rows.append(
             ClubMatch(
-                team=team,
+                team=team_main,
                 competition_name=comp,
                 competition_country=comp_country,
                 tm_club_name=tm_name,
@@ -447,7 +511,7 @@ def build_club_mapping(
     unmatched = len(df) - len(matched)
     coverage = (len(matched) / len(df)) * 100 if len(df) else 0
     logger.info(
-        "Club matching summary: total=%s matched=%s (%.1f%%) unmatched=%s",
+        "Club mapping summary (manual dict): total=%s matched=%s (%.1f%%) unmatched=%s",
         len(df),
         len(matched),
         coverage,
@@ -481,12 +545,13 @@ def match_player_to_tm(
         return int(rec["player_id"]), rec["player_name"], "fuzzy_name", int(best[1])
 
     wyscout_age = player_row.get("age_value")
+    age_threshold = max(70, threshold - 10)
     if pd.notna(wyscout_age):
         allowed = tm_players[pd.notna(tm_players["tm_age"])]
         allowed = allowed[allowed["tm_age"].between(wyscout_age - 1, wyscout_age + 1)]
         if not allowed.empty:
             best = process.extractOne(player_short, allowed["player_name"].tolist(), scorer=fuzz.WRatio)
-            if best:
+            if best and best[1] >= age_threshold:
                 rec = allowed.loc[allowed["player_name"] == best[0]].iloc[0]
                 score = int(best[1])
                 return int(rec["player_id"]), rec["player_name"], "age_assisted", score
@@ -500,7 +565,7 @@ def match_player_to_tm(
                 candidates["player_name"].tolist(),
                 scorer=fuzz.token_sort_ratio,
             )
-            if best:
+            if best and best[1] >= age_threshold:
                 rec = candidates.loc[candidates["player_name"] == best[0]].iloc[0]
                 return int(rec["player_id"]), rec["player_name"], "birthdate_match", int(best[1])
             rec = candidates.iloc[0]
@@ -528,10 +593,20 @@ def build_player_mapping(
     mapping_records: list[dict[str, object]] = []
 
     for _, player_row in wyscout_df.iterrows():
-        team = str(player_row["team"]).strip()
+        team_value = player_row.get("team_in_selected_period") or player_row.get("team")
+        team = str(team_value).strip()
         key = (team, player_row["competition_country"])
         tm_club_id = club_lookup.get(key) or club_lookup.get((team, ""))
         if not tm_club_id:
+            if is_brest(team):
+                log_brest(
+                    "[player] team=%r comp=%r calendar=%r -> no_club_match"
+                    % (
+                        team,
+                        player_row.get("competition_name", ""),
+                        player_row.get("calendar", ""),
+                    )
+                )
             match = PlayerMatch(
                 player=player_row["player"],
                 player_short=player_row["player_short"],
@@ -559,6 +634,22 @@ def build_player_mapping(
             if not tm_age.empty and pd.notna(tm_age.iloc[0]):
                 age_diff = int(tm_age.iloc[0]) - int(player_row["age_value"])
 
+        if is_brest(team):
+            log_brest(
+                "[player] team=%r comp=%r calendar=%r candidates=%s matched_id=%s matched_name=%r method=%s score=%s age_diff=%s"
+                % (
+                    team,
+                    player_row.get("competition_name", ""),
+                    player_row.get("calendar", ""),
+                    len(tm_players),
+                    tm_player_id,
+                    tm_player_name,
+                    method,
+                    score,
+                    age_diff,
+                )
+            )
+
         rows.append(
             PlayerMatch(
                 player=player_row["player"],
@@ -581,7 +672,7 @@ def build_player_mapping(
             mapping_records.append(
                 {
                     "player": player_row["player"],
-                    "team": team,
+                    "team_in_selected_period": team,
                     "competition_name": player_row.get("competition_name", ""),
                     "calendar": player_row.get("calendar", ""),
                     "tm_player_id": tm_player_id,
@@ -590,7 +681,7 @@ def build_player_mapping(
 
     mapping_df = (
         pd.DataFrame(mapping_records)
-        .drop_duplicates(subset=["player", "team", "competition_name", "calendar"])
+        .drop_duplicates(subset=["player", "team_in_selected_period", "competition_name", "calendar"])
     )
     player_reference_df = pd.DataFrame([asdict(row) for row in rows])
     stats = player_reference_df["method"].value_counts().to_dict()
@@ -653,7 +744,7 @@ def merge_datasets(
 ) -> pd.DataFrame:
     merged = wyscout_df.merge(
         player_mapping_df,
-        on=["player", "team", "competition_name", "calendar"],
+        on=["player", "team_in_selected_period", "competition_name", "calendar"],
         how="left",
     )
     merged_tm = rename_tm_columns(tm_df)
@@ -700,8 +791,23 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
         default=str(DEFAULT_PLAYER_MAPPING),
         help="CSV output capturing player correspondences.",
     )
-    parser.add_argument("--club-threshold", type=int, default=90, help="Fuzzy ratio threshold for clubs.")
+    parser.add_argument(
+        "--tm-clubs-out",
+        default=str(DEFAULT_TM_CLUBS),
+        help="CSV output listing all Transfermarkt clubs (for manual review).",
+    )
+    parser.add_argument(
+        "--club-threshold",
+        type=int,
+        default=90,
+        help="Legacy arg (ignored): club mapping now uses the curated dictionary only.",
+    )
     parser.add_argument("--player-threshold", type=int, default=92, help="Fuzzy ratio threshold for players.")
+    parser.add_argument(
+        "--club-mapping-py",
+        default=str(DEFAULT_CLUB_MAPPING_PY),
+        help="Python file containing the curated club mapping dictionary (wyscout -> tm).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Skip S3 upload.")
     return parser.parse_args(argv)
 
@@ -709,12 +815,18 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[Iterable[str]] = None) -> None:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    try:
+        BREST_LOG_PATH.write_text("Brest debug log\n", encoding="utf-8")
+    except Exception:
+        logger.debug("Unable to reset Brest debug log file.")
 
     wyscout_path = Path(args.wyscout_local)
     tm_path = Path(args.transfermarkt_path)
     output_local = Path(args.output_local) if args.output_local else None
     club_mapping_path = Path(args.club_mapping)
     player_mapping_path = Path(args.player_mapping)
+    tm_clubs_out_path = Path(args.tm_clubs_out)
+    club_mapping_py_path = Path(args.club_mapping_py)
 
     if not tm_path.exists():
         raise FileNotFoundError(f"Transfermarkt file not found at {tm_path}")
@@ -724,13 +836,13 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     tm_df = add_tm_enrichments(tm_df)
     logger.info("Loaded Transfermarkt profiles: %s rows", len(tm_df))
 
-    existing_overrides = load_existing_club_overrides(club_mapping_path)
+    manual_club_mapping = load_manual_club_mapping(club_mapping_py_path)
+    if args.club_threshold != 90:
+        logger.info("Club threshold argument is ignored when using the manual mapping dict.")
 
     club_mapping_df, club_lookup = build_club_mapping(
         wyscout_df,
-        tm_df,
-        threshold=args.club_threshold,
-        overrides=existing_overrides,
+        manual_club_mapping,
     )
 
     player_mapping_reference_df, player_mapping_df = build_player_mapping(
@@ -744,10 +856,20 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
 
     club_mapping_path.parent.mkdir(parents=True, exist_ok=True)
     player_mapping_path.parent.mkdir(parents=True, exist_ok=True)
+    tm_clubs_out_path.parent.mkdir(parents=True, exist_ok=True)
+    club_mapping_py_path.parent.mkdir(parents=True, exist_ok=True)
 
     club_mapping_df.to_csv(club_mapping_path, index=False)
     player_mapping_reference_df.to_csv(player_mapping_path, index=False)
+    tm_clubs_catalog = (
+        tm_df[["club_id", "club_name"]]
+        .dropna(subset=["club_id", "club_name"])
+        .drop_duplicates(subset=["club_id"])
+        .sort_values("club_name")
+    )
+    tm_clubs_catalog.to_csv(tm_clubs_out_path, index=False)
     logger.info("Wrote reference mappings:\n  Clubs: %s\n  Players: %s", club_mapping_path, player_mapping_path)
+    logger.info("Wrote Transfermarkt clubs catalog: %s", tm_clubs_out_path)
 
     write_wyscout_dataset(
         enriched_df,
