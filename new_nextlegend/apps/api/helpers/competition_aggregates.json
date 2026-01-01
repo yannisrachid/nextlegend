@@ -1,0 +1,35 @@
+[
+  {
+    "label": "Big 5 Leagues",
+    "competitions": [
+      "England. Premier League",
+      "Spain. La Liga",
+      "Italy. Serie A",
+      "Germany. Bundesliga",
+      "France. Ligue 1"
+    ]
+  },
+  {
+    "label": "Big 8 Leagues",
+    "competitions": [
+      "England. Premier League",
+      "Spain. La Liga",
+      "Italy. Serie A",
+      "Germany. Bundesliga",
+      "France. Ligue 1",
+      "Belgium. Pro League",
+      "Portugal. Primeira Liga",
+      "Netherlands. Eredivisie"
+    ]
+  },
+  {
+    "label": "First Divisions Only",
+    "competitions": [
+      
+    ]
+  },
+  {
+    "label": "Second Divisions Only",
+    "competitions": []
+  }
+]
