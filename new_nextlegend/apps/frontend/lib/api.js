@@ -29,6 +29,20 @@ export async function fetchJson(path, params = {}) {
   return res.json();
 }
 
+export async function postJson(path, body = {}) {
+  const url = new URL(path, resolveApiBase());
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 export async function fetchJsonCached(
   path,
   params = {},

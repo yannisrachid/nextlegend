@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/comparison", label: "Comparison" },
   { href: "/projection", label: "Projection" },
   { href: "/stats-research", label: "Stats Research" },
+  { href: "/vizualisation", label: "Vizualisation" },
 ];
 
 export default function App({ Component, pageProps }) {

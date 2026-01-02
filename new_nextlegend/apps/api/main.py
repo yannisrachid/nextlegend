@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, Query, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from models import RankingRow, Report, SimilarityRow, RankingPage, RoleScore
 import re
 import json
 import csv
+from bisect import bisect_right
 
 app = FastAPI(title="NextLegend v2 API", version="0.1.0")
 
@@ -246,6 +248,14 @@ def _stats_metric_columns(session: Session) -> list[str]:
         columns.append(name)
     _STATS_METRIC_COLUMNS = columns
     return _STATS_METRIC_COLUMNS
+
+
+def _percentile_rank(values: list[float], target: float) -> float:
+    if not values:
+        return 100.0
+    sorted_vals = sorted(values)
+    position = bisect_right(sorted_vals, target)
+    return float(position / len(sorted_vals) * 100.0)
 
 
 def _load_league_translation() -> dict[tuple[str, str], dict[str, float]]:
@@ -943,6 +953,113 @@ def search_players(
     """
     rows = session.execute(text(sql), params).fetchall()
     return [_row_to_dict(row) for row in rows]
+
+
+class VizPercentileRequest(BaseModel):
+    player_id: int
+    metrics: list[str]
+    context: str = "League"
+    positions: list[str] = []
+    min_minutes: float = 270
+
+
+@app.post("/viz/percentiles")
+def viz_percentiles(payload: VizPercentileRequest, session: Session = Depends(get_session)):
+    available = set(_stats_metric_columns(session))
+    metrics = [metric for metric in payload.metrics if metric in available]
+    if not metrics:
+        raise HTTPException(status_code=400, detail="No valid metrics provided")
+
+    player_sql = """
+    SELECT ps.id AS player_season_id,
+      p.id AS player_id,
+      p.name,
+      ps.team_in_selected_period AS team,
+      c.name AS competition_name,
+      ps.position,
+      ps.second_position,
+      ps.minutes_played
+    FROM player_seasons ps
+    JOIN players p ON p.id = ps.player_id
+    JOIN competitions c ON c.id = ps.competition_id
+    WHERE p.id = :player_id
+    ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+    LIMIT 1
+    """
+    player_row = session.execute(text(player_sql), {"player_id": payload.player_id}).fetchone()
+    if not player_row:
+        raise HTTPException(status_code=404, detail="Player not found")
+    player = _row_to_dict(player_row)
+
+    metric_cols = ", ".join([f'pm."{metric}" AS "{metric}"' for metric in metrics])
+    metrics_sql = f"""
+    SELECT {metric_cols}
+    FROM player_metrics pm
+    WHERE pm.player_season_id = :player_season_id
+    """
+    metrics_row = session.execute(text(metrics_sql), {"player_season_id": player["player_season_id"]}).fetchone()
+    player_metrics = _row_to_dict(metrics_row) if metrics_row else {}
+
+    cohort_sql = f"""
+    SELECT {metric_cols}
+    FROM player_seasons ps
+    JOIN competitions c ON c.id = ps.competition_id
+    JOIN player_metrics pm ON pm.player_season_id = ps.id
+    WHERE ps.minutes_played IS NOT NULL
+    """
+    params = {"min_minutes": payload.min_minutes}
+    if payload.min_minutes is not None:
+        cohort_sql += " AND ps.minutes_played >= :min_minutes"
+    context = payload.context.strip().lower()
+    if context == "league":
+        cohort_sql += " AND c.name = :competition"
+        params["competition"] = player.get("competition_name")
+
+    positions = [p.strip() for p in payload.positions or [] if p.strip()]
+    if positions:
+        params["positions"] = positions
+        params["pos_patterns"] = [f"%{p}%" for p in positions]
+        cohort_sql += """
+        AND (
+          ps.position = ANY(:positions)
+          OR ps.second_position = ANY(:positions)
+          OR ps.position ILIKE ANY(:pos_patterns)
+          OR ps.second_position ILIKE ANY(:pos_patterns)
+        )
+        """
+
+    rows = session.execute(text(cohort_sql), params).fetchall()
+    values_by_metric: dict[str, list[float]] = {metric: [] for metric in metrics}
+    for row in rows:
+        data = _row_to_dict(row)
+        for metric in metrics:
+            value = data.get(metric)
+            if value is None:
+                continue
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                continue
+            values_by_metric[metric].append(numeric)
+
+    percentiles: dict[str, float] = {}
+    for metric in metrics:
+        value = player_metrics.get(metric)
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        cohort_values = list(values_by_metric.get(metric, []))
+        if numeric not in cohort_values:
+            cohort_values.append(numeric)
+        percentiles[metric] = _percentile_rank(cohort_values, numeric)
+
+    return {
+        "player": player,
+        "values": player_metrics,
+        "percentiles": percentiles,
+        "cohort_count": len(rows),
+    }
 
 
 @app.get("/stats-research")
