@@ -12,17 +12,17 @@ import {
 import { fetchJson, fetchJsonCached } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
 
-const RADAR_STATS = [
-  { key: "goals_per_90", label: "Goals" },
-  { key: "xa_per_90", label: "xA" },
-  { key: "accurate_passes_percent", label: "Passing accuracy (%)" },
-  { key: "passes_to_penalty_area_per_90", label: "Passes to penalty area" },
-  { key: "progressive_passes_per_90", label: "Progressive passes" },
-  { key: "progressive_runs_per_90", label: "Progressive runs" },
-  { key: "successful_dribbles_percent", label: "Successful dribbles (%)" },
-  { key: "def_duels_won_percent", label: "Defensive duels won (%)" },
-  { key: "interceptions_padj", label: "Possession-adjusted interceptions" },
-  { key: "aerial_duels_won_percent", label: "Aerial duels won (%)" },
+const DEFAULT_RADAR_METRICS = [
+  "goals_per_90",
+  "xa_per_90",
+  "accurate_passes_percent",
+  "passes_to_penalty_area_per_90",
+  "progressive_passes_per_90",
+  "progressive_runs_per_90",
+  "successful_dribbles_percent",
+  "def_duels_won_percent",
+  "interceptions_padj",
+  "aerial_duels_won_percent",
 ];
 
 const TM_BASE_URL = "https://www.transfermarkt.com";
@@ -76,7 +76,9 @@ const RadarTooltip = ({ active, payload }) => {
   return (
     <div className="rounded-md border border-slate-700 bg-slate-900/95 px-3 py-2 text-xs text-slate-100 shadow-xl">
       <div className="font-semibold text-white">{point.metric}</div>
-      <div className="text-slate-300">Percentile: {Number(point.value).toFixed(0)}</div>
+      <div className="text-slate-300">
+        {point.contextLabel}: {Number(payload[0]?.value ?? point.value).toFixed(0)}
+      </div>
       <div className="text-slate-400">
         Value: {point.raw != null ? Number(point.raw).toFixed(2) : "—"}
       </div>
@@ -174,6 +176,7 @@ export default function ReportPage() {
     ageMax: "",
     big5Only: false,
   });
+  const [radarContext, setRadarContext] = useState("global");
 
   const similarLimit = 10;
 
@@ -312,23 +315,43 @@ export default function ReportPage() {
   const hasTmData = Object.values(tmFields).some(
     (value) => value !== null && value !== undefined && String(value).trim() !== ""
   );
+  const radarMetricKeys = useMemo(() => {
+    if (Array.isArray(report?.radar_metrics) && report.radar_metrics.length > 0) {
+      return report.radar_metrics;
+    }
+    return DEFAULT_RADAR_METRICS;
+  }, [report]);
+  const radarStats = useMemo(
+    () =>
+      radarMetricKeys.map((key) => ({
+        key,
+        label: formatMetricLabel(key),
+      })),
+    [radarMetricKeys]
+  );
   const radarData = useMemo(() => {
-    return RADAR_STATS.map((stat) => {
+    return radarStats.map((stat) => {
       const leagueKey = `${stat.key}_pct_league`;
       const globalKey = `${stat.key}_pct_global`;
-      const value =
-        metrics[leagueKey] ??
-        metrics[globalKey] ??
-        0;
+      const leagueValue = metrics[leagueKey];
+      const globalValue = metrics[globalKey];
+      const leagueDisplay = leagueValue ?? globalValue ?? 0;
+      const globalDisplay = globalValue ?? leagueValue ?? 0;
       return {
         metric: stat.label,
-        value: Number(value) || 0,
+        value:
+          radarContext === "league"
+            ? Number(leagueDisplay) || 0
+            : Number(globalDisplay) || 0,
         league: metrics[leagueKey],
         global: metrics[globalKey],
+        leagueDisplay: Number(leagueDisplay) || 0,
+        globalDisplay: Number(globalDisplay) || 0,
         raw: rawMetrics[stat.key],
+        contextLabel: radarContext === "league" ? "League percentile" : "Global percentile",
       };
     });
-  }, [metrics, rawMetrics]);
+  }, [metrics, rawMetrics, radarContext, radarStats]);
 
   const sortRows = (rows) => {
     const sorted = [...rows];
@@ -672,24 +695,46 @@ export default function ReportPage() {
               </Card>
 
               <Card className="lg:col-span-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <h3 className="text-lg font-semibold text-white">
                     Percentile Radar
                   </h3>
-                  <span className="text-xs text-slate-400">
-                    League where available
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {[
+                      { key: "global", label: "Global" },
+                      { key: "league", label: "League" },
+                    ].map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setRadarContext(option.key)}
+                        className={`px-3 py-1 rounded-md text-xs uppercase tracking-[0.2em] border ${
+                          radarContext === option.key
+                            ? "border-emerald-400/70 bg-emerald-400/15 text-emerald-200"
+                            : "border-slate-700 bg-slate-900/60 text-slate-300"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="h-96">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart data={radarData} outerRadius="92%">
+                    <RadarChart
+                      key={`radar-${radarContext}`}
+                      data={radarData}
+                      outerRadius="92%"
+                    >
                       <PolarGrid stroke="#334155" strokeDasharray="3 3" />
                       <PolarAngleAxis dataKey="metric" tick={{ fill: "#94a3b8", fontSize: 10 }} />
                       <PolarRadiusAxis
-                        angle={30}
+                        angle={90}
                         domain={[0, 100]}
-                        tick={false}
-                        axisLine={false}
+                        ticks={[0, 25, 50, 75, 100]}
+                        tick={{ fill: "#94a3b8", fontSize: 8 }}
+                        tickLine={{ stroke: "#475569", strokeOpacity: 0.6 }}
+                        axisLine={{ stroke: "#475569", strokeOpacity: 0.6 }}
                       />
                       <Tooltip content={<RadarTooltip />} cursor={false} />
                       <Radar

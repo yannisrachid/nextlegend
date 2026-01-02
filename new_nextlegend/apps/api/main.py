@@ -32,16 +32,16 @@ def _row_to_dict(row) -> dict:
 
 
 RAW_METRIC_KEYS = [
-    "goals_per_90",
-    "xa_per_90",
-    "accurate_passes_percent",
+  "goals_per_90",
+  "xa_per_90",
+  "accurate_passes_percent",
     "passes_to_penalty_area_per_90",
     "progressive_passes_per_90",
     "progressive_runs_per_90",
     "successful_dribbles_percent",
     "def_duels_won_percent",
-    "interceptions_padj",
-    "aerial_duels_won_percent",
+  "interceptions_padj",
+  "aerial_duels_won_percent",
 ]
 
 DEFAULT_COMPETITION_AGGREGATES = [
@@ -61,9 +61,13 @@ DEFAULT_COMPETITION_AGGREGATES = [
 ]
 
 AGGREGATES_PATH = Path(__file__).resolve().parent / "helpers" / "competition_aggregates.json"
+ROLE_METRICS_PATH = Path(__file__).resolve().parent / "helpers" / "role_metrics.json"
 
 _COMPETITION_AGGREGATES: Optional[list[dict[str, list[str]]]] = None
 _COMPETITION_AGGREGATES_MTIME: Optional[float] = None
+
+_ROLE_METRICS: Optional[dict[str, list[str]]] = None
+_ROLE_METRICS_MTIME: Optional[float] = None
 
 
 _TM_COLUMNS_CACHE: Optional[list[str]] = None
@@ -136,6 +140,41 @@ def _load_competition_aggregates() -> list[dict[str, list[str]]]:
     _COMPETITION_AGGREGATES = normalized or DEFAULT_COMPETITION_AGGREGATES
     _COMPETITION_AGGREGATES_MTIME = mtime
     return _COMPETITION_AGGREGATES
+
+
+def _load_role_metrics() -> dict[str, list[str]]:
+    global _ROLE_METRICS, _ROLE_METRICS_MTIME
+    try:
+        mtime = ROLE_METRICS_PATH.stat().st_mtime if ROLE_METRICS_PATH.exists() else None
+    except Exception:
+        mtime = None
+    if _ROLE_METRICS is not None and mtime == _ROLE_METRICS_MTIME:
+        return _ROLE_METRICS
+
+    role_metrics: dict[str, list[str]] = {}
+    if ROLE_METRICS_PATH.exists():
+        try:
+            data = json.loads(ROLE_METRICS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                for role, metrics in data.items():
+                    if not isinstance(metrics, list):
+                        continue
+                    unique = []
+                    seen = set()
+                    for item in metrics:
+                        value = str(item).strip()
+                        if not value or value in seen:
+                            continue
+                        seen.add(value)
+                        unique.append(value)
+                    if unique:
+                        role_metrics[str(role)] = unique
+        except Exception:
+            role_metrics = {}
+
+    _ROLE_METRICS = role_metrics
+    _ROLE_METRICS_MTIME = mtime
+    return _ROLE_METRICS
 
 
 def _competition_aggregate_map() -> dict[str, list[str]]:
@@ -361,7 +400,12 @@ def player_report(player_id: int, session: Session = Depends(get_session)):
     metrics.pop("player_season_id", None)
     metrics.pop("created_at", None)
     metrics.pop("updated_at", None)
-    raw_metrics = {key: metrics.get(key) for key in RAW_METRIC_KEYS}
+    role_metrics_map = _load_role_metrics()
+    assigned_role = ps.get("assigned_role") or ""
+    role_metrics = role_metrics_map.get(assigned_role) or []
+    if not role_metrics:
+        role_metrics = RAW_METRIC_KEYS
+    raw_metrics = {key: metrics.get(key) for key in role_metrics}
 
     # Role scores
     role_rows = session.execute(
@@ -408,6 +452,7 @@ def player_report(player_id: int, session: Session = Depends(get_session)):
         player=player,
         metrics=metrics,
         raw_metrics=raw_metrics,
+        radar_metrics=role_metrics,
         tm_fields=tm_fields,
         role_scores=role_scores,
         summary=summary,

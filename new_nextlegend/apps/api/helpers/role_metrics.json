@@ -1,0 +1,330 @@
+{
+  "GK - Shot-stopper (mains)": [
+    "save_percent",
+    "goals_prevented_per_90",
+    "shots_against_per_90",
+    "goals_conceded_per_90",
+    "xg_against_per_90",
+    "clean_sheets"
+  ],
+  "GK - Relanceur (ball-playing)": [
+    "passes_per_90",
+    "accurate_passes_percent",
+    "long_passes_per_90",
+    "accurate_long_passes_percent",
+    "avg_pass_length_m",
+    "back_passes_to_gk_per_90",
+    "exits_per_90",
+    "aerial_duels_gk_per_90"
+  ],
+  "GK - Complet (sweeper-keeper)": [
+    "save_percent",
+    "goals_prevented_per_90",
+    "exits_per_90",
+    "aerial_duels_gk_per_90",
+    "passes_per_90",
+    "accurate_passes_percent",
+    "long_passes_per_90",
+    "accurate_long_passes_percent",
+    "goals_conceded_per_90",
+    "xg_against_per_90"
+  ],
+  "DC - Stoppeur (agressif)": [
+    "def_duels_per_90",
+    "def_duels_won_percent",
+    "successful_def_actions_per_90",
+    "sliding_tackles_per_90",
+    "interceptions_per_90",
+    "aerial_duels_per_90",
+    "aerial_duels_won_percent"
+  ],
+  "DC - Relanceur (ball-playing CB)": [
+    "passes_per_90",
+    "accurate_passes_percent",
+    "forward_passes_per_90",
+    "accurate_forward_passes_percent",
+    "progressive_passes_per_90",
+    "accurate_progressive_passes_percent",
+    "long_passes_per_90",
+    "accurate_long_passes_percent",
+    "passes_to_final_third_per_90"
+  ],
+  "DC - Dominant aérien": [
+    "aerial_duels_per_90",
+    "aerial_duels_won_percent",
+    "def_duels_won_percent",
+    "interceptions_per_90"
+  ],
+  "DC - Large gauche (wide LCB)": [
+    "progressive_runs_per_90",
+    "accelerations_per_90",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "successful_def_actions_per_90",
+    "def_duels_won_percent"
+  ],
+  "DC - Large droit (wide RCB)": [
+    "progressive_runs_per_90",
+    "accelerations_per_90",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "successful_def_actions_per_90",
+    "def_duels_won_percent"
+  ],
+  "Latéral gauche - Offensif complet": [
+    "crosses_per_90",
+    "accurate_crosses_percent",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "progressive_runs_per_90",
+    "passes_to_final_third_per_90",
+    "passes_to_penalty_area_per_90",
+    "deep_crosses_per_90",
+    "xa_per_90"
+  ],
+  "Latéral droit - Offensif complet": [
+    "crosses_per_90",
+    "accurate_crosses_percent",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "progressive_runs_per_90",
+    "passes_to_final_third_per_90",
+    "passes_to_penalty_area_per_90",
+    "deep_crosses_per_90",
+    "xa_per_90"
+  ],
+  "Latéral gauche - Solide défensivement": [
+    "def_duels_per_90",
+    "def_duels_won_percent",
+    "successful_def_actions_per_90",
+    "interceptions_per_90",
+    "aerial_duels_won_percent",
+    "fouls_per_90"
+  ],
+  "Latéral droit - Solide défensivement": [
+    "def_duels_per_90",
+    "def_duels_won_percent",
+    "successful_def_actions_per_90",
+    "interceptions_per_90",
+    "aerial_duels_won_percent",
+    "fouls_per_90"
+  ],
+  "Latéral gauche - Hybride (inversé)": [
+    "passes_per_90",
+    "accurate_passes_percent",
+    "lateral_passes_per_90",
+    "forward_passes_per_90",
+    "progressive_passes_per_90",
+    "accurate_progressive_passes_percent",
+    "smart_passes_per_90",
+    "passes_to_final_third_per_90",
+    "deep_completions_per_90"
+  ],
+  "Latéral droit - Hybride (inversé)": [
+    "passes_per_90",
+    "accurate_passes_percent",
+    "lateral_passes_per_90",
+    "forward_passes_per_90",
+    "progressive_passes_per_90",
+    "accurate_progressive_passes_percent",
+    "smart_passes_per_90",
+    "passes_to_final_third_per_90",
+    "deep_completions_per_90"
+  ],
+  "Piston gauche - Ligne haute": [
+    "crosses_per_90",
+    "deep_crosses_per_90",
+    "progressive_runs_per_90",
+    "accelerations_per_90",
+    "dribbles_per_90",
+    "passes_to_penalty_area_per_90",
+    "xa_per_90"
+  ],
+  "Piston droit - Ligne haute": [
+    "crosses_per_90",
+    "deep_crosses_per_90",
+    "progressive_runs_per_90",
+    "accelerations_per_90",
+    "dribbles_per_90",
+    "passes_to_penalty_area_per_90",
+    "xa_per_90"
+  ],
+  "6 - Destructeur (ball-winner)": [
+    "successful_def_actions_per_90",
+    "def_duels_per_90",
+    "def_duels_won_percent",
+    "sliding_tackles_per_90",
+    "interceptions_per_90",
+    "aerial_duels_won_percent"
+  ],
+  "6 - Regista (deep-lying playmaker)": [
+    "passes_per_90",
+    "forward_passes_per_90",
+    "accurate_forward_passes_percent",
+    "progressive_passes_per_90",
+    "accurate_progressive_passes_percent",
+    "long_passes_per_90",
+    "accurate_long_passes_percent",
+    "smart_passes_per_90",
+    "passes_to_final_third_per_90"
+  ],
+  "8 gauche - Box-to-box": [
+    "progressive_runs_per_90",
+    "accelerations_per_90",
+    "offensive_duels_per_90",
+    "successful_def_actions_per_90",
+    "def_duels_won_percent",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "goals_per_90",
+    "assists_per_90"
+  ],
+  "8 droit - Box-to-box": [
+    "progressive_runs_per_90",
+    "accelerations_per_90",
+    "offensive_duels_per_90",
+    "successful_def_actions_per_90",
+    "def_duels_won_percent",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "goals_per_90",
+    "assists_per_90"
+  ],
+  "Mezzala gauche": [
+    "progressive_runs_per_90",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "smart_passes_per_90",
+    "key_passes_per_90",
+    "passes_to_final_third_per_90",
+    "passes_to_penalty_area_per_90",
+    "xa_per_90"
+  ],
+  "Mezzala droit": [
+    "progressive_runs_per_90",
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "smart_passes_per_90",
+    "key_passes_per_90",
+    "passes_to_final_third_per_90",
+    "passes_to_penalty_area_per_90",
+    "xa_per_90"
+  ],
+  "10 - Créateur (enganche/playmaker)": [
+    "xa_per_90",
+    "shot_assists_per_90",
+    "key_passes_per_90",
+    "smart_passes_per_90",
+    "through_passes_per_90",
+    "deep_completions_per_90",
+    "progressive_passes_per_90"
+  ],
+  "10 - Second attaquant (shadow striker)": [
+    "touches_in_penalty_area_per_90",
+    "goals_per_90",
+    "xg_per_90",
+    "shots_per_90",
+    "deep_completions_per_90",
+    "progressive_runs_per_90",
+    "xa_per_90"
+  ],
+  "Ailier gauche - Débordement": [
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "offensive_duels_per_90",
+    "crosses_per_90",
+    "accurate_crosses_percent",
+    "deep_crosses_per_90",
+    "progressive_runs_per_90"
+  ],
+  "Ailier droit - Débordement": [
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "offensive_duels_per_90",
+    "crosses_per_90",
+    "accurate_crosses_percent",
+    "deep_crosses_per_90",
+    "progressive_runs_per_90"
+  ],
+  "Ailier gauche - Inversé": [
+    "touches_in_penalty_area_per_90",
+    "goals_per_90",
+    "xg_per_90",
+    "shots_per_90",
+    "xa_per_90",
+    "key_passes_per_90",
+    "progressive_runs_per_90"
+  ],
+  "Ailier droit - Inversé": [
+    "touches_in_penalty_area_per_90",
+    "goals_per_90",
+    "xg_per_90",
+    "shots_per_90",
+    "xa_per_90",
+    "key_passes_per_90",
+    "progressive_runs_per_90"
+  ],
+  "Ailier gauche - Deux voies": [
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "offensive_duels_per_90",
+    "successful_def_actions_per_90",
+    "def_duels_won_percent",
+    "progressive_runs_per_90",
+    "xa_per_90",
+    "goals_per_90"
+  ],
+  "Ailier droit - Deux voies": [
+    "dribbles_per_90",
+    "successful_dribbles_percent",
+    "offensive_duels_per_90",
+    "successful_def_actions_per_90",
+    "def_duels_won_percent",
+    "progressive_runs_per_90",
+    "xa_per_90",
+    "goals_per_90"
+  ],
+  "9 - Pivot (target man)": [
+    "aerial_duels_per_90",
+    "aerial_duels_won_percent",
+    "passes_received_per_90",
+    "long_passes_received_per_90",
+    "xg_per_90",
+    "goals_per_90"
+  ],
+  "9 - Renard (poacher)": [
+    "touches_in_penalty_area_per_90",
+    "xg_per_90",
+    "goals_per_90",
+    "shots_per_90",
+    "shots_on_target_percent",
+    "goal_conversion_rate"
+  ],
+  "9 - Complet (complete forward)": [
+    "goals_per_90",
+    "xg_per_90",
+    "xa_per_90",
+    "key_passes_per_90",
+    "progressive_runs_per_90",
+    "touches_in_penalty_area_per_90",
+    "shots_per_90"
+  ],
+  "9 - Pressing (defensive forward)": [
+    "offensive_duels_per_90",
+    "successful_def_actions_per_90",
+    "def_duels_per_90",
+    "def_duels_won_percent",
+    "accelerations_per_90",
+    "progressive_runs_per_90",
+    "xa_per_90"
+  ],
+  "9 - Décrocheur (DLF)": [
+    "xa_per_90",
+    "key_passes_per_90",
+    "smart_passes_per_90",
+    "passes_to_penalty_area_per_90",
+    "deep_completions_per_90",
+    "touches_in_penalty_area_per_90",
+    "goals_per_90"
+  ]
+}

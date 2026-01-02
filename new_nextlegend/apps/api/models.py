@@ -64,6 +64,7 @@ class Report(BaseModel):
     player: RankingRow
     metrics: dict[str, Optional[float]]
     raw_metrics: dict[str, Optional[float]]
+    radar_metrics: list[str]
     tm_fields: dict[str, Optional[float | str]]
     role_scores: list["RoleScore"]
     summary: dict[str, Optional[float]]
