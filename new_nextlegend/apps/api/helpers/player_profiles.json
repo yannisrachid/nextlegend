@@ -1,0 +1,540 @@
+{
+  "GK - Shot-stopper (mains)": {
+    "position_groups": ["GK"],
+    "description": "Gardien très fort sur sa ligne, réflexes et % arrêts.",
+    "min_minutes": 360,
+    "lower_is_better": ["goals_conceded_per_90", "xg_against_per_90"],
+    "weights": {
+      "save_percent": 0.34,
+      "goals_prevented_per_90": 0.26,
+      "shots_against_per_90": 0.06,
+      "goals_conceded_per_90": 0.12,
+      "xg_against_per_90": 0.12,
+      "clean_sheets": 0.10
+    }
+  },
+  "GK - Relanceur (ball-playing)": {
+    "position_groups": ["GK"],
+    "description": "Gardien relanceur : jeu au pied, volume de passes, longueur, précision.",
+    "min_minutes": 360,
+    "lower_is_better": [],
+    "weights": {
+      "passes_per_90": 0.20,
+      "accurate_passes_percent": 0.12,
+      "long_passes_per_90": 0.18,
+      "accurate_long_passes_percent": 0.12,
+      "avg_pass_length_m": 0.10,
+      "back_passes_to_gk_per_90": 0.08,
+      "exits_per_90": 0.12,
+      "aerial_duels_gk_per_90": 0.08
+    }
+  },
+  "GK - Complet (sweeper-keeper)": {
+    "position_groups": ["GK"],
+    "description": "Gardien complet : shot-stopping + sorties + relances.",
+    "min_minutes": 360,
+    "lower_is_better": ["goals_conceded_per_90", "xg_against_per_90"],
+    "weights": {
+      "save_percent": 0.20,
+      "goals_prevented_per_90": 0.14,
+      "exits_per_90": 0.10,
+      "aerial_duels_gk_per_90": 0.10,
+      "passes_per_90": 0.12,
+      "accurate_passes_percent": 0.08,
+      "long_passes_per_90": 0.10,
+      "accurate_long_passes_percent": 0.08,
+      "goals_conceded_per_90": 0.04,
+      "xg_against_per_90": 0.04
+    }
+  },
+  "DC - Stoppeur (agressif)": {
+    "position_groups": ["LCB","RCB","CB"],
+    "description": "Stoppeur agressif : duels, tacles, interceptions, activité défensive.",
+    "min_minutes": 450,
+    "lower_is_better": ["fouls_per_90","yellow_cards_per_90","red_cards_per_90"],
+    "weights": {
+      "def_duels_per_90": 0.18,
+      "def_duels_won_percent": 0.20,
+      "successful_def_actions_per_90": 0.18,
+      "sliding_tackles_per_90": 0.10,
+      "interceptions_per_90": 0.14,
+      "aerial_duels_per_90": 0.10,
+      "aerial_duels_won_percent": 0.10
+    }
+  },
+  "DC - Relanceur (ball-playing CB)": {
+    "position_groups": ["LCB","RCB","CB"],
+    "description": "Premier relanceur : volume et réussite de passes vers l'avant & progressives.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "passes_per_90": 0.14,
+      "accurate_passes_percent": 0.10,
+      "forward_passes_per_90": 0.14,
+      "accurate_forward_passes_percent": 0.08,
+      "progressive_passes_per_90": 0.18,
+      "accurate_progressive_passes_percent": 0.10,
+      "long_passes_per_90": 0.12,
+      "accurate_long_passes_percent": 0.08,
+      "passes_to_final_third_per_90": 0.06
+    }
+  },
+  "DC - Dominant aérien": {
+    "position_groups": ["LCB","RCB","CB"],
+    "description": "Contrôle des airs : volume et réussite des duels aériens.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "aerial_duels_per_90": 0.44,
+      "aerial_duels_won_percent": 0.40,
+      "def_duels_won_percent": 0.08,
+      "interceptions_per_90": 0.08
+    }
+  },
+  "DC - Large gauche (wide LCB)": {
+    "position_groups": ["LCB"],
+    "description": "CB excentré gauche : couverture large et sorties ballon-pied côté gauche.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "progressive_runs_per_90": 0.24,
+      "accelerations_per_90": 0.12,
+      "dribbles_per_90": 0.18,
+      "successful_dribbles_percent": 0.10,
+      "successful_def_actions_per_90": 0.18,
+      "def_duels_won_percent": 0.18
+    }
+  },
+  "DC - Large droit (wide RCB)": {
+    "position_groups": ["RCB"],
+    "description": "CB excentré droit : couverture large et sorties ballon-pied côté droit.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "progressive_runs_per_90": 0.24,
+      "accelerations_per_90": 0.12,
+      "dribbles_per_90": 0.18,
+      "successful_dribbles_percent": 0.10,
+      "successful_def_actions_per_90": 0.18,
+      "def_duels_won_percent": 0.18
+    }
+  },
+  "Latéral gauche - Offensif complet": {
+    "position_groups": ["LB","LWB"],
+    "description": "Latéral/piston gauche très porté vers l'avant.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "crosses_per_90": 0.18,
+      "accurate_crosses_percent": 0.10,
+      "dribbles_per_90": 0.14,
+      "successful_dribbles_percent": 0.08,
+      "progressive_runs_per_90": 0.16,
+      "passes_to_final_third_per_90": 0.10,
+      "passes_to_penalty_area_per_90": 0.06,
+      "deep_crosses_per_90": 0.08,
+      "xa_per_90": 0.10
+    }
+  },
+  "Latéral droit - Offensif complet": {
+    "position_groups": ["RB","RWB"],
+    "description": "Latéral/piston droit très porté vers l'avant.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "crosses_per_90": 0.18,
+      "accurate_crosses_percent": 0.10,
+      "dribbles_per_90": 0.14,
+      "successful_dribbles_percent": 0.08,
+      "progressive_runs_per_90": 0.16,
+      "passes_to_final_third_per_90": 0.10,
+      "passes_to_penalty_area_per_90": 0.06,
+      "deep_crosses_per_90": 0.08,
+      "xa_per_90": 0.10
+    }
+  },
+  "Latéral gauche - Solide défensivement": {
+    "position_groups": ["LB"],
+    "description": "Latéral gauche priorisant la défense.",
+    "min_minutes": 450,
+    "lower_is_better": ["fouls_per_90"],
+    "weights": {
+      "def_duels_per_90": 0.18,
+      "def_duels_won_percent": 0.26,
+      "successful_def_actions_per_90": 0.24,
+      "interceptions_per_90": 0.18,
+      "aerial_duels_won_percent": 0.08,
+      "fouls_per_90": 0.06
+    }
+  },
+  "Latéral droit - Solide défensivement": {
+    "position_groups": ["RB"],
+    "description": "Latéral droit priorisant la défense.",
+    "min_minutes": 450,
+    "lower_is_better": ["fouls_per_90"],
+    "weights": {
+      "def_duels_per_90": 0.18,
+      "def_duels_won_percent": 0.26,
+      "successful_def_actions_per_90": 0.24,
+      "interceptions_per_90": 0.18,
+      "aerial_duels_won_percent": 0.08,
+      "fouls_per_90": 0.06
+    }
+  },
+  "Latéral gauche - Hybride (inversé)": {
+    "position_groups": ["LB"],
+    "description": "Latéral gauche intérieur/axial (jeu à l'intérieur, rôle d'appui en possession).",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "passes_per_90": 0.14,
+      "accurate_passes_percent": 0.08,
+      "lateral_passes_per_90": 0.06,
+      "forward_passes_per_90": 0.10,
+      "progressive_passes_per_90": 0.18,
+      "accurate_progressive_passes_percent": 0.08,
+      "smart_passes_per_90": 0.12,
+      "passes_to_final_third_per_90": 0.12,
+      "deep_completions_per_90": 0.12
+    }
+  },
+  "Latéral droit - Hybride (inversé)": {
+    "position_groups": ["RB"],
+    "description": "Latéral droit intérieur/axial (jeu à l'intérieur, rôle d'appui en possession).",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "passes_per_90": 0.14,
+      "accurate_passes_percent": 0.08,
+      "lateral_passes_per_90": 0.06,
+      "forward_passes_per_90": 0.10,
+      "progressive_passes_per_90": 0.18,
+      "accurate_progressive_passes_percent": 0.08,
+      "smart_passes_per_90": 0.12,
+      "passes_to_final_third_per_90": 0.12,
+      "deep_completions_per_90": 0.12
+    }
+  },
+  "Piston gauche - Ligne haute": {
+    "position_groups": ["LWB"],
+    "description": "Piston gauche très offensif (ligne haute, largeur).",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "crosses_per_90": 0.20,
+      "deep_crosses_per_90": 0.12,
+      "progressive_runs_per_90": 0.18,
+      "accelerations_per_90": 0.12,
+      "dribbles_per_90": 0.14,
+      "passes_to_penalty_area_per_90": 0.12,
+      "xa_per_90": 0.12
+    }
+  },
+  "Piston droit - Ligne haute": {
+    "position_groups": ["RWB"],
+    "description": "Piston droit très offensif (ligne haute, largeur).",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "crosses_per_90": 0.20,
+      "deep_crosses_per_90": 0.12,
+      "progressive_runs_per_90": 0.18,
+      "accelerations_per_90": 0.12,
+      "dribbles_per_90": 0.14,
+      "passes_to_penalty_area_per_90": 0.12,
+      "xa_per_90": 0.12
+    }
+  },
+  "6 - Destructeur (ball-winner)": {
+    "position_groups": ["DMF","LDMF","RDMF"],
+    "description": "Récupérateur : tacles, duels, interceptions.",
+    "min_minutes": 600,
+    "lower_is_better": ["fouls_per_90","yellow_cards_per_90","red_cards_per_90"],
+    "weights": {
+      "successful_def_actions_per_90": 0.24,
+      "def_duels_per_90": 0.16,
+      "def_duels_won_percent": 0.18,
+      "sliding_tackles_per_90": 0.08,
+      "interceptions_per_90": 0.22,
+      "aerial_duels_won_percent": 0.12
+    }
+  },
+  "6 - Regista (deep-lying playmaker)": {
+    "position_groups": ["DMF","LDMF","RDMF"],
+    "description": "Chef d'orchestre bas : progression par la passe, vision.",
+    "min_minutes": 600,
+    "lower_is_better": [],
+    "weights": {
+      "passes_per_90": 0.12,
+      "forward_passes_per_90": 0.10,
+      "accurate_forward_passes_percent": 0.08,
+      "progressive_passes_per_90": 0.22,
+      "accurate_progressive_passes_percent": 0.10,
+      "long_passes_per_90": 0.14,
+      "accurate_long_passes_percent": 0.10,
+      "smart_passes_per_90": 0.08,
+      "passes_to_final_third_per_90": 0.06
+    }
+  },
+  "8 gauche - Box-to-box": {
+    "position_groups": ["LCMF"],
+    "description": "LCMF énergique, projection, efforts bi-directionnels.",
+    "min_minutes": 600,
+    "lower_is_better": [],
+    "weights": {
+      "progressive_runs_per_90": 0.18,
+      "accelerations_per_90": 0.10,
+      "offensive_duels_per_90": 0.10,
+      "successful_def_actions_per_90": 0.12,
+      "def_duels_won_percent": 0.10,
+      "dribbles_per_90": 0.10,
+      "successful_dribbles_percent": 0.06,
+      "goals_per_90": 0.12,
+      "assists_per_90": 0.12
+    }
+  },
+  "8 droit - Box-to-box": {
+    "position_groups": ["RCMF"],
+    "description": "RCMF énergique, projection, efforts bi-directionnels.",
+    "min_minutes": 600,
+    "lower_is_better": [],
+    "weights": {
+      "progressive_runs_per_90": 0.18,
+      "accelerations_per_90": 0.10,
+      "offensive_duels_per_90": 0.10,
+      "successful_def_actions_per_90": 0.12,
+      "def_duels_won_percent": 0.10,
+      "dribbles_per_90": 0.10,
+      "successful_dribbles_percent": 0.06,
+      "goals_per_90": 0.12,
+      "assists_per_90": 0.12
+    }
+  },
+  "Mezzala gauche": {
+    "position_groups": ["LCMF","LAMF"],
+    "description": "LCMF/LAMF orienté largeur/profondeur à gauche.",
+    "min_minutes": 600,
+    "lower_is_better": [],
+    "weights": {
+      "progressive_runs_per_90": 0.16,
+      "dribbles_per_90": 0.12,
+      "successful_dribbles_percent": 0.08,
+      "smart_passes_per_90": 0.14,
+      "key_passes_per_90": 0.14,
+      "passes_to_final_third_per_90": 0.10,
+      "passes_to_penalty_area_per_90": 0.10,
+      "xa_per_90": 0.16
+    }
+  },
+  "Mezzala droit": {
+    "position_groups": ["RCMF","RAMF"],
+    "description": "RCMF/RAMF orienté largeur/profondeur à droite.",
+    "min_minutes": 600,
+    "lower_is_better": [],
+    "weights": {
+      "progressive_runs_per_90": 0.16,
+      "dribbles_per_90": 0.12,
+      "successful_dribbles_percent": 0.08,
+      "smart_passes_per_90": 0.14,
+      "key_passes_per_90": 0.14,
+      "passes_to_final_third_per_90": 0.10,
+      "passes_to_penalty_area_per_90": 0.10,
+      "xa_per_90": 0.16
+    }
+  },
+  "10 - Créateur (enganche/playmaker)": {
+    "position_groups": ["AMF","LAMF","RAMF"],
+    "description": "Créateur pur : passes clés, XA, passes dans l'intervalle.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "xa_per_90": 0.22,
+      "shot_assists_per_90": 0.14,
+      "key_passes_per_90": 0.18,
+      "smart_passes_per_90": 0.12,
+      "through_passes_per_90": 0.14,
+      "deep_completions_per_90": 0.12,
+      "progressive_passes_per_90": 0.08
+    }
+  },
+  "10 - Second attaquant (shadow striker)": {
+    "position_groups": ["AMF","LAMF","RAMF"],
+    "description": "Projection et finition secondaire depuis la zone du 10.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "touches_in_penalty_area_per_90": 0.18,
+      "goals_per_90": 0.22,
+      "xg_per_90": 0.18,
+      "shots_per_90": 0.12,
+      "deep_completions_per_90": 0.10,
+      "progressive_runs_per_90": 0.10,
+      "xa_per_90": 0.10
+    }
+  },
+  "Ailier gauche - Débordement": {
+    "position_groups": ["LW","LWF"],
+    "description": "Prise de couloir gauche, 1v1, centres.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "dribbles_per_90": 0.22,
+      "successful_dribbles_percent": 0.12,
+      "offensive_duels_per_90": 0.12,
+      "crosses_per_90": 0.18,
+      "accurate_crosses_percent": 0.10,
+      "deep_crosses_per_90": 0.10,
+      "progressive_runs_per_90": 0.16
+    }
+  },
+  "Ailier droit - Débordement": {
+    "position_groups": ["RW","RWF"],
+    "description": "Prise de couloir droit, 1v1, centres.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "dribbles_per_90": 0.22,
+      "successful_dribbles_percent": 0.12,
+      "offensive_duels_per_90": 0.12,
+      "crosses_per_90": 0.18,
+      "accurate_crosses_percent": 0.10,
+      "deep_crosses_per_90": 0.10,
+      "progressive_runs_per_90": 0.16
+    }
+  },
+  "Ailier gauche - Inversé": {
+    "position_groups": ["LW","LWF","LAMF"],
+    "description": "Rentrer intérieur depuis la gauche pour finir/combiner.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "touches_in_penalty_area_per_90": 0.16,
+      "goals_per_90": 0.20,
+      "xg_per_90": 0.18,
+      "shots_per_90": 0.12,
+      "xa_per_90": 0.12,
+      "key_passes_per_90": 0.10,
+      "progressive_runs_per_90": 0.12
+    }
+  },
+  "Ailier droit - Inversé": {
+    "position_groups": ["RW","RWF","RAMF"],
+    "description": "Rentrer intérieur depuis la droite pour finir/combiner.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "touches_in_penalty_area_per_90": 0.16,
+      "goals_per_90": 0.20,
+      "xg_per_90": 0.18,
+      "shots_per_90": 0.12,
+      "xa_per_90": 0.12,
+      "key_passes_per_90": 0.10,
+      "progressive_runs_per_90": 0.12
+    }
+  },
+  "Ailier gauche - Deux voies": {
+    "position_groups": ["LW","LWF"],
+    "description": "Apports offensifs + repli/duels à gauche.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "dribbles_per_90": 0.14,
+      "successful_dribbles_percent": 0.08,
+      "offensive_duels_per_90": 0.12,
+      "successful_def_actions_per_90": 0.14,
+      "def_duels_won_percent": 0.12,
+      "progressive_runs_per_90": 0.16,
+      "xa_per_90": 0.12,
+      "goals_per_90": 0.12
+    }
+  },
+  "Ailier droit - Deux voies": {
+    "position_groups": ["RW","RWF"],
+    "description": "Apports offensifs + repli/duels à droite.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "dribbles_per_90": 0.14,
+      "successful_dribbles_percent": 0.08,
+      "offensive_duels_per_90": 0.12,
+      "successful_def_actions_per_90": 0.14,
+      "def_duels_won_percent": 0.12,
+      "progressive_runs_per_90": 0.16,
+      "xa_per_90": 0.12,
+      "goals_per_90": 0.12
+    }
+  },
+  "9 - Pivot (target man)": {
+    "position_groups": ["CF"],
+    "description": "Jeu en remise et domination aérienne.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "aerial_duels_per_90": 0.24,
+      "aerial_duels_won_percent": 0.24,
+      "passes_received_per_90": 0.10,
+      "long_passes_received_per_90": 0.16,
+      "xg_per_90": 0.12,
+      "goals_per_90": 0.14
+    }
+  },
+  "9 - Renard (poacher)": {
+    "position_groups": ["CF"],
+    "description": "Finition dans la surface, attaque des zones chaudes.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "touches_in_penalty_area_per_90": 0.22,
+      "xg_per_90": 0.22,
+      "goals_per_90": 0.26,
+      "shots_per_90": 0.14,
+      "shots_on_target_percent": 0.08,
+      "goal_conversion_rate": 0.08
+    }
+  },
+  "9 - Complet (complete forward)": {
+    "position_groups": ["CF"],
+    "description": "Capable de terminer, combiner et attaquer la profondeur.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "goals_per_90": 0.22,
+      "xg_per_90": 0.18,
+      "xa_per_90": 0.10,
+      "key_passes_per_90": 0.10,
+      "progressive_runs_per_90": 0.12,
+      "touches_in_penalty_area_per_90": 0.16,
+      "shots_per_90": 0.12
+    }
+  },
+  "9 - Pressing (defensive forward)": {
+    "position_groups": ["CF"],
+    "description": "Pressing et volume défensif d'un 9.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "offensive_duels_per_90": 0.22,
+      "successful_def_actions_per_90": 0.18,
+      "def_duels_per_90": 0.12,
+      "def_duels_won_percent": 0.10,
+      "accelerations_per_90": 0.12,
+      "progressive_runs_per_90": 0.12,
+      "xa_per_90": 0.14
+    }
+  },
+  "9 - Décrocheur (DLF)": {
+    "position_groups": ["CF"],
+    "description": "Attaquant qui décroche pour créer et connecter.",
+    "min_minutes": 450,
+    "lower_is_better": [],
+    "weights": {
+      "xa_per_90": 0.16,
+      "key_passes_per_90": 0.16,
+      "smart_passes_per_90": 0.14,
+      "passes_to_penalty_area_per_90": 0.14,
+      "deep_completions_per_90": 0.12,
+      "touches_in_penalty_area_per_90": 0.10,
+      "goals_per_90": 0.18
+    }
+  }
+}

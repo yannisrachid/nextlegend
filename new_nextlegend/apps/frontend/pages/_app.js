@@ -6,6 +6,9 @@ const NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/ranking", label: "Ranking" },
   { href: "/report", label: "Report" },
+  { href: "/comparison", label: "Comparison" },
+  { href: "/projection", label: "Projection" },
+  { href: "/stats-research", label: "Stats Research" },
 ];
 
 export default function App({ Component, pageProps }) {

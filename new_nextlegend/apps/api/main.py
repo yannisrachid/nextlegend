@@ -10,6 +10,7 @@ from db import get_session
 from models import RankingRow, Report, SimilarityRow, RankingPage, RoleScore
 import re
 import json
+import csv
 
 app = FastAPI(title="NextLegend v2 API", version="0.1.0")
 
@@ -62,6 +63,8 @@ DEFAULT_COMPETITION_AGGREGATES = [
 
 AGGREGATES_PATH = Path(__file__).resolve().parent / "helpers" / "competition_aggregates.json"
 ROLE_METRICS_PATH = Path(__file__).resolve().parent / "helpers" / "role_metrics.json"
+LEAGUE_TRANSLATION_PATH = Path(__file__).resolve().parent / "helpers" / "league_translation_matrix.csv"
+PLAYER_PROFILES_PATH = Path(__file__).resolve().parent / "helpers" / "player_profiles.json"
 
 _COMPETITION_AGGREGATES: Optional[list[dict[str, list[str]]]] = None
 _COMPETITION_AGGREGATES_MTIME: Optional[float] = None
@@ -69,8 +72,14 @@ _COMPETITION_AGGREGATES_MTIME: Optional[float] = None
 _ROLE_METRICS: Optional[dict[str, list[str]]] = None
 _ROLE_METRICS_MTIME: Optional[float] = None
 
+_LEAGUE_TRANSLATION: Optional[dict[tuple[str, str], dict[str, float]]] = None
+_LEAGUE_TRANSLATION_MTIME: Optional[float] = None
+_LEAGUE_TRANSLATION_LEAGUES: Optional[list[str]] = None
 
 _TM_COLUMNS_CACHE: Optional[list[str]] = None
+_STATS_METRIC_COLUMNS: Optional[list[str]] = None
+_LOWER_IS_BETTER: Optional[set[str]] = None
+_LOWER_IS_BETTER_MTIME: Optional[float] = None
 
 
 def _get_tm_columns(session: Session) -> list[str]:
@@ -175,6 +184,122 @@ def _load_role_metrics() -> dict[str, list[str]]:
     _ROLE_METRICS = role_metrics
     _ROLE_METRICS_MTIME = mtime
     return _ROLE_METRICS
+
+
+def _load_lower_is_better() -> set[str]:
+    global _LOWER_IS_BETTER, _LOWER_IS_BETTER_MTIME
+    try:
+        mtime = PLAYER_PROFILES_PATH.stat().st_mtime if PLAYER_PROFILES_PATH.exists() else None
+    except Exception:
+        mtime = None
+    if _LOWER_IS_BETTER is not None and mtime == _LOWER_IS_BETTER_MTIME:
+        return _LOWER_IS_BETTER
+
+    metrics: set[str] = set()
+    if PLAYER_PROFILES_PATH.exists():
+        try:
+            data = json.loads(PLAYER_PROFILES_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                for spec in data.values():
+                    lower_list = spec.get("lower_is_better", []) if isinstance(spec, dict) else []
+                    for item in lower_list or []:
+                        value = str(item).strip()
+                        if value:
+                            metrics.add(value)
+        except Exception:
+            metrics = set()
+
+    _LOWER_IS_BETTER = metrics
+    _LOWER_IS_BETTER_MTIME = mtime
+    return _LOWER_IS_BETTER
+
+
+def _stats_metric_columns(session: Session) -> list[str]:
+    global _STATS_METRIC_COLUMNS
+    if _STATS_METRIC_COLUMNS is not None:
+        return _STATS_METRIC_COLUMNS
+    rows = session.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'player_metrics' ORDER BY column_name"
+        )
+    ).fetchall()
+    excluded = {
+        "player_season_id",
+        "created_at",
+        "updated_at",
+        "age",
+        "minutes_played",
+        "matches_played",
+    }
+    columns = []
+    for row in rows:
+        name = row[0]
+        if name in excluded:
+            continue
+        if name.startswith("summary_"):
+            continue
+        if name.endswith("_pct_league") or name.endswith("_pct_global"):
+            continue
+        if name.endswith("_pct_league_adjusted") or name.endswith("_pct_global_adjusted"):
+            continue
+        columns.append(name)
+    _STATS_METRIC_COLUMNS = columns
+    return _STATS_METRIC_COLUMNS
+
+
+def _load_league_translation() -> dict[tuple[str, str], dict[str, float]]:
+    global _LEAGUE_TRANSLATION, _LEAGUE_TRANSLATION_MTIME, _LEAGUE_TRANSLATION_LEAGUES
+    try:
+        mtime = LEAGUE_TRANSLATION_PATH.stat().st_mtime if LEAGUE_TRANSLATION_PATH.exists() else None
+    except Exception:
+        mtime = None
+    if _LEAGUE_TRANSLATION is not None and mtime == _LEAGUE_TRANSLATION_MTIME:
+        return _LEAGUE_TRANSLATION
+
+    translation: dict[tuple[str, str], dict[str, float]] = {}
+    leagues: set[str] = set()
+    if LEAGUE_TRANSLATION_PATH.exists():
+        try:
+            with LEAGUE_TRANSLATION_PATH.open(encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    source = str(row.get("source_competition") or "").strip()
+                    target = str(row.get("target_competition") or "").strip()
+                    if not source or not target:
+                        continue
+                    leagues.add(source)
+                    leagues.add(target)
+                    def _to_float(value: str | None) -> float:
+                        try:
+                            return float(value)
+                        except (TypeError, ValueError):
+                            return 1.0
+                    translation[(source, target)] = {
+                        "difficulty_coeff": _to_float(row.get("difficulty_coeff")),
+                        "intensity_coeff": _to_float(row.get("intensity_coeff")),
+                        "overall_coeff": _to_float(row.get("overall_coeff")),
+                    }
+        except Exception:
+            translation = {}
+            leagues = set()
+
+    _LEAGUE_TRANSLATION = translation
+    _LEAGUE_TRANSLATION_MTIME = mtime
+    _LEAGUE_TRANSLATION_LEAGUES = sorted(leagues)
+    return _LEAGUE_TRANSLATION
+
+
+def _league_translation_leagues() -> list[str]:
+    _load_league_translation()
+    return _LEAGUE_TRANSLATION_LEAGUES or []
+
+
+def _league_translation_coeffs(source: Optional[str], target: Optional[str]) -> dict[str, float]:
+    if not source or not target:
+        return {"difficulty_coeff": 1.0, "intensity_coeff": 1.0, "overall_coeff": 1.0}
+    matrix = _load_league_translation()
+    return matrix.get((source, target), {"difficulty_coeff": 1.0, "intensity_coeff": 1.0, "overall_coeff": 1.0})
 
 
 def _competition_aggregate_map() -> dict[str, list[str]]:
@@ -610,6 +735,48 @@ def meta_competitions(session: Session = Depends(get_session)):
     return aggregate_items + items
 
 
+@app.get("/meta/positions")
+def meta_positions(session: Session = Depends(get_session)):
+    sql = """
+    SELECT DISTINCT position, second_position
+    FROM player_seasons
+    WHERE position IS NOT NULL OR second_position IS NOT NULL
+    """
+    rows = session.execute(text(sql)).fetchall()
+    codes: set[str] = set()
+    for row in rows:
+        for value in (row.position, row.second_position):
+            if not value:
+                continue
+            for token in str(value).split(","):
+                cleaned = token.strip()
+                if cleaned:
+                    codes.add(cleaned)
+    return sorted(codes)
+
+
+@app.get("/meta/stats-research/metrics")
+def meta_stats_research_metrics(session: Session = Depends(get_session)):
+    return {
+        "metrics": _stats_metric_columns(session),
+        "lower_is_better": sorted(_load_lower_is_better()),
+    }
+
+
+@app.get("/meta/league-translation/leagues")
+def meta_league_translation_leagues():
+    return _league_translation_leagues()
+
+
+@app.get("/meta/league-translation")
+def meta_league_translation(
+    source: str = Query(..., min_length=1),
+    target: str = Query(..., min_length=1),
+):
+    coeffs = _league_translation_coeffs(source, target)
+    return {"source": source, "target": target, **coeffs}
+
+
 @app.get("/meta/seasons")
 def meta_seasons(session: Session = Depends(get_session)):
     sql = """
@@ -774,5 +941,71 @@ def search_players(
     ORDER BY p.name, ps.team_in_selected_period, c.name, ps.calendar, ps.minutes_played DESC NULLS LAST
     LIMIT :limit
     """
+    rows = session.execute(text(sql), params).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+@app.get("/stats-research")
+def stats_research(
+    metric_x: str = Query(..., min_length=1),
+    metric_y: str = Query(..., min_length=1),
+    league: Optional[str] = Query(None),
+    positions: Optional[str] = Query(None),
+    min_minutes: float = Query(270, ge=0),
+    limit: int = Query(5000, ge=1, le=20000),
+    session: Session = Depends(get_session),
+):
+    available = _stats_metric_columns(session)
+    if metric_x not in available or metric_y not in available:
+        raise HTTPException(status_code=400, detail="Invalid metric selection")
+
+    sql = f"""
+    WITH base AS (
+      SELECT DISTINCT ON (p.id, c.name, ps.team_in_selected_period)
+        p.id AS player_id,
+        p.name,
+        ps.team_in_selected_period AS team,
+        c.name AS competition_name,
+        ps.position,
+        ps.second_position,
+        ps.minutes_played,
+        pm.age,
+        pm.\"{metric_x}\" AS metric_x,
+        pm.\"{metric_y}\" AS metric_y
+      FROM player_seasons ps
+      JOIN players p ON p.id = ps.player_id
+      JOIN competitions c ON c.id = ps.competition_id
+      JOIN player_metrics pm ON pm.player_season_id = ps.id
+      WHERE pm.\"{metric_x}\" IS NOT NULL
+        AND pm.\"{metric_y}\" IS NOT NULL
+    """
+    params: dict = {"limit": limit}
+    if league and league not in {"All leagues", "All"}:
+        sql, params = _apply_competition_filter(sql, params, league)
+    if min_minutes is not None:
+        sql += " AND ps.minutes_played >= :min_minutes"
+        params["min_minutes"] = min_minutes
+    if positions:
+        pos_list = [p.strip() for p in positions.split(",") if p.strip()]
+        if pos_list:
+            params["positions"] = pos_list
+            params["pos_patterns"] = [f"%{p}%" for p in pos_list]
+            sql += """
+            AND (
+              ps.position = ANY(:positions)
+              OR ps.second_position = ANY(:positions)
+              OR ps.position ILIKE ANY(:pos_patterns)
+              OR ps.second_position ILIKE ANY(:pos_patterns)
+            )
+            """
+    sql += """
+      ORDER BY p.id, c.name, ps.team_in_selected_period,
+        ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+    )
+    SELECT *
+    FROM base
+    """
+    sql += f' ORDER BY metric_x DESC NULLS LAST, metric_y DESC NULLS LAST LIMIT :limit'
+
     rows = session.execute(text(sql), params).fetchall()
     return [_row_to_dict(row) for row in rows]
