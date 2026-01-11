@@ -10,6 +10,7 @@ import os
 import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
+from passlib.context import CryptContext
 
 from settings import settings
 from db import get_session, SessionLocal
@@ -144,19 +145,35 @@ CREATE INDEX IF NOT EXISTS ai_messages_conversation_idx ON ai_messages(conversat
 """
 
 AUTH_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS auth_users (
+    username TEXT PRIMARY KEY,
+    display_name TEXT,
+    email TEXT UNIQUE,
+    password_hash TEXT NOT NULL,
+    password_algo TEXT NOT NULL DEFAULT 'bcrypt',
+    role TEXT DEFAULT 'user',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    last_login TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS auth_sessions (
     id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES auth_users(username) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     last_seen TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS auth_sessions_user_id_idx ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS auth_users_email_idx ON auth_users(email);
 """
 
 AUTH_COOKIE_NAME = "nl_session"
 DEFAULT_SESSION_DAYS = 365
+PASSWORD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
+LEGACY_SHA256 = "sha256"
+ADMIN_USERNAME = "yrachid"
 
 
 def _ensure_prospect_schema(session: Session) -> None:
@@ -174,18 +191,80 @@ def _ensure_ai_schema(session: Session) -> None:
 
 
 def _ensure_auth_schema(session: Session) -> None:
-    statements = [chunk.strip() for chunk in AUTH_SCHEMA_SQL.split(";") if chunk.strip()]
-    for statement in statements:
-        session.execute(text(statement))
+    if not _table_exists(session, "auth_users"):
+        _drop_orphan_type(session, "auth_users")
+        session.execute(
+            text(
+                """
+                CREATE TABLE auth_users (
+                    username TEXT PRIMARY KEY,
+                    display_name TEXT,
+                    email TEXT UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    password_algo TEXT NOT NULL DEFAULT 'bcrypt',
+                    role TEXT DEFAULT 'user',
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    last_login TIMESTAMPTZ
+                )
+                """
+            )
+        )
+    if not _table_exists(session, "auth_sessions"):
+        _drop_orphan_type(session, "auth_sessions")
+        session.execute(
+            text(
+                """
+                CREATE TABLE auth_sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES auth_users(username) ON DELETE CASCADE,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    last_seen TIMESTAMPTZ DEFAULT NOW(),
+                    expires_at TIMESTAMPTZ
+                )
+                """
+            )
+        )
+    if _table_exists(session, "auth_sessions"):
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS auth_sessions_user_id_idx ON auth_sessions(user_id)")
+        )
+    if _table_exists(session, "auth_users"):
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS auth_users_email_idx ON auth_users(email)")
+        )
     session.commit()
+    _seed_auth_users(session)
 
 
-def _hash_password(password: str) -> str:
+def _hash_password(password: str, algo: str = "bcrypt") -> str:
+    if algo == "bcrypt":
+        return PASSWORD_CONTEXT.hash(password)
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
-def _load_auth_users() -> dict[str, dict[str, str]]:
-    users: dict[str, dict[str, str]] = {}
+def _detect_hash_algo(password_hash: str) -> str:
+    if password_hash.startswith("$2a$") or password_hash.startswith("$2b$") or password_hash.startswith("$2y$"):
+        return "bcrypt"
+    return LEGACY_SHA256
+
+
+def _verify_password(password: str, password_hash: str, algo: Optional[str]) -> bool:
+    resolved = algo or _detect_hash_algo(password_hash)
+    if resolved == "bcrypt":
+        if not _detect_hash_algo(password_hash) == "bcrypt":
+            return _hash_password(password, LEGACY_SHA256) == password_hash
+        try:
+            return PASSWORD_CONTEXT.verify(password, password_hash)
+        except Exception:
+            return False
+    if resolved == LEGACY_SHA256:
+        return _hash_password(password, LEGACY_SHA256) == password_hash
+    return False
+
+
+def _load_bootstrap_users() -> list[dict[str, str]]:
+    users: list[dict[str, str]] = []
 
     env_blob = os.getenv("AUTH_USERS_JSON") or os.getenv("AUTH_USERS")
     if env_blob:
@@ -204,12 +283,21 @@ def _load_auth_users() -> dict[str, dict[str, str]]:
                         password_hash = _hash_password(str(entry.get("password")))
                     if not password_hash:
                         continue
-                    users[username.lower()] = {
-                        "username": username,
-                        "display_name": entry.get("display_name") or username,
-                        "email": entry.get("email") or "",
-                        "password_hash": str(password_hash),
-                    }
+                    algo = entry.get("password_algo")
+                    if not algo and password_hash:
+                        algo = _detect_hash_algo(str(password_hash))
+                    if not algo:
+                        algo = "bcrypt"
+                    email = (entry.get("email") or "").strip() or None
+                    users.append(
+                        {
+                            "username": username,
+                            "display_name": entry.get("display_name") or username,
+                            "email": email,
+                            "password_hash": str(password_hash),
+                            "password_algo": str(algo),
+                        }
+                    )
         except json.JSONDecodeError:
             pass
 
@@ -219,12 +307,16 @@ def _load_auth_users() -> dict[str, dict[str, str]]:
         if not password_hash and os.getenv("AUTH_PASSWORD"):
             password_hash = _hash_password(os.getenv("AUTH_PASSWORD", ""))
         if username and password_hash:
-            users[username.lower()] = {
-                "username": username,
-                "display_name": os.getenv("AUTH_DISPLAY_NAME") or username,
-                "email": os.getenv("AUTH_EMAIL") or "",
-                "password_hash": str(password_hash),
-            }
+            email = (os.getenv("AUTH_EMAIL") or "").strip() or None
+            users.append(
+                {
+                    "username": username,
+                    "display_name": os.getenv("AUTH_DISPLAY_NAME") or username,
+                    "email": email,
+                    "password_hash": str(password_hash),
+                    "password_algo": _detect_hash_algo(str(password_hash)),
+                }
+            )
 
     if not users:
         candidates = [
@@ -253,31 +345,184 @@ def _load_auth_users() -> dict[str, dict[str, str]]:
                     password_hash = _hash_password(str(entry.get("password")))
                 if not password_hash:
                     continue
-                users[username.lower()] = {
-                    "username": username,
-                    "display_name": entry.get("display_name") or username,
-                    "email": entry.get("email") or "",
-                    "password_hash": str(password_hash),
-                }
+                algo = entry.get("password_algo")
+                if not algo and password_hash:
+                    algo = _detect_hash_algo(str(password_hash))
+                if not algo:
+                    algo = "bcrypt"
+                email = (entry.get("email") or "").strip() or None
+                users.append(
+                    {
+                        "username": username,
+                        "display_name": entry.get("display_name") or username,
+                        "email": email,
+                        "password_hash": str(password_hash),
+                        "password_algo": str(algo),
+                    }
+                )
             if users:
                 break
 
     return users
 
 
-def _authenticate_user(username: str, password: str) -> Optional[dict[str, str]]:
-    users = _load_auth_users()
-    if not users:
+def _table_exists(session: Session, table_name: str) -> bool:
+    return (
+        session.execute(
+            text("SELECT to_regclass(:name)"),
+            {"name": f"public.{table_name}"},
+        ).scalar()
+        is not None
+    )
+
+
+def _drop_orphan_type(session: Session, type_name: str) -> None:
+    if _table_exists(session, type_name):
+        return
+    type_exists = session.execute(
+        text(
+            """
+            SELECT 1
+            FROM pg_type
+            WHERE typname = :type_name AND typtype = 'c'
+            """
+        ),
+        {"type_name": type_name},
+    ).fetchone()
+    if type_exists:
+        session.execute(text(f'DROP TYPE "{type_name}"'))
+
+
+def _seed_auth_users(session: Session) -> None:
+    has_users = session.execute(text("SELECT 1 FROM auth_users LIMIT 1")).fetchone()
+    if has_users:
+        admin_exists = session.execute(
+            text("SELECT 1 FROM auth_users WHERE lower(username) = :admin"),
+            {"admin": ADMIN_USERNAME},
+        ).fetchone()
+        if admin_exists:
+            return
+        seed_users = _load_bootstrap_users()
+        admin_entry = next(
+            (entry for entry in seed_users if entry["username"].strip().lower() == ADMIN_USERNAME),
+            None,
+        )
+        if not admin_entry:
+            return
+        session.execute(
+            text(
+                """
+                INSERT INTO auth_users (
+                    username, display_name, email, password_hash, password_algo, role
+                )
+                VALUES (
+                    :username, :display_name, :email, :password_hash, :password_algo, 'admin'
+                )
+                ON CONFLICT (username) DO NOTHING
+                """
+            ),
+            admin_entry,
+        )
+        session.commit()
+        return
+    _sync_auth_users(session, replace_passwords=True)
+
+
+def _sync_auth_users(session: Session, replace_passwords: bool) -> int:
+    seed_users = _load_bootstrap_users()
+    if not seed_users:
+        return 0
+    for entry in seed_users:
+        role = "admin" if entry["username"].strip().lower() == ADMIN_USERNAME else "user"
+        session.execute(
+            text(
+                """
+                INSERT INTO auth_users (
+                    username, display_name, email, password_hash, password_algo, role
+                )
+                VALUES (
+                    :username, :display_name, :email, :password_hash, :password_algo, :role
+                )
+                ON CONFLICT (username) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    email = COALESCE(EXCLUDED.email, auth_users.email),
+                    password_hash = CASE
+                        WHEN :replace_passwords THEN EXCLUDED.password_hash
+                        ELSE auth_users.password_hash
+                    END,
+                    password_algo = CASE
+                        WHEN :replace_passwords THEN EXCLUDED.password_algo
+                        ELSE auth_users.password_algo
+                    END,
+                    role = CASE
+                        WHEN EXCLUDED.username = :admin_username THEN 'admin'
+                        ELSE 'user'
+                    END,
+                    updated_at = NOW()
+                """
+            ),
+            {
+                **entry,
+                "role": role,
+                "replace_passwords": replace_passwords,
+                "admin_username": ADMIN_USERNAME,
+            },
+        )
+    session.commit()
+    return len(seed_users)
+
+
+def _fetch_user(session: Session, identifier: str) -> Optional[dict[str, str]]:
+    key = identifier.strip().lower()
+    if not key:
         return None
-    entry = users.get(username.strip().lower())
+    row = session.execute(
+        text(
+            """
+            SELECT username, display_name, email, password_hash, password_algo, role
+            FROM auth_users
+            WHERE lower(username) = :key OR lower(email) = :key
+            """
+        ),
+        {"key": key},
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def _authenticate_user(session: Session, username: str, password: str) -> Optional[dict[str, str]]:
+    entry = _fetch_user(session, username)
     if not entry:
         return None
-    if _hash_password(password) != entry.get("password_hash"):
+    if not _verify_password(password, entry["password_hash"], entry.get("password_algo")):
         return None
+    if entry.get("password_algo") == LEGACY_SHA256:
+        try:
+            new_hash = _hash_password(password, "bcrypt")
+        except Exception:
+            new_hash = None
+        if new_hash:
+            session.execute(
+                text(
+                    """
+                    UPDATE auth_users
+                    SET password_hash = :password_hash,
+                        password_algo = 'bcrypt',
+                        updated_at = NOW()
+                    WHERE username = :username
+                    """
+                ),
+                {"password_hash": new_hash, "username": entry["username"]},
+            )
+    session.execute(
+        text("UPDATE auth_users SET last_login = NOW() WHERE username = :username"),
+        {"username": entry["username"]},
+    )
+    session.commit()
     return {
-        "username": entry.get("username") or username,
-        "display_name": entry.get("display_name") or username,
+        "username": entry["username"],
+        "display_name": entry.get("display_name") or entry["username"],
         "email": entry.get("email") or "",
+        "role": entry.get("role") or "user",
     }
 
 
@@ -285,8 +530,9 @@ def _get_session_user(session: Session, session_id: str) -> Optional[dict[str, s
     row = session.execute(
         text(
             """
-            SELECT user_id, expires_at
-            FROM auth_sessions
+            SELECT s.user_id, s.expires_at, u.display_name, u.email, u.role
+            FROM auth_sessions s
+            JOIN auth_users u ON u.username = s.user_id
             WHERE id = :session_id
             """
         ),
@@ -306,7 +552,12 @@ def _get_session_user(session: Session, session_id: str) -> Optional[dict[str, s
         {"session_id": session_id},
     )
     session.commit()
-    return {"username": row.user_id}
+    return {
+        "username": row.user_id,
+        "display_name": row.display_name,
+        "email": row.email,
+        "role": row.role or "user",
+    }
 
 
 class ProspectToggle(BaseModel):
@@ -350,6 +601,35 @@ class AuthUserResponse(BaseModel):
     username: str
     display_name: Optional[str] = None
     email: Optional[str] = None
+    role: Optional[str] = None
+
+
+class AdminUser(BaseModel):
+    username: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    role: str
+    created_at: Optional[datetime] = None
+    last_login: Optional[datetime] = None
+
+
+class AdminUserList(BaseModel):
+    items: list[AdminUser]
+
+
+class AdminUserCreate(BaseModel):
+    username: str
+    password: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = "user"
+
+
+class AdminUserUpdate(BaseModel):
+    password: Optional[str] = None
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
 
 
 @app.get("/health")
@@ -360,7 +640,7 @@ def health() -> dict:
 @app.post("/auth/login")
 def auth_login(payload: AuthLoginRequest, session: Session = Depends(get_session)):
     _ensure_auth_schema(session)
-    user = _authenticate_user(payload.username, payload.password)
+    user = _authenticate_user(session, payload.username, payload.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if payload.legacy_user_id and payload.legacy_user_id != user["username"]:
@@ -418,13 +698,170 @@ def auth_me(request: Request, session: Session = Depends(get_session)):
     user = _get_session_user(session, session_id)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid session")
-    users = _load_auth_users()
-    entry = users.get(user["username"].lower()) if user.get("username") else None
     return AuthUserResponse(
         username=user.get("username"),
-        display_name=entry.get("display_name") if entry else user.get("username"),
-        email=entry.get("email") if entry else None,
+        display_name=user.get("display_name") or user.get("username"),
+        email=user.get("email"),
+        role=user.get("role"),
     )
+
+
+def _require_admin(request: Request) -> None:
+    user = getattr(request.state, "user", None) or {}
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+@app.get("/admin/users", response_model=AdminUserList)
+def admin_users(request: Request, session: Session = Depends(get_session)):
+    _ensure_auth_schema(session)
+    _require_admin(request)
+    rows = session.execute(
+        text(
+            """
+            SELECT username, display_name, email, role, created_at, last_login
+            FROM auth_users
+            ORDER BY created_at DESC
+            """
+        )
+    ).fetchall()
+    items = [AdminUser(**_row_to_dict(row)) for row in rows]
+    return AdminUserList(items=items)
+
+
+@app.post("/admin/users", response_model=AdminUser)
+def admin_create_user(
+    payload: AdminUserCreate,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_auth_schema(session)
+    _require_admin(request)
+    username = payload.username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Username required")
+    if len(payload.password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=400, detail="Password exceeds 72 bytes")
+    password_hash = _hash_password(payload.password, "bcrypt")
+    role = payload.role or "user"
+    if username.lower() == ADMIN_USERNAME:
+        role = "admin"
+    elif role == "admin":
+        raise HTTPException(status_code=400, detail="Only the primary admin can have admin role")
+    row = session.execute(
+        text(
+            """
+            INSERT INTO auth_users (username, display_name, email, password_hash, password_algo, role)
+            VALUES (:username, :display_name, :email, :password_hash, 'bcrypt', :role)
+            RETURNING username, display_name, email, role, created_at, last_login
+            """
+        ),
+        {
+            "username": username,
+            "display_name": payload.display_name or username,
+            "email": (payload.email or "").strip() or None,
+            "password_hash": password_hash,
+            "role": role,
+        },
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=500, detail="Failed to create user")
+    return AdminUser(**_row_to_dict(row))
+
+
+@app.patch("/admin/users/{username}", response_model=AdminUser)
+def admin_update_user(
+    username: str,
+    payload: AdminUserUpdate,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_auth_schema(session)
+    _require_admin(request)
+    target = username.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Username required")
+    updates: dict[str, object] = {}
+    if payload.display_name is not None:
+        updates["display_name"] = payload.display_name or target
+    if payload.email is not None:
+        updates["email"] = payload.email.strip() if payload.email else None
+    if payload.role is not None:
+        if target.lower() == ADMIN_USERNAME and payload.role != "admin":
+            raise HTTPException(status_code=400, detail="Cannot remove admin role from primary admin")
+        if target.lower() != ADMIN_USERNAME and payload.role == "admin":
+            raise HTTPException(status_code=400, detail="Only the primary admin can have admin role")
+        updates["role"] = payload.role
+    if payload.password:
+        if len(payload.password.encode("utf-8")) > 72:
+            raise HTTPException(status_code=400, detail="Password exceeds 72 bytes")
+        updates["password_hash"] = _hash_password(payload.password, "bcrypt")
+        updates["password_algo"] = "bcrypt"
+    if not updates:
+        row = session.execute(
+            text(
+                """
+                SELECT username, display_name, email, role, created_at, last_login
+                FROM auth_users
+                WHERE username = :username
+                """
+            ),
+            {"username": target},
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        return AdminUser(**_row_to_dict(row))
+    set_clause = ", ".join([f"{key} = :{key}" for key in updates.keys()])
+    row = session.execute(
+        text(
+            f"""
+            UPDATE auth_users
+            SET {set_clause}, updated_at = NOW()
+            WHERE username = :username
+            RETURNING username, display_name, email, role, created_at, last_login
+            """
+        ),
+        {"username": target, **updates},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return AdminUser(**_row_to_dict(row))
+
+
+@app.delete("/admin/users/{username}")
+def admin_delete_user(
+    username: str,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_auth_schema(session)
+    _require_admin(request)
+    target = username.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Username required")
+    if target.lower() == ADMIN_USERNAME:
+        raise HTTPException(status_code=400, detail="Cannot delete primary admin")
+    row = session.execute(
+        text("DELETE FROM auth_users WHERE username = :username RETURNING username"),
+        {"username": target},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"deleted": True}
+
+
+@app.post("/admin/users/import")
+def admin_import_users(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_auth_schema(session)
+    _require_admin(request)
+    imported = _sync_auth_users(session, replace_passwords=True)
+    return {"imported": imported}
 
 
 @app.post("/ai/scout", response_model=AIScoutResponse)

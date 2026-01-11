@@ -1,7 +1,8 @@
 import "@/styles/globals.css";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { postJson } from "@/lib/api";
+import { fetchJson, postJson } from "@/lib/api";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const isLogin = router.pathname === "/login";
+  const [me, setMe] = useState(null);
 
   const handleLogout = async () => {
     try {
@@ -28,6 +30,27 @@ export default function App({ Component, pageProps }) {
       window.location.href = "/login";
     }
   };
+
+  useEffect(() => {
+    if (isLogin) return;
+    let active = true;
+    fetchJson("/auth/me")
+      .then((data) => {
+        if (!active) return;
+        setMe(data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setMe(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isLogin]);
+
+  const navItems = me?.role === "admin"
+    ? [...NAV_ITEMS, { href: "/admin", label: "Admin" }]
+    : NAV_ITEMS;
 
   return (
     <>
@@ -43,7 +66,7 @@ export default function App({ Component, pageProps }) {
               </span>
             </div>
             <nav className="flex items-center gap-4">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const isActive = router.pathname === item.href;
                 return (
                   <Link

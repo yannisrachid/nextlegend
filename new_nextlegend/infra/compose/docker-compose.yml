@@ -52,6 +52,7 @@ services:
     volumes:
       - ../../apps/api:/app
       - ../../helpers/csv:/helpers/csv:ro
+      - ../../config:/config:ro
 
   frontend:
     build:
