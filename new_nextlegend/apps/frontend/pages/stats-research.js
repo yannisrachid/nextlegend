@@ -109,7 +109,9 @@ export default function StatsResearchPage() {
         }));
         positionList.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
         setPositions(positionList);
-        const metricList = (metricsData?.metrics || []).filter((metric) => METRIC_LABELS[metric]);
+        const metricList = Array.from(
+          new Set((metricsData?.metrics || []).filter(Boolean))
+        ).filter((metric) => METRIC_LABELS[metric]);
         metricList.sort((a, b) => formatMetricLabel(a).localeCompare(formatMetricLabel(b), undefined, { sensitivity: "base" }));
         setMetrics(metricList);
         setLowerIsBetter(new Set(metricsData?.lower_is_better || []));
@@ -364,6 +366,7 @@ export default function StatsResearchPage() {
     .map((row) => ({
       key: `${row.name || ""}|${row.team || ""}|${row.competition_name || ""}`,
       label: `${row.name || "Unknown"} - ${row.team || "Unknown"} - ${row.competition_name || "Unknown"}`,
+      player_id: row.player_id,
       metric_x: row.metric_x,
       metric_y: row.metric_y,
     }))
@@ -607,7 +610,25 @@ export default function StatsResearchPage() {
                             isHighlight ? "bg-emerald-400/20 text-emerald-50" : ""
                           }`}
                         >
-                          <td className="py-2 text-slate-200">{row.label}</td>
+                          <td className="py-2 text-slate-200">
+                            {row.player_id ? (
+                              <button
+                                type="button"
+                                className="text-left hover:text-emerald-200"
+                                onClick={() =>
+                                  window.open(
+                                    `/report/${row.player_id}`,
+                                    "_blank",
+                                    "noopener,noreferrer"
+                                  )
+                                }
+                              >
+                                {row.label}
+                              </button>
+                            ) : (
+                              row.label
+                            )}
+                          </td>
                           <td className="py-2 text-slate-300">{formatValue(row.metric_x)}</td>
                           <td className="py-2 text-slate-300">{formatValue(row.metric_y)}</td>
                         </tr>

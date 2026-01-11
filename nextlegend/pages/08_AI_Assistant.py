@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional
@@ -27,28 +28,132 @@ from ai import (  # noqa: E402
 )
 from auth import render_account_controls, require_authentication  # noqa: E402
 from components.sidebar import render_sidebar_logo  # noqa: E402
+from data_utils import load_player_dataset  # noqa: E402
 from s3_utils import read_csv_from_s3  # noqa: E402
 
 DATA_KEY = "data/wyscout_players_cleaned.csv"
 LOCAL_DATA_PATH = _PROJECT_ROOT / "data" / "wyscout_players_cleaned.csv"
+DB_ENV_KEYS = ("NEXTLEGEND_DATABASE_URL", "DATABASE_URL")
+DEFAULT_DB_METRICS = [
+    "summary_finishing",
+    "summary_creation",
+    "summary_defense",
+    "summary_technique",
+    "summary_construction",
+    "summary_aerial",
+    "goals_per_90",
+    "xg_per_90",
+    "xa_per_90",
+    "assists_per_90",
+    "xg",
+    "xa",
+    "goals",
+    "assists",
+]
+
+try:  # pragma: no cover - optional dependency for DB mode
+    from sqlalchemy import create_engine, text
+except ImportError:  # pragma: no cover - handled gracefully in UI
+    create_engine = None  # type: ignore[assignment]
+    text = None  # type: ignore[assignment]
+
+
+def _get_database_url() -> Optional[str]:
+    for key in DB_ENV_KEYS:
+        value = os.getenv(key)
+        if value:
+            return value
+    return None
+
+
+def _database_available() -> bool:
+    return _get_database_url() is not None and create_engine is not None
+
+
+def _fetch_db_columns(connection, table_name: str) -> set[str]:
+    query = text(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = :table"
+    )
+    rows = connection.execute(query, {"table": table_name}).fetchall()
+    return {row[0] for row in rows}
+
+
+def _build_default_db_query(connection) -> str:
+    player_cols = _fetch_db_columns(connection, "players")
+    season_cols = _fetch_db_columns(connection, "player_seasons")
+    competition_cols = _fetch_db_columns(connection, "competitions")
+    metrics_cols = _fetch_db_columns(connection, "player_metrics")
+
+    select_parts: list[str] = []
+    if "id" in player_cols:
+        select_parts.append("p.id AS player_id")
+    if "name" in player_cols:
+        select_parts.append("p.name AS player")
+    if "age" in player_cols:
+        select_parts.append("p.age AS age")
+
+    if "team_in_selected_period" in season_cols:
+        select_parts.append("ps.team_in_selected_period AS team")
+    if "position" in season_cols:
+        select_parts.append("ps.position AS position")
+    if "second_position" in season_cols:
+        select_parts.append("ps.second_position AS second_position")
+    if "minutes_played" in season_cols:
+        select_parts.append("ps.minutes_played AS minutes_played")
+    if "assigned_role" in season_cols:
+        select_parts.append("ps.assigned_role AS assigned_role")
+    if "assigned_role_pct_global" in season_cols:
+        select_parts.append("ps.assigned_role_pct_global AS assigned_role_pct_global")
+    if "assigned_role_pct_league" in season_cols:
+        select_parts.append("ps.assigned_role_pct_league AS assigned_role_pct_league")
+    if "global_score_adjusted" in season_cols:
+        select_parts.append("ps.global_score_adjusted AS global_score_adjusted")
+
+    if "name" in competition_cols:
+        select_parts.append("c.name AS competition_name")
+
+    for metric in DEFAULT_DB_METRICS:
+        if metric in metrics_cols:
+            select_parts.append(f'pm."{metric}" AS "{metric}"')
+
+    select_clause = ", ".join(select_parts) if select_parts else "p.id AS player_id"
+    sql = f"""
+        SELECT {select_clause}
+        FROM player_seasons ps
+        JOIN players p ON p.id = ps.player_id
+        JOIN competitions c ON c.id = ps.competition_id
+        LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+    """
+    limit = os.getenv("NEXTLEGEND_AI_DB_LIMIT")
+    if limit and limit.isdigit():
+        sql = f"{sql} LIMIT {int(limit)}"
+    return sql
 
 
 @st.cache_data(show_spinner=False)
-def load_ai_dataset() -> pd.DataFrame:
+def _load_ai_dataset_from_db(db_url: str, sql: str) -> pd.DataFrame:
+    engine = create_engine(db_url)
+    with engine.connect() as connection:
+        return pd.read_sql_query(text(sql), connection)
+
+
+@st.cache_data(show_spinner=False)
+def _load_ai_dataset_from_files() -> pd.DataFrame:
     """Load the enriched dataset from session, local disk or S3."""
 
-    if "enriched_dataset" in st.session_state:
-        df = st.session_state["enriched_dataset"]
-    elif "dataset" in st.session_state:
-        df = st.session_state["dataset"]
-    else:
+    try:
+        df, _ = load_player_dataset()
+    except Exception:
         try:
             df = read_csv_from_s3(DATA_KEY)
         except FileNotFoundError:
             if not LOCAL_DATA_PATH.exists():
                 raise
             df = pd.read_csv(LOCAL_DATA_PATH)
+    return df
 
+
+def _normalize_dataset(df: pd.DataFrame) -> pd.DataFrame:
     working = df.copy()
     if "player" not in working.columns and "player_name" in working.columns:
         working["player"] = working["player_name"]
@@ -57,6 +162,31 @@ def load_ai_dataset() -> pd.DataFrame:
     if "minutes_played" not in working.columns and "minutes" in working.columns:
         working["minutes_played"] = working["minutes"]
     return working
+
+
+def load_ai_dataset(source: str) -> pd.DataFrame:
+    """Load the enriched dataset from session, local disk, S3, or database."""
+
+    if source == "database":
+        db_url = _get_database_url()
+        if not db_url:
+            raise RuntimeError("DATABASE_URL is not configured.")
+        if create_engine is None or text is None:
+            raise RuntimeError("SQLAlchemy is required for database mode.")
+        sql_override = os.getenv("NEXTLEGEND_AI_SQL")
+        engine = create_engine(db_url)
+        with engine.connect() as connection:
+            sql = sql_override or _build_default_db_query(connection)
+        df = _load_ai_dataset_from_db(db_url, sql)
+        return _normalize_dataset(df)
+
+    if "enriched_dataset" in st.session_state:
+        return _normalize_dataset(st.session_state["enriched_dataset"])
+    if "dataset" in st.session_state:
+        return _normalize_dataset(st.session_state["dataset"])
+
+    df = _load_ai_dataset_from_files()
+    return _normalize_dataset(df)
 
 
 def _get_options(df: pd.DataFrame, column: str) -> list[str]:
@@ -202,7 +332,21 @@ def main() -> None:
     st.title("AI Assistant – NextLegend")
     st.caption("Multi-agent assistant for scouting queries. Data stays local; only compact summaries are sent to the model.")
 
-    df = load_ai_dataset()
+    data_source_options = {"Dataset (session/S3)": "dataset"}
+    if _database_available():
+        data_source_options["Database (SQL)"] = "database"
+
+    with st.expander("Data source", expanded=False):
+        if not _database_available():
+            st.caption("Set DATABASE_URL and install SQLAlchemy to enable database mode.")
+        selected_label = st.radio(
+            "Choose the data backend for the agents",
+            options=list(data_source_options.keys()),
+            horizontal=True,
+        )
+    data_source = data_source_options[selected_label]
+
+    df = load_ai_dataset(data_source)
     if df.empty:
         st.warning("Dataset is empty. Run the pipeline first.")
         st.stop()

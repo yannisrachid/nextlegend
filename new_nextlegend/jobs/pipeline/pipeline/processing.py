@@ -7,6 +7,7 @@ assigned_role, global_score_adjusted, summary_*, similarités).
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
@@ -372,15 +373,17 @@ def profile_similarity(
         values = _coerce_numeric(df[metric]).fillna(0.0)
         if metric in lower_is_better:
             values = -values
-        numeric_vectors.append(values * np.sqrt(normalized[metric]))
+        weight_scale = math.sqrt(float(normalized[metric])) if normalized[metric] else 0.0
+        numeric_vectors.append(values * weight_scale)
     numeric_vectors.append(df.get("foot", pd.Series(index=df.index)).apply(_foot_numeric))
     numeric_vectors.append(_coerce_numeric(df.get("height", pd.Series(index=df.index))))
     numeric_vectors.append(_coerce_numeric(df.get("weight", pd.Series(index=df.index))))
     vectors = pd.concat(numeric_vectors, axis=1)
-    vectors = vectors.loc[mask].fillna(0.0)
-    norms = np.linalg.norm(vectors.values, axis=1)
+    vectors = vectors.apply(pd.to_numeric, errors="coerce").loc[mask].fillna(0.0)
+    vector_values = vectors.to_numpy(dtype=float)
+    norms = np.linalg.norm(vector_values, axis=1)
     norms[norms == 0] = 1e-9
-    normalized_vectors = vectors.values / norms[:, None]
+    normalized_vectors = vector_values / norms[:, None]
 
     similarity_matrix = normalized_vectors @ normalized_vectors.T
     np.fill_diagonal(similarity_matrix, -np.inf)
@@ -685,11 +688,31 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
 
     # Merge overrides joueurs
     enriched = enriched.merge(player_map, left_on="player_id", right_on="wyscout_player_id", how="left")
+    if "tm_player_id" not in enriched.columns:
+        enriched["tm_player_id"] = np.nan
+    enriched["tm_player_id"] = enriched["tm_player_id"].astype(str).str.strip()
+    enriched.loc[enriched["tm_player_id"].isin(["nan", "None", "<NA>", ""]), "tm_player_id"] = np.nan
 
     # Fuzzy fallback intra club si tm_player_id toujours vide
-    tm_profiles["tm_player_name"] = tm_profiles.get("player_name", tm_profiles.get("name", tm_profiles.get("tm_player_name", "")))
+    def _first_series(df: pd.DataFrame, col: str) -> Optional[pd.Series]:
+        if col not in df.columns:
+            return None
+        series_or_frame = df[col]
+        if isinstance(series_or_frame, pd.DataFrame):
+            return series_or_frame.iloc[:, 0]
+        return series_or_frame
+
+    player_name_series = _first_series(tm_profiles, "player_name")
+    if player_name_series is None:
+        player_name_series = _first_series(tm_profiles, "name")
+    if player_name_series is None:
+        player_name_series = _first_series(tm_profiles, "tm_player_name")
+    tm_profiles["tm_player_name"] = player_name_series if player_name_series is not None else ""
     tm_profiles["tm_player_name_norm"] = tm_profiles["tm_player_name"].apply(_normalise_name)
-    tm_profiles["tm_club_id"] = tm_profiles.get("club_id", tm_profiles.get("tm_club_id", np.nan))
+    club_series = _first_series(tm_profiles, "club_id")
+    if club_series is None:
+        club_series = _first_series(tm_profiles, "tm_club_id")
+    tm_profiles["tm_club_id"] = club_series if club_series is not None else np.nan
 
     for idx, row in enriched[enriched["tm_player_id"].isna()].iterrows():
         tm_club_id = row.get("tm_club_id")
@@ -704,6 +727,9 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
     players = players.copy()
     players["wyscout_id"] = players["wyscout_id"].astype(str).str.strip()
     players = players.merge(player_map, left_on="wyscout_id", right_on="wyscout_player_id", how="left")
+    if "tm_player_id" in players.columns:
+        players["tm_player_id"] = players["tm_player_id"].astype(str).str.strip()
+        players.loc[players["tm_player_id"].isin(["nan", "None", "<NA>", ""]), "tm_player_id"] = np.nan
     players = players.merge(tm_profiles[["tm_player_id"]], on="tm_player_id", how="left")
 
     return enriched, players
@@ -976,6 +1002,10 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     enriched_tm, players_tm = merge_transfermarkt(enriched, players, tm_sources)
     enriched = enriched_tm
     players = players_tm
+    if enriched.columns.duplicated().any():
+        dupes = enriched.columns[enriched.columns.duplicated()].tolist()
+        print(f"[WARN] duplicate columns in enriched: {dupes}")
+        enriched = enriched.loc[:, ~enriched.columns.duplicated()]
 
     # Fact player_seasons (one row per player/comp/calendar/team)
     group_cols = ["wyscout_id", "competition_name", "calendar"]

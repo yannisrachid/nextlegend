@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
 import pandas as pd
@@ -15,6 +16,7 @@ from langchain_openai import ChatOpenAI
 
 DEFAULT_MODEL = "gpt-4o-mini"
 MAX_SCOUT_ROWS = 50
+CONTEXT_METRICS_PATH = Path(__file__).resolve().parent / "context" / "metric_hints.json"
 
 load_dotenv()
 
@@ -86,6 +88,7 @@ def detect_language(text: str) -> str:
 def build_column_catalog(df: pd.DataFrame, extra_metrics: Optional[Iterable[str]] = None) -> str:
     """Return a lightweight description of the columns available to the agent."""
 
+    context_metrics = _load_metric_hints()
     preferred_columns = [
         "competition_name",
         "league",
@@ -109,6 +112,9 @@ def build_column_catalog(df: pd.DataFrame, extra_metrics: Optional[Iterable[str]
     ]
     if extra_metrics:
         preferred_columns.extend(list(extra_metrics))
+    if context_metrics:
+        preferred_columns.extend(context_metrics)
+    preferred_columns = list(dict.fromkeys(preferred_columns))
 
     descriptions: List[str] = []
     for column in preferred_columns:
@@ -122,6 +128,22 @@ def build_column_catalog(df: pd.DataFrame, extra_metrics: Optional[Iterable[str]
         if len(descriptions) >= 20:
             break
     return "; ".join(descriptions)
+
+
+def _load_metric_hints() -> list[str]:
+    if not CONTEXT_METRICS_PATH.exists():
+        return []
+    try:
+        payload = json.loads(CONTEXT_METRICS_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if isinstance(payload, dict):
+        items = payload.get("core_metrics", [])
+    elif isinstance(payload, list):
+        items = payload
+    else:
+        items = []
+    return [str(item) for item in items if item]
 
 
 def run_data_scientist(

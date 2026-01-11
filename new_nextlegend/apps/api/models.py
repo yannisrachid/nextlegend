@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
+from datetime import datetime
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -98,3 +99,100 @@ class RankingPage(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class AIOverrides(BaseModel):
+    league: Optional[str] = None
+    role: Optional[str] = None
+    position: Optional[str] = None
+    max_age: Optional[int] = None
+    min_minutes: Optional[int] = None
+
+
+class AIScoutRequest(BaseModel):
+    prompt: str
+    overrides: Optional[AIOverrides] = None
+    language: Optional[str] = "auto"
+    limit: Optional[int] = 30
+
+
+class AIScoutResponse(BaseModel):
+    filters: dict[str, Any]
+    shortlist: list[dict[str, Any]]
+    candidates: list[dict[str, Any]]
+    usage: Optional[dict[str, Any]] = None
+
+
+class AIPlayerReportRequest(BaseModel):
+    player_id: int
+    prompt: str
+    language: Optional[str] = "auto"
+
+
+class AIPlayerReportResponse(BaseModel):
+    player_id: int
+    report: str
+    context: dict[str, Any]
+    usage: Optional[dict[str, Any]] = None
+
+
+class AIUsageResponse(BaseModel):
+    user_id: str
+    conversation_id: Optional[int] = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    model: Optional[str] = None
+
+
+class AIConversationCreate(BaseModel):
+    user_id: str
+    title: Optional[str] = None
+    mode: Optional[str] = "scout"
+
+
+class AIConversation(BaseModel):
+    id: int
+    user_id: str
+    title: Optional[str] = None
+    mode: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class AIConversationList(BaseModel):
+    items: list[AIConversation]
+
+
+class AIMessage(BaseModel):
+    id: int
+    conversation_id: int
+    role: str
+    content: str
+    payload: Optional[dict[str, Any]] = None
+    created_at: Optional[datetime] = None
+
+
+class AIConversationDetail(BaseModel):
+    conversation: AIConversation
+    messages: list[AIMessage]
+
+
+class AIMessageCreate(BaseModel):
+    user_id: str
+    prompt: str
+    mode: Optional[str] = None
+    player_id: Optional[int] = None
+    language: Optional[str] = "auto"
+
+
+class AIMessageResponse(BaseModel):
+    conversation: AIConversation
+    user_message: AIMessage
+    assistant_message: AIMessage
+
+
+class AIConversationUpdate(BaseModel):
+    user_id: str
+    title: Optional[str] = None

@@ -160,47 +160,67 @@ const buildDynamicSections = (percentiles, enforceTop) => {
   };
 };
 
-  const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
-    const rounded = values.map((value) => Math.round(value));
-    const colors = rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#01ca0a" : "#4ecc54"));
-    const sliceCount = Math.max(labels.length, 1);
-    const sliceWidth = 360 / sliceCount;
-    const angles = labels.map((_, index) => index * sliceWidth + sliceWidth / 2);
-    const textRadius = rounded.map((value) => {
+const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
+  const graphRef = useRef(null);
+  const [exporting, setExporting] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
+  const [showZoom, setShowZoom] = useState(false);
+  const rounded = values.map((value) => Math.round(value));
+  const colors = rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#01ca0a" : "#4ecc54"));
+  const sliceCount = Math.max(labels.length, 1);
+  const sliceWidth = 360 / sliceCount;
+  const angles = labels.map((_, index) => index * sliceWidth + sliceWidth / 2);
+  const textRadius = rounded.map((value) => {
       const clamped = Math.max(0, Math.min(100, value));
       if (clamped >= 98) return 96;
       if (clamped <= 8) return clamped + 2;
       return clamped;
     });
-    const data = [
-      {
-        type: "barpolar",
-        r: rounded,
-        theta: angles,
-        width: labels.map(() => sliceWidth),
+  const textSizes = rounded.map((value) => {
+    if (value < 20) return 9;
+    if (value < 40) return 11;
+    return 12;
+  });
+  const badgeSizes = rounded.map((value) => {
+    if (value < 20) return 18;
+    if (value < 40) return 22;
+    return 26;
+  });
+  const data = [
+    {
+      type: "barpolar",
+      r: rounded,
+      theta: angles,
+      width: labels.map(() => sliceWidth),
         marker: { color: colors, line: { color: "#0B1120", width: 1.6 } },
         opacity: 0.95,
         hoverinfo: "skip",
       },
-      {
-        type: "scatterpolar",
-        r: textRadius,
-        theta: angles,
-        mode: "text",
-        text: rounded.map((value) => `${value}`),
-        textfont: { color: "#FFFFFF", size: 12 },
-        textposition: "middle center",
-        cliponaxis: false,
-        hoverinfo: "skip",
+    {
+      type: "scatterpolar",
+      r: textRadius,
+      theta: angles,
+      mode: "markers+text",
+      marker: {
+        color: colors,
+        size: badgeSizes,
+        line: { color: "#0B1120", width: 1 },
       },
-    ];
+      text: rounded.map((value) => `${value}`),
+      textfont: { color: "#FFFFFF", size: textSizes },
+      textposition: "middle center",
+      cliponaxis: false,
+      hoverinfo: "skip",
+    },
+  ];
     const layout = {
       polar: {
+        domain: { x: [0.08, 0.92], y: [0.2, 0.92] },
         radialaxis: {
           range: [0, 100],
           showticklabels: false,
-          ticks: "",
-          showline: false,
+        ticks: "",
+        showline: false,
           gridcolor: "rgba(255,255,255,0.08)",
           showgrid: true,
         },
@@ -217,14 +237,14 @@ const buildDynamicSections = (percentiles, enforceTop) => {
         bgcolor: "#0F172A",
       },
       showlegend: false,
-      margin: { l: 36, r: 36, t: 84, b: 70 },
+      margin: { l: 90, r: 90, t: 160, b: 170 },
       paper_bgcolor: "#0F172A",
       plot_bgcolor: "#0F172A",
       annotations: [
         {
           text: playerLabel,
           x: 0.5,
-          y: 0.98,
+          y: 1.12,
           xref: "paper",
           yref: "paper",
           showarrow: false,
@@ -233,7 +253,7 @@ const buildDynamicSections = (percentiles, enforceTop) => {
         {
           text: subtitle,
           x: 0.5,
-          y: 0.92,
+          y: 1.06,
           xref: "paper",
           yref: "paper",
           showarrow: false,
@@ -242,7 +262,7 @@ const buildDynamicSections = (percentiles, enforceTop) => {
         {
           text: "Data: StatsBomb / Your Legend",
           x: 0.98,
-          y: 0.02,
+          y: -0.08,
           xref: "paper",
           yref: "paper",
           showarrow: false,
@@ -252,7 +272,7 @@ const buildDynamicSections = (percentiles, enforceTop) => {
         {
           text: "Statistics scaled per 90 minutes",
           x: 0.02,
-          y: 0.02,
+          y: -0.14,
           xref: "paper",
           yref: "paper",
           showarrow: false,
@@ -261,15 +281,171 @@ const buildDynamicSections = (percentiles, enforceTop) => {
         },
       ],
     };
-    return (
-      <Plot
-        data={data}
-        layout={layout}
-        style={{ width: "100%", height: "100%" }}
-        config={{ displayModeBar: false, responsive: true }}
-      />
-    );
+  const getPlotly = async () => {
+    const module = await import("plotly.js-dist-min");
+    return module.default ?? module;
   };
+  const exportImage = async () => {
+    if (!graphRef.current) return null;
+    const Plotly = await getPlotly();
+    return Plotly.toImage(graphRef.current, {
+      format: "png",
+      scale: 2,
+    });
+  };
+  const zoomLayout = {
+    ...layout,
+    margin: { l: 120, r: 120, t: 210, b: 180 },
+    polar: {
+      ...layout.polar,
+      domain: { x: [0.08, 0.92], y: [0.2, 0.9] },
+    },
+  };
+  const handleCopy = async (event) => {
+    event.stopPropagation();
+    if (exporting) return;
+    setExporting(true);
+    setCopyStatus("");
+    try {
+      const dataUrl = await exportImage();
+      if (!dataUrl) return;
+      let copied = false;
+      if (navigator.clipboard?.write && window.ClipboardItem && window.isSecureContext) {
+        try {
+          const response = await fetch(dataUrl);
+          const blob = await response.blob();
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          copied = true;
+        } catch (error) {
+          copied = false;
+        }
+      }
+      if (!copied && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(dataUrl);
+          copied = true;
+        } catch (error) {
+          copied = false;
+        }
+      }
+      if (!copied) {
+        setCopyStatus("Copy blocked by browser. Please use Download.");
+        return;
+      }
+      setCopyStatus("Copied!");
+      setTimeout(() => setCopyStatus(""), 1800);
+    } finally {
+      setExporting(false);
+    }
+  };
+  const handleDownload = async (event) => {
+    event.stopPropagation();
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const dataUrl = await exportImage();
+      if (!dataUrl) return;
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `${playerLabel || "pizza"}-${subtitle || "chart"}.png`.replace(/\s+/g, "_");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setExporting(false);
+    }
+  };
+    return (
+    <div className="relative h-[780px] rounded-xl overflow-hidden bg-[#0F172A]">
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
+        <button
+          type="button"
+          className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+          onClick={handleCopy}
+        >
+          Copy
+        </button>
+        <button
+          type="button"
+          className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+          onClick={handleDownload}
+        >
+          Download
+        </button>
+      </div>
+      {copyStatus ? (
+        <div className="absolute right-3 top-12 z-10 text-xs text-slate-300">
+          {copyStatus}
+        </div>
+      ) : null}
+      <div className="h-full cursor-zoom-in" onClick={() => setShowZoom(true)}>
+        <Plot
+          data={data}
+          layout={layout}
+          style={{ width: "100%", height: "100%" }}
+          config={{ displayModeBar: false, responsive: true }}
+          onInitialized={(_, graphDiv) => {
+            graphRef.current = graphDiv;
+          }}
+          onUpdate={(_, graphDiv) => {
+            graphRef.current = graphDiv;
+          }}
+        />
+      </div>
+      {showZoom && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+              onClick={() => setShowZoom(false)}
+            >
+              <div
+                className="relative w-full max-w-5xl h-[82vh] bg-slate-950 border border-white/10 rounded-2xl shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="absolute right-4 top-4 flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+                    onClick={handleCopy}
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+                    onClick={handleDownload}
+                  >
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+                    onClick={() => setShowZoom(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+                {copyStatus ? (
+                  <div className="absolute right-4 top-14 text-xs text-slate-300">
+                    {copyStatus}
+                  </div>
+                ) : null}
+                <div className="h-full pt-12">
+                  <Plot
+                    data={data}
+                    layout={zoomLayout}
+                    style={{ width: "100%", height: "100%" }}
+                    config={{ displayModeBar: false, responsive: true }}
+                  />
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </div>
+  );
+};
 
 export default function VizualisationPage() {
   const [loading, setLoading] = useState(false);
@@ -654,7 +830,7 @@ export default function VizualisationPage() {
                     {metricsToPlot.length === 0 ? (
                       <p className="text-slate-400">No metrics to display with current filters.</p>
                     ) : (
-                      <div className="h-[640px]">
+                      <div className="w-full">
                         <PizzaChart
                           labels={labels}
                           values={valuesToPlot}

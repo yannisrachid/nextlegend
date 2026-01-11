@@ -9,7 +9,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { fetchJson, fetchJsonCached } from "@/lib/api";
+import { fetchJson, fetchJsonCached, postJson, deleteJson } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
 
 const DEFAULT_RADAR_METRICS = [
@@ -99,6 +99,117 @@ const toAbsoluteUrl = (value) => {
   return url;
 };
 
+const extractUrls = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item : item?.url))
+      .filter(Boolean);
+  }
+  if (typeof value === "object") {
+    return Object.values(value)
+      .map((item) => (typeof item === "string" ? item : item?.url))
+      .filter(Boolean);
+  }
+  const raw = String(value).trim();
+  if (!raw) return [];
+  const urls = raw.match(/https?:\/\/[^\s,;]+/gi) || [];
+  if (urls.length > 0) return urls;
+  return raw
+    .split(/[;,]/g)
+    .map((item) => item.trim())
+    .filter((item) => item.startsWith("http"));
+};
+
+const resolveSocialType = (url) => {
+  const lower = String(url || "").toLowerCase();
+  if (lower.includes("instagram.com")) return "instagram";
+  if (lower.includes("twitter.com") || lower.includes("x.com")) return "x";
+  if (lower.includes("facebook.com")) return "facebook";
+  if (lower.includes("tiktok.com")) return "tiktok";
+  if (lower.includes("youtube.com") || lower.includes("youtu.be")) return "youtube";
+  if (lower.includes("linkedin.com")) return "linkedin";
+  if (lower.includes("twitch.tv")) return "twitch";
+  return "link";
+};
+
+const SocialIcon = ({ type }) => {
+  switch (type) {
+    case "instagram":
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M7 3h10a4 4 0 014 4v10a4 4 0 01-4 4H7a4 4 0 01-4-4V7a4 4 0 014-4zm10 2H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2zm-5 3.2a3.8 3.8 0 110 7.6 3.8 3.8 0 010-7.6zm0 1.8a2 2 0 100 4 2 2 0 000-4zm4.4-2a1 1 0 110 2 1 1 0 010-2z"
+          />
+        </svg>
+      );
+    case "x":
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M18.9 3h2.7l-6 6.9L22 21h-5.3l-4.2-6.3L6.8 21H4.1l6.5-7.5L2 3h5.4l3.8 5.7L18.9 3z"
+          />
+        </svg>
+      );
+    case "facebook":
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M13.5 8.5V7.1c0-.7.5-1.1 1.2-1.1h1.8V3.1h-2.4c-2.4 0-3.6 1.4-3.6 3.6v1.8H8v2.9h2.5V21h3V11.4h2.7l.4-2.9h-3.1z"
+          />
+        </svg>
+      );
+    case "tiktok":
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M16.5 3c.4 1.7 1.7 3 3.5 3.4v2.8c-1.3.1-2.7-.3-3.5-.9v6.5a5.4 5.4 0 11-5.4-5.4c.3 0 .7 0 1 .1v2.9a2.5 2.5 0 10 2.3 2.5V3h2.1z"
+          />
+        </svg>
+      );
+    case "youtube":
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M21.6 7.7a2.8 2.8 0 00-2-2c-1.7-.4-8.6-.4-8.6-.4s-6.9 0-8.6.4a2.8 2.8 0 00-2 2A29.5 29.5 0 000 12a29.5 29.5 0 00.4 4.3 2.8 2.8 0 002 2c1.7.4 8.6.4 8.6.4s6.9 0 8.6-.4a2.8 2.8 0 002-2A29.5 29.5 0 0022 12a29.5 29.5 0 00-.4-4.3zM9.8 15.5V8.5l6 3.5-6 3.5z"
+          />
+        </svg>
+      );
+    case "linkedin":
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M4.9 3.5a2.2 2.2 0 11-.1 4.4 2.2 2.2 0 010-4.4zM3 9h3.7v12H3V9zm7 0h3.5v1.7h.1c.5-.9 1.8-1.9 3.6-1.9 3.9 0 4.6 2.4 4.6 5.5V21h-3.7v-5.2c0-1.2 0-2.8-1.7-2.8-1.7 0-2 1.3-2 2.7V21H10V9z"
+          />
+        </svg>
+      );
+    case "twitch":
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M4 3h16v9l-4 4h-4l-2 2H7v-2H4V3zm3 2v9h4v2l2-2h4l2-2V5H7zm4 3h2v4h-2V8zm4 0h2v4h-2V8z"
+          />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+          <path
+            fill="currentColor"
+            d="M10.6 13.4a4 4 0 010-5.7l2.1-2.1a4 4 0 115.7 5.7l-1.1 1.1-1.4-1.4 1.1-1.1a2 2 0 10-2.8-2.8l-2.1 2.1a2 2 0 102.8 2.8l.7-.7 1.4 1.4-.7.7a4 4 0 01-5.7 0zm-3 3l-2.1 2.1a4 4 0 11-5.7-5.7l1.1-1.1 1.4 1.4-1.1 1.1a2 2 0 102.8 2.8l2.1-2.1a2 2 0 10-2.8-2.8l-.7.7-1.4-1.4.7-.7a4 4 0 015.7 5.7z"
+          />
+        </svg>
+      );
+  }
+};
+
 const formatMetricLabel = (key) => {
   if (METRIC_LABELS[key]) return METRIC_LABELS[key];
   if (key.startsWith("summary_")) {
@@ -110,6 +221,15 @@ const formatMetricLabel = (key) => {
     return `Summary ${label}`;
   }
   return key.replace(/_/g, " ");
+};
+
+const normalizeMetricKey = (value) => {
+  if (!value) return "";
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
 };
 
 const formatCompactNumber = (value) => {
@@ -177,6 +297,13 @@ export default function ReportPage() {
     big5Only: false,
   });
   const [radarContext, setRadarContext] = useState("global");
+  const [isProspect, setIsProspect] = useState(false);
+  const [prospectBusy, setProspectBusy] = useState(false);
+  const [clubNeeds, setClubNeeds] = useState([]);
+  const [clubNeedsLoading, setClubNeedsLoading] = useState(false);
+  const [assignNeedId, setAssignNeedId] = useState("");
+  const [assignMessage, setAssignMessage] = useState("");
+  const [assignBusy, setAssignBusy] = useState(false);
 
   const similarLimit = 10;
 
@@ -239,6 +366,36 @@ export default function ReportPage() {
 
   useEffect(() => {
     if (!selectedPlayerId) {
+      setIsProspect(false);
+      return;
+    }
+    fetchJson(`/prospects/${selectedPlayerId}`)
+      .then((res) => setIsProspect(Boolean(res?.is_prospect)))
+      .catch(() => setIsProspect(false));
+  }, [selectedPlayerId]);
+
+  useEffect(() => {
+    if (!isProspect) {
+      setClubNeeds([]);
+      setAssignNeedId("");
+      return;
+    }
+    const loadNeeds = async () => {
+      setClubNeedsLoading(true);
+      try {
+        const res = await fetchJson("/prospect/club-needs");
+        setClubNeeds(res?.needs || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setClubNeedsLoading(false);
+      }
+    };
+    loadNeeds();
+  }, [isProspect]);
+
+  useEffect(() => {
+    if (!selectedPlayerId) {
       return;
     }
     const loadSimilarities = async () => {
@@ -280,6 +437,41 @@ export default function ReportPage() {
     setSimilarPage(0);
   };
 
+  const handleProspectToggle = async () => {
+    if (!selectedPlayerId || prospectBusy) return;
+    setProspectBusy(true);
+    try {
+      if (isProspect) {
+        await deleteJson(`/prospects/${selectedPlayerId}`);
+        setIsProspect(false);
+      } else {
+        await postJson("/prospects", { player_id: Number(selectedPlayerId) });
+        setIsProspect(true);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProspectBusy(false);
+    }
+  };
+
+  const handleAssignNeed = async () => {
+    if (!assignNeedId || !selectedPlayerId || assignBusy) return;
+    setAssignBusy(true);
+    setAssignMessage("");
+    try {
+      const res = await postJson(`/prospect/club-needs/${assignNeedId}/players`, {
+        player_id: Number(selectedPlayerId),
+      });
+      setAssignMessage(res?.added ? "Player assigned to need." : "Player already in that need.");
+    } catch (err) {
+      console.error(err);
+      setAssignMessage("Unable to assign player.");
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!router.isReady || hydratedQuery.current) return;
     const queryId = router.query.player_id || router.query.playerId;
@@ -302,6 +494,29 @@ export default function ReportPage() {
   const tmProfileUrl = toAbsoluteUrl(tmFields.tm_profile_url);
   const tmAgentUrl = toAbsoluteUrl(tmFields.tm_agent_url);
   const tmPhotoUrl = toAbsoluteUrl(tmFields.tm_profile_image_url || tmFields.profile_image_url);
+  const socialRaw =
+    tmFields.tm_social_media ||
+    tmFields.tm_socials ||
+    tmFields.tm_social_links ||
+    tmFields.tm_social;
+  const socialLinks = useMemo(() => {
+    const urls = extractUrls(socialRaw);
+    const unique = [];
+    const seen = new Set();
+    urls.forEach((url) => {
+      const clean = toAbsoluteUrl(url);
+      if (!clean) return;
+      if (seen.has(clean)) return;
+      seen.add(clean);
+      const type = resolveSocialType(clean);
+      unique.push({
+        url: clean,
+        type,
+        label: type === "x" ? "X" : type.charAt(0).toUpperCase() + type.slice(1),
+      });
+    });
+    return unique;
+  }, [socialRaw]);
   const tmDetails = [
     { label: "Market value", value: formatCompactNumber(tmFields.tm_market_value) },
     { label: "Contract expires", value: tmFields.tm_club_contract_expires },
@@ -390,12 +605,28 @@ export default function ReportPage() {
     return sortRows(radarData);
   }, [radarData, sortConfig]);
 
+  const roleProfileKeys = useMemo(() => {
+    const profiles = report?.role_scores || [];
+    const keys = new Set();
+    profiles.forEach((item) => {
+      const normalized = normalizeMetricKey(item.profile);
+      if (normalized) {
+        keys.add(normalized);
+      }
+    });
+    return keys;
+  }, [report]);
+
   const allMetricsData = useMemo(() => {
     const keys = Object.keys(metrics || {}).filter(
       (key) =>
         !key.endsWith("_pct_league") &&
         !key.endsWith("_pct_global") &&
-        !EXCLUDED_METRIC_PREFIXES.some((prefix) => key.startsWith(prefix))
+        !EXCLUDED_METRIC_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
+        !key.startsWith("tm_") &&
+        !key.toLowerCase().includes("profile") &&
+        !key.includes(" - ") &&
+        !roleProfileKeys.has(normalizeMetricKey(key))
     );
     const rows = keys
       .map((key) => {
@@ -417,7 +648,7 @@ export default function ReportPage() {
       })
       .filter(Boolean);
     return sortRows(rows);
-  }, [metrics, sortConfig]);
+  }, [metrics, sortConfig, roleProfileKeys]);
 
   const handleSort = (key) => {
     setSortConfig((prev) => {
@@ -602,8 +833,13 @@ export default function ReportPage() {
                   )}
                   <div>
                     <p className="text-sm text-slate-400">Player</p>
-                    <h2 className="text-2xl font-semibold text-white">
+                    <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
                       {report.player.name}
+                      {isProspect ? (
+                        <span className="text-yellow-400" aria-label="Prospect">
+                          ★
+                        </span>
+                      ) : null}
                     </h2>
                     <p className="text-slate-400">
                       {report.player.team} • {report.player.competition_name}
@@ -617,6 +853,55 @@ export default function ReportPage() {
                       >
                         Transfermarkt profile
                       </a>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={`mt-3 inline-flex items-center rounded-full border px-4 py-1 text-xs uppercase tracking-[0.2em] ${
+                        isProspect
+                          ? "border-yellow-400/70 text-yellow-300"
+                          : "border-slate-700 text-slate-200"
+                      }`}
+                      onClick={handleProspectToggle}
+                      disabled={prospectBusy}
+                    >
+                      {isProspect ? "Remove to Prospect" : "Add to Prospect"}
+                    </button>
+                    {isProspect ? (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                          Assign to club need
+                        </p>
+                        <div className="flex flex-col gap-2">
+                          <select
+                            className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 text-sm"
+                            value={assignNeedId}
+                            onChange={(e) => setAssignNeedId(e.target.value)}
+                            disabled={clubNeedsLoading}
+                          >
+                            <option value="">
+                              {clubNeedsLoading ? "Loading needs..." : "Select a need"}
+                            </option>
+                            {clubNeeds.map((need) => (
+                              <option key={need.id} value={need.id}>
+                                {need.need_label} • {need.club_name || "Club"} • {need.priority_stage}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className="text-xs uppercase tracking-[0.2em] px-3 py-2 border border-primary text-primary rounded-full disabled:opacity-60"
+                              onClick={handleAssignNeed}
+                              disabled={!assignNeedId || assignBusy}
+                            >
+                              Assign
+                            </button>
+                          </div>
+                        </div>
+                        {assignMessage ? (
+                          <p className="text-xs text-slate-300">{assignMessage}</p>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -652,6 +937,22 @@ export default function ReportPage() {
                         )}
                       </p>
                     )}
+                    {socialLinks.length > 0 ? (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {socialLinks.map((link) => (
+                          <a
+                            key={link.url}
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-900/70 px-3 py-1 text-xs text-slate-200 hover:border-emerald-300/70 hover:text-emerald-200"
+                          >
+                            <SocialIcon type={link.type} />
+                            <span>{link.label}</span>
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className="grid grid-cols-1 gap-1 text-sm text-slate-300">
                       {tmDetails
                         .filter(

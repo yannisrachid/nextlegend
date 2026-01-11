@@ -95,6 +95,7 @@ export default function RankingPage() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [prospectIds, setProspectIds] = useState(new Set());
 
   const [competitions, setCompetitions] = useState([]);
   const [seasons, setSeasons] = useState([]);
@@ -130,6 +131,12 @@ export default function RankingPage() {
       }
     };
     loadMeta();
+  }, []);
+
+  useEffect(() => {
+    fetchJson("/prospects/ids")
+      .then((res) => setProspectIds(new Set(res?.player_ids || [])))
+      .catch(() => setProspectIds(new Set()));
   }, []);
 
   useEffect(() => {
@@ -431,8 +438,13 @@ export default function RankingPage() {
                               </div>
                             )}
                             <div>
-                              <div className="text-lg font-semibold text-white">
+                              <div className="text-lg font-semibold text-white flex items-center gap-2">
                                 {row.name}
+                                {prospectIds.has(row.player_id) ? (
+                                  <span className="text-yellow-400" aria-label="Prospect">
+                                    ★
+                                  </span>
+                                ) : null}
                               </div>
                               <div className="text-slate-400 text-sm">
                                 {row.team || "—"} • {row.competition_name} •{" "}

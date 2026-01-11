@@ -129,6 +129,38 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     message TEXT,
     git_sha TEXT
 );
+
+CREATE TABLE IF NOT EXISTS prospects (
+    id SERIAL PRIMARY KEY,
+    player_id INT UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS club_needs (
+    id SERIAL PRIMARY KEY,
+    club_id INT REFERENCES clubs(id),
+    need_label TEXT NOT NULL,
+    contact_name TEXT,
+    contact_phone TEXT,
+    assigned_user TEXT DEFAULT 'admin',
+    priority_stage TEXT NOT NULL,
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS club_need_players (
+    id SERIAL PRIMARY KEY,
+    club_need_id INT REFERENCES club_needs(id) ON DELETE CASCADE,
+    player_id INT REFERENCES players(id),
+    sort_order INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(club_need_id, player_id)
+);
+
+CREATE INDEX IF NOT EXISTS prospects_player_id_idx ON prospects(player_id);
+CREATE INDEX IF NOT EXISTS club_needs_stage_order_idx ON club_needs(priority_stage, sort_order);
+CREATE INDEX IF NOT EXISTS club_need_players_order_idx ON club_need_players(club_need_id, sort_order);
 """
 
 
@@ -473,7 +505,9 @@ def upsert_similarity(
     similarity = similarity.dropna(subset=["player_a_id", "player_b_id"])
     for col in ("player_a_id", "player_b_id", "player_a_season_id", "player_b_season_id"):
         if col in similarity.columns:
-            similarity[col] = similarity[col].astype("Int64")
+            similarity[col] = similarity[col].apply(
+                lambda val: int(val) if pd.notna(val) else None
+            )
     cols = ["profile", "player_a_id", "player_b_id", "player_a_season_id", "player_b_season_id", "similarity"]
     similarity = similarity[cols].where(pd.notna(similarity[cols]), None)
     with engine.begin() as conn:

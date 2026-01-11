@@ -218,6 +218,11 @@ export default function ProjectionPage() {
     ? report.radar_metrics
     : DEFAULT_RADAR_METRICS;
   const coeff = Number(translationCoeff?.overall_coeff ?? 1.0) || 1.0;
+  const currentScore = report?.player?.global_score_adjusted;
+  const projectedScore =
+    currentScore != null && Number.isFinite(Number(currentScore))
+      ? Number(currentScore) * coeff
+      : null;
 
   const radarData = useMemo(() => {
     return radarMetricKeys.map((key) => {
@@ -251,6 +256,7 @@ export default function ProjectionPage() {
   const summaryKeys = useMemo(() => {
     return Object.keys(metrics)
       .filter((key) => key.startsWith("summary_"))
+      .filter((key) => !key.includes("_pct_"))
       .sort((a, b) =>
         formatSummaryLabel(a).localeCompare(formatSummaryLabel(b), undefined, { sensitivity: "base" })
       );
@@ -370,6 +376,20 @@ export default function ProjectionPage() {
             </label>
             <div className="text-xs text-slate-400">
               Translation coeff: {coeff.toFixed(3)}
+            </div>
+            <div className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
+              <div className="flex items-center justify-between">
+                <span>Current score</span>
+                <span className="text-slate-100">
+                  {formatValue(currentScore, 2)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span>Projected score</span>
+                <span className="text-emerald-200">
+                  {formatValue(projectedScore, 2)}
+                </span>
+              </div>
             </div>
           </Card>
         </div>

@@ -21,9 +21,16 @@ export async function fetchJson(path, params = {}) {
     if (val === undefined || val === null || val === "") return;
     url.searchParams.set(key, val);
   });
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), { credentials: "include" });
   if (!res.ok) {
     const text = await res.text();
+    if (
+      res.status === 401 &&
+      typeof window !== "undefined" &&
+      !path.startsWith("/auth")
+    ) {
+      window.location.href = "/login";
+    }
     throw new Error(`API error ${res.status}: ${text}`);
   }
   return res.json();
@@ -35,9 +42,59 @@ export async function postJson(path, body = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    credentials: "include",
   });
   if (!res.ok) {
     const text = await res.text();
+    if (
+      res.status === 401 &&
+      typeof window !== "undefined" &&
+      !path.startsWith("/auth")
+    ) {
+      window.location.href = "/login";
+    }
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function deleteJson(path) {
+  const url = new URL(path, resolveApiBase());
+  const res = await fetch(url.toString(), {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    if (
+      res.status === 401 &&
+      typeof window !== "undefined" &&
+      !path.startsWith("/auth")
+    ) {
+      window.location.href = "/login";
+    }
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function patchJson(path, body = {}) {
+  const url = new URL(path, resolveApiBase());
+  const res = await fetch(url.toString(), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    if (
+      res.status === 401 &&
+      typeof window !== "undefined" &&
+      !path.startsWith("/auth")
+    ) {
+      window.location.href = "/login";
+    }
     throw new Error(`API error ${res.status}: ${text}`);
   }
   return res.json();

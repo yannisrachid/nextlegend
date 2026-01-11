@@ -51,6 +51,7 @@ services:
         condition: service_started
     volumes:
       - ../../apps/api:/app
+      - ../../helpers/csv:/helpers/csv:ro
 
   frontend:
     build:
@@ -75,6 +76,29 @@ services:
       - ../../.env
     environment:
       PROFILES_PATH: /profiles/player_profiles.json
+    depends_on:
+      db:
+        condition: service_started
+      minio:
+        condition: service_started
+    volumes:
+      - ../../jobs/pipeline:/app
+      - ../../data:/data:ro
+      - ../../../nextlegend/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../helpers/csv:/helpers/csv:ro
+    entrypoint: ["python", "-m", "pipeline.run"]
+
+  pipeline-refresh:
+    build:
+      context: ../../jobs/pipeline
+      dockerfile: ../../jobs/pipeline/Dockerfile
+    env_file:
+      - ../../.env
+    environment:
+      PIPELINE_INPUT_URI: s3://${S3_BUCKET}/data/wyscout_players_cleaned.csv
+      PIPELINE_INPUT_KIND: raw
+      S3_PREFIX: new_nextlegend
+      ARCHIVE_RETAIN_RUNS: 8
     depends_on:
       db:
         condition: service_started

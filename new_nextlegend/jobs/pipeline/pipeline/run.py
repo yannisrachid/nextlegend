@@ -11,6 +11,7 @@ import datetime as dt
 import os
 import sys
 import uuid
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -34,6 +35,7 @@ class PipelineConfig:
     similarity_prefix: str
     dry_run: bool
     limit: Optional[int]
+    retain_runs: Optional[int]
     s3_endpoint: str
     s3_access_key: str
     s3_secret_key: str
@@ -73,7 +75,18 @@ def parse_args() -> PipelineConfig:
         help="S3 key prefix or local folder for similarity files.",
     )
     parser.add_argument("--dry-run", action="store_true", help="If set, skip writes to S3/DB.")
-    parser.add_argument("--limit", type=int, default=None, help="Optional row limit for testing.")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=int(os.getenv("PIPELINE_LIMIT", "0") or "0") or None,
+        help="Optional row limit for testing (PIPELINE_LIMIT).",
+    )
+    parser.add_argument(
+        "--retain-runs",
+        type=int,
+        default=int(os.getenv("ARCHIVE_RETAIN_RUNS", "0") or "0"),
+        help="If > 0, keep only the latest N runs under prefix/enriched and prefix/raw.",
+    )
 
     args = parser.parse_args()
 
@@ -86,6 +99,7 @@ def parse_args() -> PipelineConfig:
         similarity_prefix=args.similarity_prefix,
         dry_run=args.dry_run,
         limit=args.limit,
+        retain_runs=args.retain_runs if args.retain_runs and args.retain_runs > 0 else None,
         s3_endpoint=os.getenv("S3_ENDPOINT", ""),
         s3_access_key=os.getenv("S3_ACCESS_KEY", ""),
         s3_secret_key=os.getenv("S3_SECRET_KEY", ""),
@@ -234,6 +248,59 @@ def archive_to_s3(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
         client.put_object(Bucket=cfg.bucket, Key=key, Body=buf.getvalue())
 
 
+def _parse_run_timestamp(label: str) -> tuple[int, str]:
+    parts = label.rsplit("_", 1)
+    if len(parts) == 2:
+        ts = parts[1]
+        try:
+            dt_obj = dt.datetime.strptime(ts, "%Y%m%d-%H%M%S")
+            return (int(dt_obj.timestamp()), label)
+        except Exception:
+            pass
+    return (0, label)
+
+
+def _delete_keys(client, bucket: str, keys: list[str]):
+    for idx in range(0, len(keys), 1000):
+        batch = keys[idx : idx + 1000]
+        client.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
+        )
+
+
+def prune_archives(cfg: PipelineConfig):
+    if not cfg.bucket or not cfg.retain_runs or cfg.retain_runs <= 0:
+        return
+    client = s3_client(cfg)
+    base_prefix = cfg.prefix or "new_nextlegend"
+    enriched_prefix = f"{base_prefix}/enriched/"
+    raw_prefix = f"{base_prefix}/raw/"
+
+    enriched_keys = _list_s3_keys(client, cfg.bucket, enriched_prefix)
+    run_prefixes = sorted(
+        {key[len(enriched_prefix) :].split("/", 1)[0] for key in enriched_keys if key.startswith(enriched_prefix)},
+        key=_parse_run_timestamp,
+    )
+    to_delete = run_prefixes[:-cfg.retain_runs] if len(run_prefixes) > cfg.retain_runs else []
+    if to_delete:
+        print(f"[ARCHIVE] pruning {len(to_delete)} enriched runs (retain {cfg.retain_runs})")
+        for run_prefix in to_delete:
+            keys = [key for key in enriched_keys if key.startswith(f"{enriched_prefix}{run_prefix}/")]
+            _delete_keys(client, cfg.bucket, keys)
+
+    raw_keys = _list_s3_keys(client, cfg.bucket, raw_prefix)
+    raw_files = sorted(
+        {key[len(raw_prefix) :] for key in raw_keys if key.startswith(raw_prefix)},
+        key=_parse_run_timestamp,
+    )
+    raw_delete = raw_files[:-cfg.retain_runs] if len(raw_files) > cfg.retain_runs else []
+    if raw_delete:
+        print(f"[ARCHIVE] pruning {len(raw_delete)} raw files (retain {cfg.retain_runs})")
+        keys = [f"{raw_prefix}{name}" for name in raw_delete]
+        _delete_keys(client, cfg.bucket, keys)
+
+
 def write_run_log(cfg: PipelineConfig, log: RunLog):
     if not cfg.bucket:
         return
@@ -302,6 +369,7 @@ def main():
 
         if not cfg.dry_run:
             archive_to_s3(cfg, artifacts)
+            prune_archives(cfg)
             upsert_db(cfg, artifacts)
             run_log.status = "success"
             run_log.ended_at = dt.datetime.utcnow().isoformat()
@@ -315,6 +383,7 @@ def main():
         run_log.status = "failed"
         run_log.message = str(exc)
         run_log.ended_at = dt.datetime.utcnow().isoformat()
+        traceback.print_exc()
         print(f"[ERROR] {exc}", file=sys.stderr)
         try:
             write_run_log(cfg, run_log)

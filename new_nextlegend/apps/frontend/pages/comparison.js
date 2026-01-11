@@ -70,6 +70,15 @@ const formatMetricLabel = (key) => {
   return key.replace(/_/g, " ");
 };
 
+const normalizeMetricKey = (value) => {
+  if (!value) return "";
+  return String(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
+};
+
 const formatValue = (value, digits = 2) => {
   if (value === null || value === undefined || value === "") return "--";
   const numeric = Number(value);
@@ -387,6 +396,20 @@ export default function ComparisonPage() {
     return radarMetricKeys;
   }, [radarMetricKeys]);
 
+  const roleProfileKeys = useMemo(() => {
+    const keys = new Set();
+    comparison.forEach((item) => {
+      const profiles = item.report?.role_scores || [];
+      profiles.forEach((profile) => {
+        const normalized = normalizeMetricKey(profile.profile);
+        if (normalized) {
+          keys.add(normalized);
+        }
+      });
+    });
+    return keys;
+  }, [comparison]);
+
   const allMetricsKeys = useMemo(() => {
     if (comparison.length === 0) return [];
     const keys = new Set();
@@ -396,13 +419,17 @@ export default function ComparisonPage() {
         if (key.startsWith("summary_")) return;
         if (key.endsWith("_pct_league") || key.endsWith("_pct_global")) return;
         if (EXCLUDED_METRIC_PREFIXES.some((prefix) => key.startsWith(prefix))) return;
+        if (key.startsWith("tm_")) return;
+        if (key.toLowerCase().includes("profile")) return;
+        if (key.includes(" - ")) return;
+        if (roleProfileKeys.has(normalizeMetricKey(key))) return;
         keys.add(key);
       });
     });
     return Array.from(keys).sort((a, b) =>
       formatMetricLabel(a).localeCompare(formatMetricLabel(b), undefined, { sensitivity: "base" })
     );
-  }, [comparison]);
+  }, [comparison, roleProfileKeys]);
 
   const summaryMetrics = useMemo(() => {
     if (comparison.length === 0) return [];
@@ -411,6 +438,7 @@ export default function ComparisonPage() {
       const metrics = item.report?.metrics || {};
       Object.keys(metrics).forEach((key) => {
         if (!key.startsWith("summary_")) return;
+        if (key.includes("_pct_")) return;
         keys.add(key);
       });
     });
