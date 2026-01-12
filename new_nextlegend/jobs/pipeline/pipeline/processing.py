@@ -738,11 +738,16 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
 def clean_players_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     working = df.copy()
     if "player" in working.columns:
+        existing_player_id = working["player_id"] if "player_id" in working.columns else None
         parts = working["player"].str.extract(r"(?P<name>.*?)(?:\((?P<id>-?\d+)\))?$")
         if "player_id" in working.columns:
             working = working.drop(columns=["player_id"])
         working["player"] = parts["name"].str.strip()
-        working.insert(working.columns.get_loc("player") + 1, "player_id", parts["id"])
+        working.insert(working.columns.get_loc("player") + 1, "player_id", parts["id"].astype("string"))
+        if existing_player_id is not None:
+            existing_player_id = existing_player_id.astype("string")
+            missing = working["player_id"].isna() | (working["player_id"].str.strip() == "")
+            working.loc[missing, "player_id"] = existing_player_id[missing]
     if "age" in working.columns:
         pass
     return working
@@ -789,6 +794,10 @@ def _ensure_player_id(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if "player_id" not in df.columns:
         df["player_id"] = df.index.astype(int) + 1
+    else:
+        player_id = df["player_id"].astype("string")
+        missing = player_id.isna() | (player_id.str.strip() == "")
+        df.loc[missing, "player_id"] = (df.index[missing] + 1).astype(str)
 
     def _clean_pid(val):
         try:
