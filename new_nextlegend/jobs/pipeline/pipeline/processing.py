@@ -742,7 +742,9 @@ def clean_players_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         parts = working["player"].str.extract(r"(?P<name>.*?)(?:\((?P<id>-?\d+)\))?$")
         if "player_id" in working.columns:
             working = working.drop(columns=["player_id"])
-        working["player"] = parts["name"].str.strip()
+        name_series = parts["name"].astype("string")
+        name_series = name_series.str.split(";").str[-1].str.strip()
+        working["player"] = name_series
         working.insert(working.columns.get_loc("player") + 1, "player_id", parts["id"].astype("string"))
         if existing_player_id is not None:
             existing_player_id = existing_player_id.astype("string")
