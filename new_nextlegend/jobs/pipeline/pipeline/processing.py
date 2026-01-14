@@ -10,6 +10,7 @@ import json
 import math
 import time
 import os
+import re
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
 
@@ -606,6 +607,27 @@ def _apply_club_mapping(df: pd.DataFrame, club_mapping: dict) -> pd.Series:
     return pd.Series(tm_ids, index=df.index)
 
 
+def _safe_age(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    try:
+        return float(value)
+    except Exception:
+        text = str(value)
+        match = re.search(r"\((\d{1,2})\)", text)
+        if match:
+            return float(match.group(1))
+        nums = re.findall(r"\d{1,2}", text)
+        if nums:
+            return float(nums[-1])
+    return None
+
+
 def _fuzzy_match_within_club(club_profiles: pd.DataFrame, target_name: str, target_age: Optional[float]) -> Optional[str]:
     if club_profiles.empty:
         return None
@@ -615,11 +637,12 @@ def _fuzzy_match_within_club(club_profiles: pd.DataFrame, target_name: str, targ
     if score < 70:
         return None
     # Optionally filter on age difference if available
-    if target_age is not None and "tm_age" in club_profiles.columns:
+    target_age_value = _safe_age(target_age)
+    if target_age_value is not None and "tm_age" in club_profiles.columns:
         candidate = club_profiles[club_profiles["tm_player_name"] == best]
         if not candidate.empty:
-            tm_age = candidate["tm_age"].iloc[0]
-            if pd.notna(tm_age) and abs(float(tm_age) - float(target_age)) > 3:
+            tm_age_value = _safe_age(candidate["tm_age"].iloc[0])
+            if tm_age_value is not None and abs(tm_age_value - target_age_value) > 3:
                 return None
     tm_id = club_profiles.loc[club_profiles["tm_player_name"] == best, "tm_player_id"].iloc[0]
     return str(tm_id)
@@ -994,18 +1017,23 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     if "tm_id" in players.columns:
         players["tm_id"] = players["tm_id"].astype(str).str.strip()
 
+    tm_enriched = None
     skip_tm = os.getenv("TM_SKIP_ENRICH", "0").lower() in {"1", "true", "yes"}
     if skip_tm:
         print("[PIPELINE] skip Transfermarkt enrich (TM_SKIP_ENRICH=1)")
     else:
         print("[PIPELINE] enrich Transfermarkt (si sources présentes)")
         tm_sources = load_transfermarkt_sources()
-        df, players = merge_transfermarkt(df, players, tm_sources)
-        players = _build_players_from_enriched(df, players)
-        if df.columns.duplicated().any():
-            dupes = df.columns[df.columns.duplicated()].tolist()
-            print(f"[WARN] duplicate columns in TM dataframe: {dupes}")
-            df = df.loc[:, ~df.columns.duplicated()]
+        tm_base_cols = ["player_id", "player", "competition_name", "calendar"]
+        if "team_in_selected_period" in df.columns:
+            tm_base_cols.append("team_in_selected_period")
+        elif "team" in df.columns:
+            tm_base_cols.append("team")
+        if "age" in df.columns:
+            tm_base_cols.append("age")
+        tm_input = df[tm_base_cols].copy()
+        tm_input["_row_id"] = np.arange(len(df))
+        tm_enriched, players = merge_transfermarkt(tm_input, players, tm_sources)
 
     print("[PIPELINE] scores bruts")
     raw_scores = compute_raw_scores(df, profiles)
@@ -1159,6 +1187,14 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     enriched = enriched.drop(columns=["_elig_league"], errors="ignore")
     enriched["assigned_role"] = assigned_role
     enriched = pd.concat([enriched, enriched_extra], axis=1)
+    if tm_enriched is not None:
+        tm_enriched = tm_enriched.sort_values("_row_id").reset_index(drop=True)
+        tm_cols = [col for col in tm_enriched.columns if col.startswith("tm_") or col in ("profile_url", "profile_url_tm")]
+        for col in tm_cols:
+            if col in enriched.columns:
+                continue
+            enriched[col] = tm_enriched[col].to_numpy()
+        players = _build_players_from_enriched(enriched, players)
 
     if enriched.columns.duplicated().any():
         dupes = enriched.columns[enriched.columns.duplicated()].tolist()
