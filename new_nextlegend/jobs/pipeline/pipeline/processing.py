@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 import os
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
@@ -593,23 +594,22 @@ def _apply_club_mapping(df: pd.DataFrame, club_mapping: dict) -> pd.Series:
     return pd.Series(tm_ids, index=df.index)
 
 
-def _fuzzy_match_within_club(tm_profiles: pd.DataFrame, tm_club_id: str, target_name: str, target_age: Optional[float]) -> Optional[str]:
-    subset = tm_profiles[tm_profiles["tm_club_id"] == tm_club_id]
-    if subset.empty:
+def _fuzzy_match_within_club(club_profiles: pd.DataFrame, target_name: str, target_age: Optional[float]) -> Optional[str]:
+    if club_profiles.empty:
         return None
-    choices = subset["tm_player_name"].tolist()
+    choices = club_profiles["tm_player_name"].tolist()
     target_norm = _normalise_name(target_name)
     best, score = process.extractOne(target_norm, choices, scorer=fuzz.token_sort_ratio) if choices else (None, 0)
     if score < 70:
         return None
     # Optionally filter on age difference if available
-    if target_age is not None and "tm_age" in subset.columns:
-        candidate = subset[subset["tm_player_name"] == best]
+    if target_age is not None and "tm_age" in club_profiles.columns:
+        candidate = club_profiles[club_profiles["tm_player_name"] == best]
         if not candidate.empty:
             tm_age = candidate["tm_age"].iloc[0]
             if pd.notna(tm_age) and abs(float(tm_age) - float(target_age)) > 3:
                 return None
-    tm_id = subset.loc[subset["tm_player_name"] == best, "tm_player_id"].iloc[0]
+    tm_id = club_profiles.loc[club_profiles["tm_player_name"] == best, "tm_player_id"].iloc[0]
     return str(tm_id)
 
 
@@ -694,6 +694,7 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
 
     # mapping clubs (curated dict)
     if club_mapping_dict:
+        print(f"[TM] club mapping entries={len(club_mapping_dict)}")
         tm_club_ids = _apply_club_mapping(enriched, club_mapping_dict)
         enriched["tm_club_id"] = tm_club_ids
     else:
@@ -736,39 +737,69 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
             if "team" in join_cols:
                 join_cols[join_cols.index("team")] = "team_in_selected_period"
                 map_df = map_df.rename(columns={"team": "team_in_selected_period"})
+            print(f"[TM] mapping by columns={join_cols} rows={len(map_df)}")
             enriched = enriched.merge(map_df, on=join_cols, how="left", suffixes=("", "_map"))
             if "tm_player_id_map" in enriched.columns:
                 enriched["tm_player_id"] = enriched["tm_player_id"].fillna(enriched["tm_player_id_map"])
                 enriched = enriched.drop(columns=["tm_player_id_map"])
 
     # Fuzzy fallback intra club si tm_player_id toujours vide
-    def _first_series(df: pd.DataFrame, col: str) -> Optional[pd.Series]:
-        if col not in df.columns:
-            return None
-        series_or_frame = df[col]
-        if isinstance(series_or_frame, pd.DataFrame):
-            return series_or_frame.iloc[:, 0]
-        return series_or_frame
+    enable_fuzzy = os.getenv("TM_ENABLE_FUZZY", "1").lower() not in {"0", "false", "no"}
+    if not enable_fuzzy:
+        print("[TM] fuzzy matching disabled")
+    else:
+        def _first_series(df: pd.DataFrame, col: str) -> Optional[pd.Series]:
+            if col not in df.columns:
+                return None
+            series_or_frame = df[col]
+            if isinstance(series_or_frame, pd.DataFrame):
+                return series_or_frame.iloc[:, 0]
+            return series_or_frame
 
-    player_name_series = _first_series(tm_profiles, "player_name")
-    if player_name_series is None:
-        player_name_series = _first_series(tm_profiles, "name")
-    if player_name_series is None:
-        player_name_series = _first_series(tm_profiles, "tm_player_name")
-    tm_profiles["tm_player_name"] = player_name_series if player_name_series is not None else ""
-    tm_profiles["tm_player_name_norm"] = tm_profiles["tm_player_name"].apply(_normalise_name)
-    club_series = _first_series(tm_profiles, "club_id")
-    if club_series is None:
-        club_series = _first_series(tm_profiles, "tm_club_id")
-    tm_profiles["tm_club_id"] = club_series if club_series is not None else np.nan
+        player_name_series = _first_series(tm_profiles, "player_name")
+        if player_name_series is None:
+            player_name_series = _first_series(tm_profiles, "name")
+        if player_name_series is None:
+            player_name_series = _first_series(tm_profiles, "tm_player_name")
+        tm_profiles["tm_player_name"] = player_name_series if player_name_series is not None else ""
+        tm_profiles["tm_player_name_norm"] = tm_profiles["tm_player_name"].apply(_normalise_name)
+        club_series = _first_series(tm_profiles, "club_id")
+        if club_series is None:
+            club_series = _first_series(tm_profiles, "tm_club_id")
+        tm_profiles["tm_club_id"] = club_series if club_series is not None else np.nan
+        tm_profiles["tm_club_id"] = tm_profiles["tm_club_id"].astype("string").str.strip()
+        tm_profiles_by_club = {
+            club_id: group
+            for club_id, group in tm_profiles.dropna(subset=["tm_club_id"]).groupby("tm_club_id")
+        }
 
-    for idx, row in enriched[enriched["tm_player_id"].isna()].iterrows():
-        tm_club_id = row.get("tm_club_id")
-        if pd.isna(tm_club_id):
-            continue
-        candidate = _fuzzy_match_within_club(tm_profiles, str(tm_club_id), row.get("player", ""), row.get("age"))
-        if candidate:
-            enriched.at[idx, "tm_player_id"] = candidate
+        missing_mask = enriched["tm_player_id"].isna()
+        missing_total = int(missing_mask.sum())
+        missing_with_club = int(enriched.loc[missing_mask, "tm_club_id"].notna().sum())
+        print(f"[TM] fuzzy candidates with club={missing_with_club}/{missing_total}")
+        log_every = int(os.getenv("TM_FUZZY_LOG_EVERY", "1000") or "1000")
+        start = time.time()
+        checked = 0
+        matched = 0
+        for idx, row in enriched[missing_mask].iterrows():
+            tm_club_id = row.get("tm_club_id")
+            if pd.isna(tm_club_id):
+                continue
+            club_profiles = tm_profiles_by_club.get(str(tm_club_id))
+            if club_profiles is None:
+                continue
+            candidate = _fuzzy_match_within_club(club_profiles, row.get("player", ""), row.get("age"))
+            checked += 1
+            if candidate:
+                enriched.at[idx, "tm_player_id"] = candidate
+                matched += 1
+            if log_every and checked % log_every == 0:
+                elapsed = time.time() - start
+                rate = checked / elapsed if elapsed > 0 else 0
+                print(f"[TM] fuzzy progress checked={checked} matched={matched} rate={rate:.1f}/s")
+        elapsed = time.time() - start
+        rate = checked / elapsed if elapsed > 0 else 0
+        print(f"[TM] fuzzy done checked={checked} matched={matched} rate={rate:.1f}/s")
 
     enriched = enriched.merge(tm_profiles, on="tm_player_id", how="left", suffixes=("", "_tm"))
     print(f"[TM] tm_player_id assigned={enriched['tm_player_id'].notna().sum()}")
@@ -1092,12 +1123,16 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     enriched["assigned_role"] = assigned_role
     enriched = pd.concat([enriched, enriched_extra], axis=1)
 
-    print("[PIPELINE] enrich Transfermarkt (si sources présentes)")
-    tm_sources = load_transfermarkt_sources()
-    enriched_tm, players_tm = merge_transfermarkt(enriched, players, tm_sources)
-    enriched = enriched_tm
-    players = players_tm
-    players = _build_players_from_enriched(enriched, players)
+    skip_tm = os.getenv("TM_SKIP_ENRICH", "0").lower() in {"1", "true", "yes"}
+    if skip_tm:
+        print("[PIPELINE] skip Transfermarkt enrich (TM_SKIP_ENRICH=1)")
+    else:
+        print("[PIPELINE] enrich Transfermarkt (si sources présentes)")
+        tm_sources = load_transfermarkt_sources()
+        enriched_tm, players_tm = merge_transfermarkt(enriched, players, tm_sources)
+        enriched = enriched_tm
+        players = players_tm
+        players = _build_players_from_enriched(enriched, players)
     if enriched.columns.duplicated().any():
         dupes = enriched.columns[enriched.columns.duplicated()].tolist()
         print(f"[WARN] duplicate columns in enriched: {dupes}")
