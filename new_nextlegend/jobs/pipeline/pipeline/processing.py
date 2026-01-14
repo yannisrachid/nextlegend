@@ -1044,12 +1044,17 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     numeric_cols = enriched.select_dtypes(include=["number"]).columns
     exclude = {"player_id"}
     metrics_cols = [c for c in numeric_cols if c not in exclude]
+    metrics_group_cols = ["wyscout_id", "competition_name", "calendar"]
+    if team_col:
+        metrics_group_cols.append(team_col)
     metrics = (
         enriched.assign(wyscout_id=enriched["player_id"])
-        .groupby(["wyscout_id", "competition_name", "calendar"], dropna=False)[metrics_cols]
+        .groupby(metrics_group_cols, dropna=False)[metrics_cols]
         .max()
         .reset_index()
     )
+    if team_col and team_col != "team_in_selected_period":
+        metrics.rename(columns={team_col: "team_in_selected_period"}, inplace=True)
 
     # Role scores long
     role_records = []

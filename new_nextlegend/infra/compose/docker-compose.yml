@@ -85,7 +85,7 @@ services:
     volumes:
       - ../../jobs/pipeline:/app
       - ../../data:/data:ro
-      - ../../../nextlegend/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
 
@@ -108,7 +108,7 @@ services:
     volumes:
       - ../../jobs/pipeline:/app
       - ../../data:/data:ro
-      - ../../../nextlegend/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
 
