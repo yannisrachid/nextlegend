@@ -96,7 +96,7 @@ services:
     env_file:
       - ../../.env
     environment:
-      PIPELINE_INPUT_URI: s3://${S3_BUCKET}/data/wyscout_players_cleaned.csv
+      PIPELINE_INPUT_URI: s3://${S3_BUCKET}/data/wyscout_players_final.csv
       PIPELINE_INPUT_KIND: raw
       S3_PREFIX: new_nextlegend
       ARCHIVE_RETAIN_RUNS: 8
