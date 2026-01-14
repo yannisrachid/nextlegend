@@ -527,6 +527,7 @@ def upsert_similarity(
             )
     cols = ["profile", "player_a_id", "player_b_id", "player_a_season_id", "player_b_season_id", "similarity"]
     similarity = similarity[cols].where(pd.notna(similarity[cols]), None)
+    similarity = similarity.drop_duplicates(subset=cols)
     with engine.begin() as conn:
         if replace:
             conn.execute(text("TRUNCATE player_similarity"))
