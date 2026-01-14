@@ -708,7 +708,11 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
     if club_mapping_dict:
         print(f"[TM] club mapping entries={len(club_mapping_dict)}")
         tm_club_ids = _apply_club_mapping(enriched, club_mapping_dict)
-        enriched["tm_club_id"] = tm_club_ids
+        enriched["tm_club_id"] = (
+            tm_club_ids.astype("string")
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+        )
     else:
         enriched["tm_club_id"] = np.nan
     print(f"[TM] tm_club_id mapped={enriched['tm_club_id'].notna().sum()}")
@@ -781,7 +785,12 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         if club_series is None:
             club_series = _first_series(tm_profiles, "tm_club_id")
         tm_profiles["tm_club_id"] = club_series if club_series is not None else np.nan
-        tm_profiles["tm_club_id"] = tm_profiles["tm_club_id"].astype("string").str.strip()
+        tm_profiles["tm_club_id"] = (
+            tm_profiles["tm_club_id"]
+            .astype("string")
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+        )
         tm_profiles_by_club = {
             club_id: group
             for club_id, group in tm_profiles.dropna(subset=["tm_club_id"]).groupby("tm_club_id")
