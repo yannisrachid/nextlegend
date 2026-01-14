@@ -966,6 +966,38 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     print("[PIPELINE] split positions")
     df = split_positions_cols(df)
 
+    player_cols = ["player_id", "player"]
+    if "tm_player_id" in df.columns:
+        player_cols.append("tm_player_id")
+    if "tm_profile_url" in df.columns:
+        player_cols.append("tm_profile_url")
+    players = (
+        df[player_cols]
+        .drop_duplicates()
+        .rename(
+            columns={
+                "player": "name",
+                "player_id": "wyscout_id",
+                "tm_player_id": "tm_id",
+            }
+        )
+    )
+    if "tm_id" in players.columns:
+        players["tm_id"] = players["tm_id"].astype(str).str.strip()
+
+    skip_tm = os.getenv("TM_SKIP_ENRICH", "0").lower() in {"1", "true", "yes"}
+    if skip_tm:
+        print("[PIPELINE] skip Transfermarkt enrich (TM_SKIP_ENRICH=1)")
+    else:
+        print("[PIPELINE] enrich Transfermarkt (si sources présentes)")
+        tm_sources = load_transfermarkt_sources()
+        df, players = merge_transfermarkt(df, players, tm_sources)
+        players = _build_players_from_enriched(df, players)
+        if df.columns.duplicated().any():
+            dupes = df.columns[df.columns.duplicated()].tolist()
+            print(f"[WARN] duplicate columns in TM dataframe: {dupes}")
+            df = df.loc[:, ~df.columns.duplicated()]
+
     print("[PIPELINE] scores bruts")
     raw_scores = compute_raw_scores(df, profiles)
     scores_pct = compute_scores_percentiles(raw_scores)
@@ -1015,24 +1047,6 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         .drop_duplicates()
         .rename(columns={"calendar": "label"})
     )
-    player_cols = ["player_id", "player"]
-    if "tm_player_id" in df.columns:
-        player_cols.append("tm_player_id")
-    if "tm_profile_url" in df.columns:
-        player_cols.append("tm_profile_url")
-    players = (
-        df[player_cols]
-        .drop_duplicates()
-        .rename(
-            columns={
-                "player": "name",
-                "player_id": "wyscout_id",
-                "tm_player_id": "tm_id",
-            }
-        )
-    )
-    if "tm_id" in players.columns:
-        players["tm_id"] = players["tm_id"].astype(str).str.strip()
     team_col = None
     if "team_in_selected_period" in df.columns:
         team_col = "team_in_selected_period"
@@ -1137,16 +1151,6 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     enriched["assigned_role"] = assigned_role
     enriched = pd.concat([enriched, enriched_extra], axis=1)
 
-    skip_tm = os.getenv("TM_SKIP_ENRICH", "0").lower() in {"1", "true", "yes"}
-    if skip_tm:
-        print("[PIPELINE] skip Transfermarkt enrich (TM_SKIP_ENRICH=1)")
-    else:
-        print("[PIPELINE] enrich Transfermarkt (si sources présentes)")
-        tm_sources = load_transfermarkt_sources()
-        enriched_tm, players_tm = merge_transfermarkt(enriched, players, tm_sources)
-        enriched = enriched_tm
-        players = players_tm
-        players = _build_players_from_enriched(enriched, players)
     if enriched.columns.duplicated().any():
         dupes = enriched.columns[enriched.columns.duplicated()].tolist()
         print(f"[WARN] duplicate columns in enriched: {dupes}")
