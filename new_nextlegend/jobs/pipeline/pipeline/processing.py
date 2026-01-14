@@ -581,6 +581,7 @@ def _apply_club_mapping(df: pd.DataFrame, club_mapping: dict) -> pd.Series:
     if not club_mapping:
         return pd.Series(np.nan, index=df.index)
     log_every = int(os.getenv("TM_CLUB_LOG_EVERY", "5000") or "5000")
+    print(f"[TM] club map log_every={log_every}", flush=True)
     start = time.time()
     tm_ids = []
     mapped_count = 0
@@ -598,10 +599,10 @@ def _apply_club_mapping(df: pd.DataFrame, club_mapping: dict) -> pd.Series:
         if log_every and i % log_every == 0:
             elapsed = time.time() - start
             rate = i / elapsed if elapsed > 0 else 0
-            print(f"[TM] club map progress rows={i} mapped={mapped_count} rate={rate:.1f}/s")
+            print(f"[TM] club map progress rows={i} mapped={mapped_count} rate={rate:.1f}/s", flush=True)
     elapsed = time.time() - start
     rate = len(df) / elapsed if elapsed > 0 else 0
-    print(f"[TM] club map done rows={len(df)} mapped={mapped_count} rate={rate:.1f}/s")
+    print(f"[TM] club map done rows={len(df)} mapped={mapped_count} rate={rate:.1f}/s", flush=True)
     return pd.Series(tm_ids, index=df.index)
 
 
@@ -789,7 +790,7 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         missing_mask = enriched["tm_player_id"].isna()
         missing_total = int(missing_mask.sum())
         missing_with_club = int(enriched.loc[missing_mask, "tm_club_id"].notna().sum())
-        print(f"[TM] fuzzy candidates with club={missing_with_club}/{missing_total}")
+        print(f"[TM] fuzzy candidates with club={missing_with_club}/{missing_total}", flush=True)
         log_every = int(os.getenv("TM_FUZZY_LOG_EVERY", "1000") or "1000")
         start = time.time()
         checked = 0
@@ -809,10 +810,10 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
             if log_every and checked % log_every == 0:
                 elapsed = time.time() - start
                 rate = checked / elapsed if elapsed > 0 else 0
-                print(f"[TM] fuzzy progress checked={checked} matched={matched} rate={rate:.1f}/s")
+                print(f"[TM] fuzzy progress checked={checked} matched={matched} rate={rate:.1f}/s", flush=True)
         elapsed = time.time() - start
         rate = checked / elapsed if elapsed > 0 else 0
-        print(f"[TM] fuzzy done checked={checked} matched={matched} rate={rate:.1f}/s")
+        print(f"[TM] fuzzy done checked={checked} matched={matched} rate={rate:.1f}/s", flush=True)
 
     enriched = enriched.merge(tm_profiles, on="tm_player_id", how="left", suffixes=("", "_tm"))
     print(f"[TM] tm_player_id assigned={enriched['tm_player_id'].notna().sum()}")
