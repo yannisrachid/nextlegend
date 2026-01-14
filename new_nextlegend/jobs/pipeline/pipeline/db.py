@@ -403,6 +403,8 @@ def upsert_player_metrics(
     print(f"[DB] player_metrics columns={len(metric_cols)}")
     if not metric_cols:
         print("[WARN] player_metrics has no numeric columns after cleanup")
+        return
+    effective_use_copy = use_copy or len(metric_cols) > 200
     # Ensure columns exist
     if metric_cols:
         with engine.begin() as conn:
@@ -426,17 +428,24 @@ def upsert_player_metrics(
                 {"ids": unique_ids},
             )
 
-        if use_copy:
-            _copy_dataframe(conn, "player_metrics", metrics, metrics.columns.tolist())
-        else:
-            metrics.to_sql(
-                "player_metrics",
-                conn,
-                if_exists="append",
-                index=False,
-                chunksize=2000,
-                method="multi",
-            )
+        try:
+            if effective_use_copy:
+                _copy_dataframe(conn, "player_metrics", metrics, metrics.columns.tolist())
+            else:
+                metrics.to_sql(
+                    "player_metrics",
+                    conn,
+                    if_exists="append",
+                    index=False,
+                    chunksize=200,
+                    method="multi",
+                )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ERROR] player_metrics insert failed: {exc}")
+            raise
+
+        total = conn.execute(text("SELECT COUNT(*) FROM player_metrics")).scalar()
+        print(f"[DB] player_metrics total rows={total}")
 
 
 def upsert_role_scores(engine: Engine, role_scores: pd.DataFrame, season_index: dict, ids: dict):
