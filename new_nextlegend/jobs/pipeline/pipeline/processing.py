@@ -580,17 +580,28 @@ def _normalise_name(value: str | float | None) -> str:
 def _apply_club_mapping(df: pd.DataFrame, club_mapping: dict) -> pd.Series:
     if not club_mapping:
         return pd.Series(np.nan, index=df.index)
+    log_every = int(os.getenv("TM_CLUB_LOG_EVERY", "5000") or "5000")
+    start = time.time()
     tm_ids = []
-    for _, row in df.iterrows():
+    mapped_count = 0
+    for i, (_, row) in enumerate(df.iterrows(), start=1):
         team = str(row.get("team_in_selected_period") or row.get("team") or "").strip()
         comp = str(row.get("competition_name") or "").strip()
         key = (team, comp)
-        mapped = club_mapping.get(key)
-        if mapped:
-            tm_id, _tm_name = mapped
+        mapping = club_mapping.get(key)
+        if mapping:
+            tm_id, _tm_name = mapping
+            mapped_count += 1
             tm_ids.append(tm_id if tm_id else np.nan)
         else:
             tm_ids.append(np.nan)
+        if log_every and i % log_every == 0:
+            elapsed = time.time() - start
+            rate = i / elapsed if elapsed > 0 else 0
+            print(f"[TM] club map progress rows={i} mapped={mapped_count} rate={rate:.1f}/s")
+    elapsed = time.time() - start
+    rate = len(df) / elapsed if elapsed > 0 else 0
+    print(f"[TM] club map done rows={len(df)} mapped={mapped_count} rate={rate:.1f}/s")
     return pd.Series(tm_ids, index=df.index)
 
 
@@ -712,6 +723,7 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         .str.replace(r"\.0$", "", regex=True)
     )
     enriched.loc[enriched["tm_player_id"].isin(["nan", "None", "<NA>", ""]), "tm_player_id"] = np.nan
+    print(f"[TM] tm_player_id assigned after direct map={enriched['tm_player_id'].notna().sum()}")
 
     # Alternative mapping via player_matching_reference if no wyscout_player_id is available
     if tm_player_map is not None and "tm_player_id" in tm_player_map.columns:
@@ -742,6 +754,7 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
             if "tm_player_id_map" in enriched.columns:
                 enriched["tm_player_id"] = enriched["tm_player_id"].fillna(enriched["tm_player_id_map"])
                 enriched = enriched.drop(columns=["tm_player_id_map"])
+    print(f"[TM] tm_player_id assigned after alt map={enriched['tm_player_id'].notna().sum()}")
 
     # Fuzzy fallback intra club si tm_player_id toujours vide
     enable_fuzzy = os.getenv("TM_ENABLE_FUZZY", "1").lower() not in {"0", "false", "no"}
