@@ -336,6 +336,7 @@ def upsert_db(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
     season_index = db.upsert_player_seasons(engine, fact, ids)
     replace_tables = cfg.input_kind == "enriched"
     replace_similarity = os.getenv("PIPELINE_REPLACE_SIMILARITY", "1").lower() not in {"0", "false", "no"}
+    copy_similarity = os.getenv("PIPELINE_COPY_SIMILARITY", "0").lower() in {"1", "true", "yes"}
     db.upsert_player_metrics(engine, metrics, season_index, ids, replace=replace_tables, use_copy=replace_tables)
     db.upsert_role_scores(engine, role_scores, season_index, ids)
     db.upsert_similarity(
@@ -344,7 +345,7 @@ def upsert_db(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
         ids,
         season_index,
         replace=replace_tables or replace_similarity,
-        use_copy=replace_tables or replace_similarity,
+        use_copy=copy_similarity,
     )
     db.insert_pipeline_run(engine, cfg.run_id, status="success", source_uri=cfg.input_uri, rows_processed=len(fact))
 

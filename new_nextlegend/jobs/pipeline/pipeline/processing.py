@@ -955,6 +955,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         "profile",
         "similarity",
     ])
+    print(f"[PIPELINE] similarity rows={len(similarity_df)}")
 
     # Dimensions (avant TM pour réutiliser team_col/fact)
     competitions = (
@@ -1183,6 +1184,8 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         name_map = players.drop_duplicates(subset=["name"]).set_index("name")["wyscout_id"]
         similarity_df["player_a_id"] = similarity_df["player_a"].map(name_map)
         similarity_df["player_b_id"] = similarity_df["player_b"].map(name_map)
+        mapped = similarity_df["player_a_id"].notna().sum()
+        print(f"[PIPELINE] similarity mapped rows={mapped}/{len(similarity_df)}")
         similarity_df.rename(columns={"competition_name_a": "competition_a", "competition_name_b": "competition_b"}, inplace=True)
         similarity_mapped = similarity_df
 

@@ -486,6 +486,7 @@ def upsert_similarity(
     if similarity.empty:
         return
     similarity = similarity.copy()
+    print(f"[DB] player_similarity input rows={len(similarity)} cols={len(similarity.columns)}")
     if "player_a_id" in similarity.columns:
         similarity["player_a_id"] = similarity["player_a_id"].astype(str).map(ids["players"])
     else:
@@ -494,6 +495,7 @@ def upsert_similarity(
         similarity["player_b_id"] = similarity["player_b_id"].astype(str).map(ids["players"])
     else:
         similarity["player_b_id"] = similarity["player_b"].astype(str).map(ids["players"])
+    print(f"[DB] player_similarity ids mapped a={similarity['player_a_id'].notna().sum()} b={similarity['player_b_id'].notna().sum()}")
     similarity["competition_a_id"] = similarity.get("competition_a", pd.Series()).map(ids["competitions"])
     similarity["competition_b_id"] = similarity.get("competition_b", pd.Series()).map(ids["competitions"])
     similarity["season_a_id"] = similarity.get("calendar_a", pd.Series()).map(ids["seasons"])
@@ -520,6 +522,7 @@ def upsert_similarity(
     similarity["player_a_season_id"] = similarity["player_a_season_id"].map(season_index)
     similarity["player_b_season_id"] = similarity["player_b_season_id"].map(season_index)
     similarity = similarity.dropna(subset=["player_a_id", "player_b_id"])
+    print(f"[DB] player_similarity rows after id mapping={len(similarity)}")
     for col in ("player_a_id", "player_b_id", "player_a_season_id", "player_b_season_id"):
         if col in similarity.columns:
             similarity[col] = similarity[col].apply(
@@ -543,6 +546,8 @@ def upsert_similarity(
                 [],
                 [],
             )
+        total = conn.execute(text("SELECT COUNT(*) FROM player_similarity")).scalar()
+        print(f"[DB] player_similarity total rows={total}")
 
 
 def insert_pipeline_run(engine: Engine, run_id: str, status: str, source_uri: str, rows_processed: int, message: str = ""):
