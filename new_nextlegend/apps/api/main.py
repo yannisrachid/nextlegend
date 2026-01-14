@@ -2091,15 +2091,14 @@ _OPTA_CLUBS_SORTED: Optional[list[tuple[str, dict[str, float | int | str]]]] = N
 
 def _get_tm_columns(session: Session) -> list[str]:
     global _TM_COLUMNS_CACHE
-    if _TM_COLUMNS_CACHE is None:
-        rows = session.execute(
-            text(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'player_seasons' AND column_name LIKE 'tm_%' "
-                "ORDER BY column_name"
-            )
-        ).fetchall()
-        _TM_COLUMNS_CACHE = [r[0] for r in rows]
+    rows = session.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'player_seasons' AND column_name LIKE 'tm_%' "
+            "ORDER BY column_name"
+        )
+    ).fetchall()
+    _TM_COLUMNS_CACHE = [r[0] for r in rows]
     return _TM_COLUMNS_CACHE
 
 
@@ -2223,8 +2222,6 @@ def _load_lower_is_better() -> set[str]:
 
 def _stats_metric_columns(session: Session) -> list[str]:
     global _STATS_METRIC_COLUMNS
-    if _STATS_METRIC_COLUMNS is not None:
-        return _STATS_METRIC_COLUMNS
     rows = session.execute(
         text(
             "SELECT column_name FROM information_schema.columns "
