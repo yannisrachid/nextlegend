@@ -1033,6 +1033,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     enriched_tm, players_tm = merge_transfermarkt(enriched, players, tm_sources)
     enriched = enriched_tm
     players = players_tm
+    players = _build_players_from_enriched(enriched, players)
     if enriched.columns.duplicated().any():
         dupes = enriched.columns[enriched.columns.duplicated()].tolist()
         print(f"[WARN] duplicate columns in enriched: {dupes}")
@@ -1152,6 +1153,26 @@ def _aggregate_for_roles(df: pd.DataFrame, group_cols: list[str], role_cols: lis
         agg_map[col] = "max" if col in numeric_cols else "first"
     grouped = subset.groupby(group_cols, dropna=False).agg(agg_map).reset_index()
     return grouped
+
+
+def _build_players_from_enriched(enriched: pd.DataFrame, fallback: pd.DataFrame) -> pd.DataFrame:
+    if "player_id" not in enriched.columns:
+        return fallback
+    players_cols = {
+        "player_id": "wyscout_id",
+        "player": "name",
+        "tm_player_id": "tm_id",
+        "profile_url": "tm_profile_url",
+    }
+    data = {}
+    for src in players_cols:
+        if src in enriched.columns:
+            data[src] = enriched[src]
+        else:
+            data[src] = pd.Series(pd.NA, index=enriched.index)
+    players = pd.DataFrame(data).drop_duplicates()
+    players = players.rename(columns=players_cols)
+    return players
 
 
 def _build_role_scores_from_enriched(
