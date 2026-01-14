@@ -665,7 +665,12 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         print("[WARN] Aucune colonne tm_id identifiée dans transfermarkt_profiles.csv")
         return enriched, players
     tm_profiles = tm_profiles.rename(columns={tm_id_col: "tm_player_id"})
-    tm_profiles["tm_player_id"] = tm_profiles["tm_player_id"].astype(str).str.strip()
+    tm_profiles["tm_player_id"] = (
+        tm_profiles["tm_player_id"]
+        .astype("string")
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
 
     # Override mapping joueurs
     player_map = pd.DataFrame(columns=["wyscout_player_id", "tm_player_id"])
@@ -675,7 +680,12 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         if "wyscout_player_id" in tm_player_map.columns and "tm_player_id" in tm_player_map.columns:
             player_map = tm_player_map[["wyscout_player_id", "tm_player_id"]].dropna()
             player_map["wyscout_player_id"] = player_map["wyscout_player_id"].astype(str).str.strip()
-            player_map["tm_player_id"] = player_map["tm_player_id"].astype(str).str.strip()
+            player_map["tm_player_id"] = (
+                player_map["tm_player_id"]
+                .astype("string")
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)
+            )
         else:
             print(f"[TM] player_matching_reference columns={tm_player_map.columns.tolist()}")
 
@@ -694,7 +704,12 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
     enriched = enriched.merge(player_map, left_on="player_id", right_on="wyscout_player_id", how="left")
     if "tm_player_id" not in enriched.columns:
         enriched["tm_player_id"] = np.nan
-    enriched["tm_player_id"] = enriched["tm_player_id"].astype(str).str.strip()
+    enriched["tm_player_id"] = (
+        enriched["tm_player_id"]
+        .astype("string")
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
     enriched.loc[enriched["tm_player_id"].isin(["nan", "None", "<NA>", ""]), "tm_player_id"] = np.nan
 
     # Alternative mapping via player_matching_reference if no wyscout_player_id is available
@@ -710,7 +725,12 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
             map_cols.append("calendar")
         if map_cols:
             map_df = tm_player_map[map_cols + ["tm_player_id"]].dropna()
-            map_df["tm_player_id"] = map_df["tm_player_id"].astype(str).str.strip()
+            map_df["tm_player_id"] = (
+                map_df["tm_player_id"]
+                .astype("string")
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)
+            )
             map_df = map_df.drop_duplicates()
             join_cols = map_cols.copy()
             if "team" in join_cols:
@@ -752,6 +772,10 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
 
     enriched = enriched.merge(tm_profiles, on="tm_player_id", how="left", suffixes=("", "_tm"))
     print(f"[TM] tm_player_id assigned={enriched['tm_player_id'].notna().sum()}")
+    if "profile_url" in enriched.columns:
+        print(f"[TM] profile_url filled={enriched['profile_url'].notna().sum()}")
+    elif "profile_url_tm" in enriched.columns:
+        print(f"[TM] profile_url_tm filled={enriched['profile_url_tm'].notna().sum()}")
 
     players = players.copy()
     players["wyscout_id"] = players["wyscout_id"].astype(str).str.strip()
@@ -1187,20 +1211,27 @@ def _aggregate_for_roles(df: pd.DataFrame, group_cols: list[str], role_cols: lis
 def _build_players_from_enriched(enriched: pd.DataFrame, fallback: pd.DataFrame) -> pd.DataFrame:
     if "player_id" not in enriched.columns:
         return fallback
-    players_cols = {
-        "player_id": "wyscout_id",
-        "player": "name",
-        "tm_player_id": "tm_id",
-        "profile_url": "tm_profile_url",
+    tm_id_col = "tm_player_id" if "tm_player_id" in enriched.columns else "tm_id"
+    profile_url_col = None
+    for candidate in ("profile_url", "profile_url_tm", "tm_profile_url"):
+        if candidate in enriched.columns:
+            profile_url_col = candidate
+            break
+    data = {
+        "player_id": enriched["player_id"],
+        "player": enriched.get("player", pd.Series(pd.NA, index=enriched.index)),
+        "tm_player_id": enriched.get(tm_id_col, pd.Series(pd.NA, index=enriched.index)),
+        "profile_url": enriched.get(profile_url_col, pd.Series(pd.NA, index=enriched.index)),
     }
-    data = {}
-    for src in players_cols:
-        if src in enriched.columns:
-            data[src] = enriched[src]
-        else:
-            data[src] = pd.Series(pd.NA, index=enriched.index)
     players = pd.DataFrame(data).drop_duplicates()
-    players = players.rename(columns=players_cols)
+    players = players.rename(
+        columns={
+            "player_id": "wyscout_id",
+            "player": "name",
+            "tm_player_id": "tm_id",
+            "profile_url": "tm_profile_url",
+        }
+    )
     return players
 
 
