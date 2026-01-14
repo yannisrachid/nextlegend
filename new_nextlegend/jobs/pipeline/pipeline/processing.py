@@ -789,6 +789,13 @@ def _normalize_raw(df: pd.DataFrame) -> pd.DataFrame:
     df = df.replace("-", pd.NA)
     for col in df.select_dtypes(include=["object"]).columns:
         df[col] = df[col].astype("string").str.strip()
+    for col in ("competition_name", "calendar", "team", "team_in_selected_period"):
+        if col not in df.columns:
+            continue
+        series = df[col].astype("string").str.strip()
+        if col == "calendar":
+            series = series.str.replace(r"\.0$", "", regex=True)
+        df[col] = series.replace({"": pd.NA})
     return df
 
 
