@@ -837,9 +837,17 @@ def _load_profiles_path() -> Path:
 def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     print("[PIPELINE] normalize + clean players")
     df = _normalize_raw(df_raw)
+    print(f"[PIPELINE] input rows={len(df)} cols={len(df.columns)}")
     df = clean_players_dataframe(df)
     df = _ensure_player_id(df)
+    if "player_id" in df.columns:
+        missing_ids = df["player_id"].isna().sum()
+        print(f"[PIPELINE] player_id missing={missing_ids}")
+    if "calendar" in df.columns:
+        calendar_sample = df["calendar"].dropna().astype(str).head(3).tolist()
+        print(f"[PIPELINE] calendar dtype={df['calendar'].dtype} sample={calendar_sample}")
     df = aggregate_player_rows(df)
+    print(f"[PIPELINE] rows after dedupe={len(df)}")
 
     profiles_path = _load_profiles_path()
     profiles = load_profiles(profiles_path) if profiles_path.exists() else {}
@@ -930,6 +938,11 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         )
     else:
         clubs = pd.DataFrame(columns=["name", "competition_name"])
+    print(
+        "[PIPELINE] dims counts:"
+        f" competitions={len(competitions)} seasons={len(seasons)}"
+        f" players={len(players)} clubs={len(clubs)}"
+    )
 
     print("[PIPELINE] percentiles métriques + summary")
     league_group = _league_group(df)
@@ -1046,20 +1059,29 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         .reset_index()
     )
     fact.rename(columns={team_col: "team_in_selected_period"}, inplace=True)
+    print(f"[PIPELINE] player_seasons rows={len(fact)}")
 
     # Player metrics wide (numeric only, from enriched)
-    numeric_cols = enriched.select_dtypes(include=["number"]).columns
-    exclude = {"player_id"}
-    metrics_cols = [c for c in numeric_cols if c not in exclude]
     metrics_group_cols = ["wyscout_id", "competition_name", "calendar"]
     if team_col:
         metrics_group_cols.append(team_col)
+    metrics_source = enriched.copy()
+    skip_cols = set(metrics_group_cols)
+    for col in metrics_source.columns:
+        if col in skip_cols:
+            continue
+        metrics_source[col] = pd.to_numeric(metrics_source[col], errors="coerce")
+    numeric_cols = metrics_source.select_dtypes(include=["number"]).columns
+    metrics_cols = [c for c in numeric_cols if c not in skip_cols and c != "player_id"]
     metrics = (
-        enriched.assign(wyscout_id=enriched["player_id"])
+        metrics_source.assign(wyscout_id=metrics_source["player_id"])
         .groupby(metrics_group_cols, dropna=False)[metrics_cols]
         .max()
         .reset_index()
     )
+    print(f"[PIPELINE] player_metrics rows={len(metrics)} cols={len(metrics_cols)}")
+    if not metrics_cols:
+        print("[WARN] no numeric metrics extracted for player_metrics")
     if team_col and team_col != "team_in_selected_period":
         metrics.rename(columns={team_col: "team_in_selected_period"}, inplace=True)
 

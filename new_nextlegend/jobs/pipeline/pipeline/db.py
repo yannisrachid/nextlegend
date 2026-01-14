@@ -374,8 +374,10 @@ def upsert_player_metrics(
     use_copy: bool = False,
 ):
     if metrics.empty:
+        print("[DB] player_metrics empty; skip.")
         return
     metrics = metrics.copy()
+    print(f"[DB] player_metrics input rows={len(metrics)} cols={len(metrics.columns)}")
     metrics["player_id"] = metrics["wyscout_id"].astype(str).map(ids["players"])
     metrics["competition_id"] = metrics["competition_name"].map(ids["competitions"])
     metrics["season_id"] = metrics["calendar"].map(ids["seasons"])
@@ -389,12 +391,18 @@ def upsert_player_metrics(
         )
     )
     metrics["player_season_id"] = metrics["player_season_id"].map(season_index)
+    before_rows = len(metrics)
     metrics = metrics.dropna(subset=["player_season_id"])
+    dropped = before_rows - len(metrics)
+    print(f"[DB] player_metrics mapped rows={len(metrics)} dropped={dropped}")
     # Remove helper columns
     metrics = metrics.drop(columns=["club_id", "player_id", "competition_id", "season_id"], errors="ignore")
     metrics = metrics.drop(columns=["wyscout_id", "competition_name", "calendar", "team_in_selected_period", "team"], errors="ignore")
 
     metric_cols = [c for c in metrics.columns if c != "player_season_id"]
+    print(f"[DB] player_metrics columns={len(metric_cols)}")
+    if not metric_cols:
+        print("[WARN] player_metrics has no numeric columns after cleanup")
     # Ensure columns exist
     if metric_cols:
         with engine.begin() as conn:

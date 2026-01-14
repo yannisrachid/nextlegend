@@ -365,6 +365,7 @@ def main():
         run_log.rows_processed = len(df_raw)
         # Enrich log with artifact sizes
         sizes = {k: len(v) if isinstance(v, pd.DataFrame) else 0 for k, v in artifacts.items()}
+        print(f"[PIPELINE] artifact sizes: {sizes}")
         run_log.message = json.dumps({"artifacts": sizes})
 
         if not cfg.dry_run:
