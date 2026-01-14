@@ -777,6 +777,16 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
     elif "profile_url_tm" in enriched.columns:
         print(f"[TM] profile_url_tm filled={enriched['profile_url_tm'].notna().sum()}")
 
+    tm_source_cols = [col for col in tm_profiles.columns if col != "tm_player_id"]
+    for col in tm_source_cols:
+        if col.startswith("tm_"):
+            continue
+        tm_col = f"tm_{col}"
+        if tm_col in enriched.columns:
+            continue
+        if col in enriched.columns:
+            enriched[tm_col] = enriched[col]
+
     players = players.copy()
     players["wyscout_id"] = players["wyscout_id"].astype(str).str.strip()
     players = players.merge(player_map, left_on="wyscout_id", right_on="wyscout_player_id", how="left")
@@ -1096,20 +1106,25 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     group_cols = ["wyscout_id", "competition_name", "calendar"]
     if team_col:
         group_cols.append(team_col)
+    fact_aggs = {
+        "minutes_played": ("minutes_played", "max") if "minutes_played" in enriched.columns else ("player_id", "size"),
+        "matches_played": ("matches_played", "max") if "matches_played" in enriched.columns else ("player_id", "size"),
+        "assigned_role": ("assigned_role", "first") if "assigned_role" in enriched.columns else ("player_id", "first"),
+        "assigned_role_pct_league": ("assigned_role_pct_league", "first") if "assigned_role_pct_league" in enriched.columns else ("player_id", "size"),
+        "assigned_role_pct_global": ("assigned_role_pct_global", "first") if "assigned_role_pct_global" in enriched.columns else ("player_id", "size"),
+        "global_score_adjusted": ("global_score_adjusted", "max") if "global_score_adjusted" in enriched.columns else ("player_id", "size"),
+        "position": ("position", "first"),
+        "second_position": ("second_position", "first"),
+        "league_strength_factor": ("league_strength_factor", "first") if "league_strength_factor" in enriched.columns else ("player_id", "size"),
+    }
+    tm_cols = [col for col in enriched.columns if col.startswith("tm_")]
+    for col in tm_cols:
+        if col not in fact_aggs:
+            fact_aggs[col] = (col, "first")
     fact = (
         enriched.assign(wyscout_id=enriched["player_id"])
         .groupby(group_cols, dropna=False)
-        .agg(
-            minutes_played=("minutes_played", "max") if "minutes_played" in enriched.columns else ("player_id", "size"),
-            matches_played=("matches_played", "max") if "matches_played" in enriched.columns else ("player_id", "size"),
-            assigned_role=("assigned_role", "first") if "assigned_role" in enriched.columns else ("player_id", "first"),
-            assigned_role_pct_league=("assigned_role_pct_league", "first") if "assigned_role_pct_league" in enriched.columns else ("player_id", "size"),
-            assigned_role_pct_global=("assigned_role_pct_global", "first") if "assigned_role_pct_global" in enriched.columns else ("player_id", "size"),
-            global_score_adjusted=("global_score_adjusted", "max") if "global_score_adjusted" in enriched.columns else ("player_id", "size"),
-            position=("position", "first"),
-            second_position=("second_position", "first"),
-            league_strength_factor=("league_strength_factor", "first") if "league_strength_factor" in enriched.columns else ("player_id", "size"),
-        )
+        .agg(**fact_aggs)
         .reset_index()
     )
     fact.rename(columns={team_col: "team_in_selected_period"}, inplace=True)
