@@ -997,6 +997,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
     print("[PIPELINE] split positions")
     df = split_positions_cols(df)
+    row_ids = pd.Series(np.arange(len(df)), index=df.index, name="_row_id")
 
     player_cols = ["player_id", "player"]
     if "tm_player_id" in df.columns:
@@ -1032,7 +1033,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         if "age" in df.columns:
             tm_base_cols.append("age")
         tm_input = df[tm_base_cols].copy()
-        tm_input["_row_id"] = np.arange(len(df))
+        tm_input["_row_id"] = row_ids
         tm_enriched, players = merge_transfermarkt(tm_input, players, tm_sources)
 
     print("[PIPELINE] scores bruts")
@@ -1187,13 +1188,17 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     enriched = enriched.drop(columns=["_elig_league"], errors="ignore")
     enriched["assigned_role"] = assigned_role
     enriched = pd.concat([enriched, enriched_extra], axis=1)
-    if tm_enriched is not None:
-        tm_enriched = tm_enriched.sort_values("_row_id").reset_index(drop=True)
+    if tm_enriched is not None and "_row_id" in tm_enriched.columns:
+        tm_enriched = (
+            tm_enriched.drop_duplicates(subset=["_row_id"], keep="first")
+            .set_index("_row_id")
+        )
         tm_cols = [col for col in tm_enriched.columns if col.startswith("tm_") or col in ("profile_url", "profile_url_tm")]
+        row_index = row_ids.to_numpy()
         for col in tm_cols:
             if col in enriched.columns:
                 continue
-            enriched[col] = tm_enriched[col].to_numpy()
+            enriched[col] = tm_enriched[col].reindex(row_index).to_numpy()
         players = _build_players_from_enriched(enriched, players)
 
     if enriched.columns.duplicated().any():
