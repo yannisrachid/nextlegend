@@ -630,6 +630,7 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         return enriched, players
     tm_profiles = tm_profiles.copy()
     tm_profiles.columns = [c.lower() for c in tm_profiles.columns]
+    print(f"[TM] tm_profiles rows={len(tm_profiles)} cols={len(tm_profiles.columns)}")
 
     # parse tm_age / tm_birth_date si profil disponible
     if "profile_description" in tm_profiles.columns:
@@ -675,6 +676,8 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
             player_map = tm_player_map[["wyscout_player_id", "tm_player_id"]].dropna()
             player_map["wyscout_player_id"] = player_map["wyscout_player_id"].astype(str).str.strip()
             player_map["tm_player_id"] = player_map["tm_player_id"].astype(str).str.strip()
+        else:
+            print(f"[TM] player_matching_reference columns={tm_player_map.columns.tolist()}")
 
     enriched = enriched.copy()
     enriched["player_id"] = enriched["player_id"].astype(str).str.strip()
@@ -685,6 +688,7 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         enriched["tm_club_id"] = tm_club_ids
     else:
         enriched["tm_club_id"] = np.nan
+    print(f"[TM] tm_club_id mapped={enriched['tm_club_id'].notna().sum()}")
 
     # Merge overrides joueurs
     enriched = enriched.merge(player_map, left_on="player_id", right_on="wyscout_player_id", how="left")
@@ -692,6 +696,30 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
         enriched["tm_player_id"] = np.nan
     enriched["tm_player_id"] = enriched["tm_player_id"].astype(str).str.strip()
     enriched.loc[enriched["tm_player_id"].isin(["nan", "None", "<NA>", ""]), "tm_player_id"] = np.nan
+
+    # Alternative mapping via player_matching_reference if no wyscout_player_id is available
+    if tm_player_map is not None and "tm_player_id" in tm_player_map.columns:
+        map_cols = []
+        if "player" in tm_player_map.columns:
+            map_cols.append("player")
+        if "team" in tm_player_map.columns:
+            map_cols.append("team")
+        if "competition_name" in tm_player_map.columns:
+            map_cols.append("competition_name")
+        if "calendar" in tm_player_map.columns:
+            map_cols.append("calendar")
+        if map_cols:
+            map_df = tm_player_map[map_cols + ["tm_player_id"]].dropna()
+            map_df["tm_player_id"] = map_df["tm_player_id"].astype(str).str.strip()
+            map_df = map_df.drop_duplicates()
+            join_cols = map_cols.copy()
+            if "team" in join_cols:
+                join_cols[join_cols.index("team")] = "team_in_selected_period"
+                map_df = map_df.rename(columns={"team": "team_in_selected_period"})
+            enriched = enriched.merge(map_df, on=join_cols, how="left", suffixes=("", "_map"))
+            if "tm_player_id_map" in enriched.columns:
+                enriched["tm_player_id"] = enriched["tm_player_id"].fillna(enriched["tm_player_id_map"])
+                enriched = enriched.drop(columns=["tm_player_id_map"])
 
     # Fuzzy fallback intra club si tm_player_id toujours vide
     def _first_series(df: pd.DataFrame, col: str) -> Optional[pd.Series]:
@@ -723,6 +751,7 @@ def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: 
             enriched.at[idx, "tm_player_id"] = candidate
 
     enriched = enriched.merge(tm_profiles, on="tm_player_id", how="left", suffixes=("", "_tm"))
+    print(f"[TM] tm_player_id assigned={enriched['tm_player_id'].notna().sum()}")
 
     players = players.copy()
     players["wyscout_id"] = players["wyscout_id"].astype(str).str.strip()
