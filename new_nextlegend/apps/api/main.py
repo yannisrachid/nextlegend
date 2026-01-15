@@ -632,7 +632,7 @@ class AdminUserUpdate(BaseModel):
     role: Optional[str] = None
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root() -> dict:
     return {"status": "ok"}
 
