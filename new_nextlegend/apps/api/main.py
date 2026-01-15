@@ -68,7 +68,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def auth_middleware(request, call_next):
-    public_paths = {"/auth/login", "/auth/logout", "/auth/me"}
+    public_paths = {"/", "/health", "/auth/login", "/auth/logout", "/auth/me"}
     if request.method == "OPTIONS":
         return await call_next(request)
     if request.url.path in public_paths or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
@@ -630,6 +630,11 @@ class AdminUserUpdate(BaseModel):
     display_name: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = None
+
+
+@app.get("/")
+def root() -> dict:
+    return {"status": "ok"}
 
 
 @app.get("/health")
