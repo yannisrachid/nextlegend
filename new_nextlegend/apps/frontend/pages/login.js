@@ -1,19 +1,15 @@
-import { useEffect, useState } from "react";
-import { postJson, fetchJson } from "@/lib/api";
+import { useState } from "react";
+import { useRouter } from "next/router";
+import { postJson } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetchJson("/auth/me")
-      .then(() => {
-        window.location.href = "/";
-      })
-      .catch(() => {});
-  }, []);
+  const { refreshAuth } = useAuth();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -30,7 +26,10 @@ export default function LoginPage() {
         password,
         legacy_user_id: legacyUserId || undefined,
       });
-      window.location.href = "/";
+      const authed = await refreshAuth();
+      if (authed) {
+        router.replace("/");
+      }
     } catch (err) {
       setError("Invalid credentials.");
     } finally {

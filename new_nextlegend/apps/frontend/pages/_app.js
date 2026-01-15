@@ -1,8 +1,9 @@
 import "@/styles/globals.css";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { fetchJson, postJson } from "@/lib/api";
+import { AuthContext } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
@@ -20,6 +21,7 @@ export default function App({ Component, pageProps }) {
   const router = useRouter();
   const isLogin = router.pathname === "/login";
   const [me, setMe] = useState(null);
+  const [authStatus, setAuthStatus] = useState("loading");
 
   const handleLogout = async () => {
     try {
@@ -31,29 +33,46 @@ export default function App({ Component, pageProps }) {
     }
   };
 
-  useEffect(() => {
-    if (isLogin) return;
+  const refreshAuth = useCallback(async () => {
     let active = true;
-    fetchJson("/auth/me")
-      .then((data) => {
-        if (!active) return;
-        setMe(data);
-      })
-      .catch(() => {
-        if (!active) return;
-        setMe(null);
-      });
-    return () => {
+    setAuthStatus("loading");
+    try {
+      const data = await fetchJson("/auth/me");
+      if (!active) return null;
+      setMe(data);
+      setAuthStatus("authenticated");
+      return data;
+    } catch (err) {
+      if (!active) return null;
+      setMe(null);
+      setAuthStatus("unauthenticated");
+      return null;
+    } finally {
       active = false;
-    };
-  }, [isLogin]);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAuth();
+  }, [refreshAuth]);
+
+  useEffect(() => {
+    if (authStatus === "loading") return;
+    if (isLogin && authStatus === "authenticated") {
+      router.replace("/");
+      return;
+    }
+    if (!isLogin && authStatus === "unauthenticated") {
+      router.replace("/login");
+    }
+  }, [authStatus, isLogin, router]);
 
   const navItems = me?.role === "admin"
     ? [...NAV_ITEMS, { href: "/admin", label: "Admin" }]
     : NAV_ITEMS;
 
   return (
-    <>
+    <AuthContext.Provider value={{ me, status: authStatus, refreshAuth }}>
       {!isLogin ? (
         <header className="sticky top-0 z-40 border-b border-white/5 bg-slate-900/80 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -94,6 +113,6 @@ export default function App({ Component, pageProps }) {
         </header>
       ) : null}
       <Component {...pageProps} />
-    </>
+    </AuthContext.Provider>
   );
 }
