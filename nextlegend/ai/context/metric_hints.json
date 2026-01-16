@@ -1,0 +1,22 @@
+{
+  "core_metrics": [
+    "global_score_adjusted",
+    "assigned_role_pct_global",
+    "assigned_role_pct_league",
+    "summary_finishing",
+    "summary_creation",
+    "summary_defense",
+    "summary_technique",
+    "summary_construction",
+    "summary_aerial",
+    "goals_per_90",
+    "xg_per_90",
+    "xa_per_90",
+    "assists_per_90",
+    "xg",
+    "xa",
+    "goals",
+    "assists",
+    "minutes_played"
+  ]
+}

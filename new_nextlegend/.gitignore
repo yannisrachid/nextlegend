@@ -1,0 +1,19 @@
+# Environment & credentials
+.env
+.env.local
+
+# Node/Next artifacts
+node_modules
+.next
+out
+npm-debug.log
+
+# Python
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.venv
+
+# Docker
+.DS_Store

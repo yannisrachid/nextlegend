@@ -1,0 +1,102 @@
+{
+  "entries": [
+    {
+      "canonical": "GK",
+      "label_fr": "gardien de but",
+      "label_en": "goalkeeper",
+      "codes": ["GK"],
+      "synonyms": ["gardien", "goalkeeper", "keeper", "gk"]
+    },
+    {
+      "canonical": "CB",
+      "label_fr": "defenseur central",
+      "label_en": "center back",
+      "codes": ["CB", "LCB", "RCB"],
+      "synonyms": ["defenseur central", "centre back", "center back", "cb"]
+    },
+    {
+      "canonical": "LB",
+      "label_fr": "lateral gauche",
+      "label_en": "left back",
+      "codes": ["LB"],
+      "synonyms": ["lateral gauche", "arriere gauche", "left back", "left fullback", "lb"]
+    },
+    {
+      "canonical": "RB",
+      "label_fr": "lateral droit",
+      "label_en": "right back",
+      "codes": ["RB"],
+      "synonyms": ["lateral droit", "arriere droit", "right back", "right fullback", "rb"]
+    },
+    {
+      "canonical": "LWB",
+      "label_fr": "piston gauche",
+      "label_en": "left wing-back",
+      "codes": ["LWB"],
+      "synonyms": ["piston gauche", "left wing-back", "left wingback", "lwb", "wing back gauche"]
+    },
+    {
+      "canonical": "RWB",
+      "label_fr": "piston droit",
+      "label_en": "right wing-back",
+      "codes": ["RWB"],
+      "synonyms": ["piston droit", "right wing-back", "right wingback", "rwb", "wing back droit"]
+    },
+    {
+      "canonical": "DMF",
+      "label_fr": "milieu defensif",
+      "label_en": "defensive midfielder",
+      "codes": ["DMF", "LDMF", "RDMF"],
+      "synonyms": ["milieu defensif", "defensive midfielder", "dmf", "6", "sentinelle"]
+    },
+    {
+      "canonical": "LCMF",
+      "label_fr": "milieu central gauche",
+      "label_en": "left central midfielder",
+      "codes": ["LCMF"],
+      "synonyms": ["milieu central gauche", "left central midfielder", "lcmf"]
+    },
+    {
+      "canonical": "RCMF",
+      "label_fr": "milieu central droit",
+      "label_en": "right central midfielder",
+      "codes": ["RCMF"],
+      "synonyms": ["milieu central droit", "right central midfielder", "rcmf"]
+    },
+    {
+      "canonical": "AMF",
+      "label_fr": "milieu offensif",
+      "label_en": "attacking midfielder",
+      "codes": ["AMF", "LAMF", "RAMF"],
+      "synonyms": ["milieu offensif", "attacking midfielder", "amf", "10"]
+    },
+    {
+      "canonical": "LW",
+      "label_fr": "ailier gauche",
+      "label_en": "left winger",
+      "codes": ["LW", "LWF"],
+      "synonyms": ["ailier gauche", "left winger", "left wing", "lw", "lwf"]
+    },
+    {
+      "canonical": "RW",
+      "label_fr": "ailier droit",
+      "label_en": "right winger",
+      "codes": ["RW", "RWF"],
+      "synonyms": ["ailier droit", "right winger", "right wing", "rw", "rwf"]
+    },
+    {
+      "canonical": "WINGER",
+      "label_fr": "ailier",
+      "label_en": "winger",
+      "codes": ["LW", "RW", "LWF", "RWF"],
+      "synonyms": ["ailier", "winger", "wide forward", "excentre"]
+    },
+    {
+      "canonical": "CF",
+      "label_fr": "avant-centre",
+      "label_en": "centre forward",
+      "codes": ["CF"],
+      "synonyms": ["avant centre", "avant-centre", "centre forward", "striker", "cf", "9"]
+    }
+  ]
+}
