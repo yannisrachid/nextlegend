@@ -1,148 +1,255 @@
-# NextLegend v2 — Documentation complete
+# NextLegend v2
 
-Cette arborescence contient la nouvelle application NextLegend (frontend Next.js + API FastAPI + Postgres + pipeline batch + stockage objet S3/MinIO). Objectif : remplacer progressivement la v1 sans la casser, avec un flux data hebdomadaire automatise et des pages front completes.
+This repository contains the production-ready NextLegend v2 stack:
+- Frontend: Next.js
+- Backend: FastAPI
+- Database: Postgres
+- Batch pipeline: Docker job
+- Object storage: external S3
 
-## Vue d'ensemble
-- Frontend Next.js : pages Ranking, Report, Comparison, Projection, Stats Research, Vizualisation, Prospect, AI.
-- API FastAPI : endpoints de recherche/filtrage, rapports joueurs, similarites, meta (competitions/saisons), AI agentique, auth + admin.
-- Postgres : serving DB (joueurs, saisons, metrics, roles, similarites, prospects, AI conversations, auth).
-- Pipeline batch (Docker job) : ingestion CSV, enrichissements, scores, percentiles, similarites, transfermarkt, upsert DB, archivage S3.
+The docs are written to be self-contained for Codex: you should be able to understand and operate the project by reading this file + `apps/api/README.md`.
 
-## Architecture
-- `apps/frontend` : interface utilisateur (Next.js)
-- `apps/api` : API FastAPI
-- `jobs/pipeline` : job d'ingestion/enrichissement
-- `infra/compose` : docker-compose (local/dev)
-- `helpers/` : fichiers de reference (glossaires, coefficients ligue, aliases)
-- `docs/` : documentation technique complementaire
+## High-level architecture
+- `apps/frontend`: Next.js UI
+- `apps/api`: FastAPI API
+- `jobs/pipeline`: batch ingestion + enrichment job
+- `infra/compose`: docker-compose definitions
+- `helpers/`: reference files (Transfermarkt, league mappings, etc.)
 
-## Demarrage rapide (dev)
-1. Depuis `new_nextlegend/` :
-   ```bash
-   cp .env.example .env
-   docker compose -f infra/compose/docker-compose.yml up --build
-   ```
-2. Services :
-   - Frontend : http://localhost:3000
-   - API : http://localhost:8000/health
-   - Postgres : localhost:${POSTGRES_PORT:-5432}
-   - MinIO (optionnel) : http://localhost:9000 + console http://localhost:9001
+Runtime:
+- API and frontend are served on different subdomains.
+- Auth uses a HttpOnly session cookie (`nl_session`).
+- The frontend runs a client-side auth guard with explicit states (loading/authenticated/unauthenticated).
 
-## Variables d'environnement
-Fichier `.env` (voir `.env.example`).
+## Quick start (dev)
+```bash
+cp .env.example .env
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml up --build
+```
+- Frontend: http://localhost:3000
+- API: http://localhost:8000/health
+- Postgres: localhost:${POSTGRES_PORT:-5432}
 
-Base de donnees:
+## Environment variables
+Database:
 - `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`
-- `DATABASE_URL` (utilise par l'API)
+- `DATABASE_URL`
 
-Stockage objet:
+S3 (external):
 - `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
-- MinIO local : `S3_ENDPOINT=http://minio:9000` + identifiants MinIO
 
 API / Front:
-- `API_BASE_URL` (api container)
-- `NEXT_PUBLIC_API_BASE_URL` (frontend)
+- `API_BASE_URL`
+- `NEXT_PUBLIC_API_BASE_URL`
+- `CORS_ORIGINS`
 
-IA:
+Auth:
+- `AUTH_SESSION_DAYS`
+- `AUTH_COOKIE_SECURE`
+- `AUTH_USERS_JSON` or `AUTH_USERNAME`/`AUTH_PASSWORD` (bootstrap)
+
+AI:
 - `OPENAI_API_KEY`
 
-Auth (optionnel):
-- `AUTH_SESSION_DAYS` (defaut 365)
-- `AUTH_COOKIE_SECURE` (true en prod https)
-- `AUTH_USERS_JSON` ou `AUTH_USERNAME`/`AUTH_PASSWORD` (bootstrap si besoin)
+## Auth model (frontend + backend)
+- Backend: global auth middleware protects all routes except `GET /`, `GET /health`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`.
+- Frontend: client-side guard waits for `/auth/me` before redirecting. No edge middleware redirect.
+- Session cookie is HttpOnly and must be scoped to the correct domain.
 
-## Auth + Admin
-- Auth par session en base (cookie HttpOnly `nl_session`).
-- Table `auth_users` en base, roles `admin`/`user`.
-- Le bootstrap lit `config/credentials.toml` si la table est vide.
-- Le user `yrachid` est force en admin.
-- Portail admin : `/admin` (visible uniquement pour `yrachid`)
-  - Lister, creer, editer, supprimer des users
-  - Bouton d'import `credentials.toml` pour resynchroniser la base
+## API (FastAPI)
+- `GET /` : public, returns `{ "status": "ok" }`.
+- `GET /health` : public healthcheck.
+- All other endpoints require an active session (`nl_session`).
 
-## Donnees / Pipeline hebdo
-Le flux data est un job Docker qui :
-1. Telecharge le CSV brut depuis S3
-2. Applique nettoyage + enrichissement (scores, percentiles, similarites, transfermarkt)
-3. Archive les artefacts sur S3
-4. Upsert en Postgres
+## Pipeline (batch)
+Pipeline flow:
+1) Download raw CSV from S3.
+2) Normalize + clean.
+3) Transfermarkt enrichment (club mapping + player mapping + fuzzy fallback).
+4) Scores + percentiles + similarities.
+5) Archive artifacts to S3 and upsert Postgres.
 
-### Commandes utiles
-- Pipeline local (dev):
-  ```bash
-  docker compose -f infra/compose/docker-compose.yml run --rm pipeline \
-    python -m pipeline.run --input-uri /helpers/csv/wyscout_players_final.csv \
-    --bucket $S3_BUCKET --prefix new_nextlegend
-  ```
+Run:
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
+```
 
-- Pipeline refresh (hebdo, S3 -> DB):
-  ```bash
-  docker compose -f infra/compose/docker-compose.yml run --rm pipeline-refresh
-  ```
+Important pipeline flags:
+- `SIM_TOPK` : top-k similarities per profile (default 30)
+- `PIPELINE_INPUT_URI` : input CSV (S3 or local)
+- `PIPELINE_INPUT_KIND=raw` (default) or `enriched`
+- `PIPELINE_REPLACE_SIMILARITY=1` : replace similarity table
+- `TM_SKIP_ENRICH=1` : skip TM (debug)
+- `TM_ENABLE_FUZZY=0/1` : toggle fuzzy TM
+- `TM_CLUB_LOG_EVERY`, `TM_FUZZY_LOG_EVERY` : progress logs
 
-### Archivage S3
+Transfermarkt reference files (`helpers/csv`):
+- `transfermarkt_profiles.csv`
+- `player_matching_reference.csv`
+- `club_mapping_dict.py`
+- `club_matching_reference.csv`
+- `tm_clubs_reference.csv`
+
+## S3 archives
 - `s3://$S3_BUCKET/new_nextlegend/enriched/<run_id>_<timestamp>/...`
-- Artefacts : raw, enriched, competitions, seasons, players, clubs, player_seasons, player_metrics, role_scores, player_similarity
+- Artifacts: `raw`, `enriched`, `competitions`, `seasons`, `players`, `clubs`, `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`
 
-## Base de donnees (Postgres)
-Tables principales (serving):
+## Database (Postgres)
+Core tables:
 - `competitions`, `seasons`, `clubs`, `players`
-- `player_seasons` (fact principale)
+- `player_seasons` (fact)
 - `player_metrics` (metrics + percentiles)
 - `role_scores`, `player_similarity`
+- `pipeline_runs`
 
-Tables applicatives:
+App tables:
 - `prospects`, `club_needs`, `club_need_players`
 - `ai_conversations`, `ai_messages`
 - `auth_users`, `auth_sessions`
 
-Voir schema detaille : `docs/DATA_MODEL.md`.
-
-## API (FastAPI)
-Endpoints principaux:
-- `GET /health`
-- `GET /ranking` (filtre + pagination)
-- `GET /report/{player_id}` (profil complet)
-- `GET /similar-players/{player_id}`
-- `GET /players` (recherche joueur)
-- `GET /meta/seasons`, `GET /meta/competitions`, `GET /meta/stats-research/metrics`
-- `GET /stats-research` (scatter + table)
-- `POST /ai/scout`, `POST /ai/player-report`
-- `GET /ai/conversations`, `POST /ai/conversations`, `PATCH /ai/conversations/{id}`
-- `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`
-- `GET/POST/PATCH/DELETE /admin/users` (admin)
-
-## Frontend (Next.js)
-Pages clefs:
-- `/ranking` : classement par role/ligue/saison, tri, pagination
-- `/report` : profil joueur complet (radar, roles, metrics, TM, similarites)
-- `/comparison` : comparaison multi-joueurs
-- `/projection` : projection score selon league translation
-- `/stats-research` : scatterplot + table filtrable
-- `/vizualisation` : pizza chart (percentiles)
-- `/prospect` : shortlist + kanban club needs
-- `/ai` : agents IA, conversations, usage
-- `/admin` : gestion users (admin only)
-
-## IA / Agentic
-- Mode conversation type ChatGPT
-- Extraction d'intentions (poste/role/league/age/minutes etc.)
-- Requetes base pour proposer des joueurs
-- Historique en DB (`ai_conversations`, `ai_messages`)
-- Tracking d'usage OpenAI (tokens + cout estime)
-
 ## Operations / checks
-- Health API : `GET /health`
-- DB ready : `pg_isready` (compose)
-- Logs : `docker compose ... logs api|frontend|pipeline`
+- `GET /health` (API)
+- `GET /` (API root public)
+- `docker compose ... logs api|frontend|pipeline`
 
-## Documentation complementaire
-- UX/UI : `docs/NEXTLEGEND_V2_UX_UI.md`
-- Migration : `docs/NextLegend_v2_Migration_Guide.md`
-- Pipeline : `docs/PIPELINE_PLAN.md`
-- Data model : `docs/DATA_MODEL.md`
+---
 
-## Notes
-- La v1 n'est pas modifiee (`../nextlegend`).
-- Tout changement data passe par le pipeline batch hebdo.
-- En prod, activer `AUTH_COOKIE_SECURE=true` et HTTPS.
+# Production Runbook (detailed)
+
+This section is the canonical prod setup for `app.nextlegend.fr` (frontend) and `api.nextlegend.fr` (API) behind Caddy.
+
+## 1) Domain + DNS
+- Buy a domain (OVH, Gandi, Infomaniak, Cloudflare Registrar).
+- Create A records:
+  - `app.nextlegend.fr` -> VPS IP
+  - `api.nextlegend.fr` -> VPS IP
+
+## 2) Caddy (HTTPS)
+Install Caddy on the VPS and configure:
+
+`/etc/caddy/Caddyfile`
+```
+app.nextlegend.fr {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:3000
+}
+
+api.nextlegend.fr {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8000
+}
+```
+
+Reload:
+```bash
+sudo systemctl reload caddy
+```
+
+Caddy will automatically provision TLS certs for both subdomains.
+
+## 3) Docker compose (prod)
+Make sure containers are running:
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
+```
+
+## 4) Env for prod
+Recommended `.env` values:
+- `NEXT_PUBLIC_API_BASE_URL=https://api.nextlegend.fr`
+- `API_BASE_URL=https://api.nextlegend.fr`
+- `CORS_ORIGINS=["https://app.nextlegend.fr"]`
+- `AUTH_COOKIE_SECURE=true`
+
+Optional:
+- `AUTH_SESSION_DAYS=365`
+
+## 5) Auth cookie scope
+The session cookie is set by the API domain. This is expected because the frontend communicates with the API via `https://api.nextlegend.fr`.
+Do not attempt to scope it to `app.`.
+
+## 6) Health checks
+```bash
+curl -I https://api.nextlegend.fr/
+curl -I https://api.nextlegend.fr/health
+```
+Both should return 200.
+
+## 7) Login check
+- Open `https://app.nextlegend.fr/login`
+- Login -> land on `/` and stay (no reload loop)
+- Refresh -> stay logged in
+
+## 8) Weekly data refresh
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
+```
+
+## 9) Optional: stop MinIO (if using external S3)
+MinIO is not needed for prod if you use external S3.
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml stop minio
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml rm -f minio
+```
+
+---
+
+# Maintenance Runbook
+
+## 1) Update code
+```bash
+git pull
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml up -d --build
+```
+
+## 2) Restart specific services
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml restart api frontend
+```
+
+## 3) Logs
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml logs -f api
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml logs -f frontend
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml logs -f pipeline
+```
+
+## 4) Postgres backup (manual)
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml exec db \
+  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > backup.sql
+```
+
+## 5) Postgres restore (manual)
+```bash
+cat backup.sql | sudo docker compose --env-file .env -f infra/compose/docker-compose.yml exec -T db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+```
+
+## 6) Clear and rebuild similarity table
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml exec db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TRUNCATE player_similarity;"
+
+sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm \
+  -e PIPELINE_REPLACE_SIMILARITY=1 pipeline-refresh
+```
+
+## 7) Health + auth checks
+```bash
+curl -I https://api.nextlegend.fr/
+curl -I https://api.nextlegend.fr/health
+```
+
+## 8) Pipeline troubleshooting
+- If the pipeline is OOM killed: stop `api` + `frontend` temporarily.
+- Enable swap if needed.
+- Use TM progress logs: `TM_CLUB_LOG_EVERY`, `TM_FUZZY_LOG_EVERY`.
+
+## 9) Caddy reload
+```bash
+sudo systemctl reload caddy
+```
+
+## Documentation
+- `README.md` (this file)
+- `apps/api/README.md`
