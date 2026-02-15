@@ -69,9 +69,15 @@ Pipeline flow:
 4) Scores + percentiles + similarities.
 5) Archive artifacts to S3 and upsert Postgres.
 
-Run:
+Run (dev, local CSV at `data/wyscout_players_final.csv`):
 ```bash
 sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
+```
+
+Run (prod, S3 CSV):
+```bash
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml build pipeline-refresh
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm -e PIPELINE_REPLACE_TABLES=1 pipeline-refresh
 ```
 
 Important pipeline flags:
@@ -150,7 +156,7 @@ Caddy will automatically provision TLS certs for both subdomains.
 ## 3) Docker compose (prod)
 Make sure containers are running:
 ```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d
 ```
 
 ## 4) Env for prod
@@ -180,15 +186,21 @@ Both should return 200.
 - Refresh -> stay logged in
 
 ## 8) Weekly data refresh
+Upload `wyscout_players_final.csv` to:
+- `s3://$S3_BUCKET/data/wyscout_players_final.csv`
+
+Then run:
 ```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml build pipeline-refresh
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm -e PIPELINE_REPLACE_TABLES=1 pipeline-refresh
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build api frontend
 ```
 
 ## 9) Optional: stop MinIO (if using external S3)
 MinIO is not needed for prod if you use external S3.
 ```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml stop minio
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml rm -f minio
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml stop minio
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml rm -f minio
 ```
 
 ---
@@ -198,39 +210,39 @@ sudo docker compose --env-file .env -f infra/compose/docker-compose.yml rm -f mi
 ## 1) Update code
 ```bash
 git pull
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml up -d --build
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build
 ```
 
 ## 2) Restart specific services
 ```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml restart api frontend
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml restart api frontend
 ```
 
 ## 3) Logs
 ```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml logs -f api
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml logs -f frontend
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml logs -f pipeline
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f api
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f frontend
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f pipeline-refresh
 ```
 
 ## 4) Postgres backup (manual)
 ```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml exec db \
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec db \
   pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" > backup.sql
 ```
 
 ## 5) Postgres restore (manual)
 ```bash
-cat backup.sql | sudo docker compose --env-file .env -f infra/compose/docker-compose.yml exec -T db \
+cat backup.sql | sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
   psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 ```
 
 ## 6) Clear and rebuild similarity table
 ```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml exec db \
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec db \
   psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TRUNCATE player_similarity;"
 
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm \
+sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm \
   -e PIPELINE_REPLACE_SIMILARITY=1 pipeline-refresh
 ```
 
