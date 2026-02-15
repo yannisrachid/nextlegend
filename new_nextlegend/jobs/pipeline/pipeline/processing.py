@@ -237,7 +237,7 @@ def assign_role(
         candidates = eligible_profiles_for_row(row)
         row_scores = scores_pct.loc[idx, candidates]
         if row_scores.dropna().empty:
-            assignments.append("")
+            assignments.append(candidates[0] if candidates else "")
         else:
             assignments.append(row_scores.idxmax())
     return pd.Series(assignments, index=df.index, dtype="object")
@@ -337,19 +337,25 @@ def profile_similarity(
     profile_name: str,
     topk: int = 10,
 ) -> pd.DataFrame:
+    empty_cols = [
+        "player_a_id",
+        "player_a",
+        "team_a",
+        "competition_name_a",
+        "calendar_a",
+        "player_b_id",
+        "player_b",
+        "team_b",
+        "competition_name_b",
+        "calendar_b",
+        "profile",
+        "similarity",
+    ]
+
     profile = profiles[profile_name]
     weights = profile.get("weights", {}) or {}
     if not weights:
-        return pd.DataFrame(columns=[
-            "player_a",
-            "team_a",
-            "competition_name_a",
-            "player_b",
-            "team_b",
-            "competition_name_b",
-            "profile",
-            "similarity",
-        ])
+        return pd.DataFrame(columns=empty_cols)
 
     weight_sum = sum(weights.values())
     normalized = {metric: (float(weight) / weight_sum) if weight_sum else 0.0 for metric, weight in weights.items()}
@@ -357,18 +363,13 @@ def profile_similarity(
 
     mask_profile = assigned_role == profile_name
     mask_minutes = eligibility_global(df, min_minutes=270)
-    mask = mask_profile & mask_minutes
-    if not mask.any():
-        return pd.DataFrame(columns=[
-            "player_a",
-            "team_a",
-            "competition_name_a",
-            "player_b",
-            "team_b",
-            "competition_name_b",
-            "profile",
-            "similarity",
-        ])
+    if not mask_profile.any():
+        return pd.DataFrame(columns=empty_cols)
+
+    # Keep robust neighbours (>=270 minutes) but include low-minute players as seeds.
+    candidate_mask = mask_profile & mask_minutes
+    if candidate_mask.sum() < 2:
+        candidate_mask = mask_profile
 
     numeric_vectors = []
     for metric in normalized.keys():
@@ -381,18 +382,32 @@ def profile_similarity(
     numeric_vectors.append(_coerce_numeric(df.get("height", pd.Series(index=df.index))))
     numeric_vectors.append(_coerce_numeric(df.get("weight", pd.Series(index=df.index))))
     vectors = pd.concat(numeric_vectors, axis=1)
-    vectors = vectors.apply(pd.to_numeric, errors="coerce").loc[mask].fillna(0.0)
-    vector_values = vectors.to_numpy(dtype=float)
-    norms = np.linalg.norm(vector_values, axis=1)
-    norms[norms == 0] = 1e-9
-    normalized_vectors = vector_values / norms[:, None]
-
-    similarity_matrix = normalized_vectors @ normalized_vectors.T
-    np.fill_diagonal(similarity_matrix, -np.inf)
+    vectors = vectors.apply(pd.to_numeric, errors="coerce").loc[mask_profile].fillna(0.0)
+    if vectors.empty:
+        return pd.DataFrame(columns=empty_cols)
 
     players_idx = vectors.index.tolist()
+    candidate_idx = vectors.index[candidate_mask.loc[vectors.index]].tolist()
+    if not candidate_idx:
+        return pd.DataFrame(columns=empty_cols)
+
+    seed_values = vectors.to_numpy(dtype=float)
+    candidate_values = vectors.loc[candidate_idx].to_numpy(dtype=float)
+
+    seed_norms = np.linalg.norm(seed_values, axis=1)
+    seed_norms[seed_norms == 0] = 1e-9
+    normalized_seeds = seed_values / seed_norms[:, None]
+
+    candidate_norms = np.linalg.norm(candidate_values, axis=1)
+    candidate_norms[candidate_norms == 0] = 1e-9
+    normalized_candidates = candidate_values / candidate_norms[:, None]
+
+    similarity_matrix = normalized_seeds @ normalized_candidates.T
+
     players_id = df.loc[players_idx, "player_id"] if "player_id" in df.columns else pd.Series(index=players_idx, dtype="object")
     players_name = df.loc[players_idx, "player"] if "player" in df.columns else pd.Series(index=players_idx, dtype="object")
+    # Use the same club key as fact tables to maximize player_season_id mapping downstream.
+    team_col = "team_in_selected_period" if "team_in_selected_period" in df.columns else "team" if "team" in df.columns else None
 
     records = []
     for i, player_idx in enumerate(players_idx):
@@ -403,17 +418,23 @@ def profile_similarity(
         seen_ids = set()
         seen_names = set()
         player_id_a = players_id.loc[player_idx] if not players_id.empty else None
+        player_id_a = str(player_id_a).strip() if pd.notna(player_id_a) else None
+        if player_id_a in {"nan", "None", "<NA>", ""}:
+            player_id_a = None
         player_name_a = players_name.loc[player_idx] if not players_name.empty else ""
         for j in top_indices:
             if neighbours_added >= topk:
                 break
-            neighbour_idx = players_idx[j]
+            neighbour_idx = candidate_idx[j]
+            if neighbour_idx == player_idx:
+                continue
             if neighbour_idx in seen_indices:
                 continue
             value = sims[j]
-            if value <= 0:
-                continue
             player_id_b = players_id.loc[neighbour_idx] if not players_id.empty else None
+            player_id_b = str(player_id_b).strip() if pd.notna(player_id_b) else None
+            if player_id_b in {"nan", "None", "<NA>", ""}:
+                player_id_b = None
             player_name_b = players_name.loc[neighbour_idx] if not players_name.empty else ""
             if player_id_b is not None and player_id_b in seen_ids:
                 continue
@@ -421,16 +442,18 @@ def profile_similarity(
                 continue
             records.append(
                 {
+                    "player_a_id": player_id_a,
                     "player_a": player_name_a,
-                    "team_a": df.at[player_idx, "team"] if "team" in df.columns else df.at[player_idx, "team_in_selected_period"] if "team_in_selected_period" in df.columns else "",
+                    "team_a": df.at[player_idx, team_col] if team_col else "",
                     "competition_name_a": df.at[player_idx, "competition_name"] if "competition_name" in df.columns else "",
+                    "player_b_id": player_id_b,
                     "player_b": player_name_b,
-                    "team_b": df.at[neighbour_idx, "team"] if "team" in df.columns else df.at[neighbour_idx, "team_in_selected_period"] if "team_in_selected_period" in df.columns else "",
+                    "team_b": df.at[neighbour_idx, team_col] if team_col else "",
                     "competition_name_b": df.at[neighbour_idx, "competition_name"] if "competition_name" in df.columns else "",
                     "calendar_a": df.at[player_idx, "calendar"] if "calendar" in df.columns else "",
                     "calendar_b": df.at[neighbour_idx, "calendar"] if "calendar" in df.columns else "",
                     "profile": profile_name,
-                    "similarity": float(value),
+                    "similarity": float(max(value, 0.0)),
                 }
             )
             neighbours_added += 1
@@ -929,6 +952,8 @@ def _normalize_raw(df: pd.DataFrame) -> pd.DataFrame:
     df = df.replace("-", pd.NA)
     for col in df.select_dtypes(include=["object"]).columns:
         df[col] = df[col].astype("string").str.strip()
+    if "age" in df.columns:
+        df["age"] = df["age"].apply(_safe_age)
     for col in ("competition_name", "calendar", "team", "team_in_selected_period"):
         if col not in df.columns:
             continue
@@ -1284,11 +1309,19 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     if similarity_df.empty:
         similarity_mapped = similarity_df
     else:
-        name_map = players.drop_duplicates(subset=["name"]).set_index("name")["wyscout_id"]
-        similarity_df["player_a_id"] = similarity_df["player_a"].map(name_map)
-        similarity_df["player_b_id"] = similarity_df["player_b"].map(name_map)
-        mapped = similarity_df["player_a_id"].notna().sum()
-        print(f"[PIPELINE] similarity mapped rows={mapped}/{len(similarity_df)}")
+        if "player_a_id" in similarity_df.columns and "player_b_id" in similarity_df.columns:
+            similarity_df["player_a_id"] = similarity_df["player_a_id"].astype("string").str.strip()
+            similarity_df["player_b_id"] = similarity_df["player_b_id"].astype("string").str.strip()
+            similarity_df.loc[similarity_df["player_a_id"].isin(["nan", "None", "<NA>", ""]), "player_a_id"] = np.nan
+            similarity_df.loc[similarity_df["player_b_id"].isin(["nan", "None", "<NA>", ""]), "player_b_id"] = np.nan
+            mapped = (similarity_df["player_a_id"].notna() & similarity_df["player_b_id"].notna()).sum()
+            print(f"[PIPELINE] similarity mapped rows (native ids)={mapped}/{len(similarity_df)}")
+        else:
+            name_map = players.drop_duplicates(subset=["name"]).set_index("name")["wyscout_id"]
+            similarity_df["player_a_id"] = similarity_df["player_a"].map(name_map)
+            similarity_df["player_b_id"] = similarity_df["player_b"].map(name_map)
+            mapped = (similarity_df["player_a_id"].notna() & similarity_df["player_b_id"].notna()).sum()
+            print(f"[PIPELINE] similarity mapped rows (name fallback)={mapped}/{len(similarity_df)}")
         similarity_df.rename(columns={"competition_name_a": "competition_a", "competition_name_b": "competition_b"}, inplace=True)
         similarity_mapped = similarity_df
 

@@ -2369,6 +2369,76 @@ def _apply_ranking_filters(
     return sql, params
 
 
+def _ranking_pct_fallback_join() -> str:
+    return """
+    LEFT JOIN LATERAL (
+      SELECT
+        ps_alt.assigned_role_pct_league AS fallback_assigned_role_pct_league
+      FROM player_seasons ps_alt
+      WHERE ps_alt.player_id = ps.player_id
+        AND ps_alt.assigned_role_pct_league IS NOT NULL
+      ORDER BY
+        CASE WHEN ps_alt.assigned_role = ps.assigned_role THEN 0 ELSE 1 END,
+        ps_alt.calendar DESC NULLS LAST,
+        ps_alt.minutes_played DESC NULLS LAST
+      LIMIT 1
+    ) pct_league_fallback ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT
+        ps_alt.assigned_role_pct_global AS fallback_assigned_role_pct_global
+      FROM player_seasons ps_alt
+      WHERE ps_alt.player_id = ps.player_id
+        AND ps_alt.assigned_role_pct_global IS NOT NULL
+      ORDER BY
+        CASE WHEN ps_alt.assigned_role = ps.assigned_role THEN 0 ELSE 1 END,
+        ps_alt.calendar DESC NULLS LAST,
+        ps_alt.minutes_played DESC NULLS LAST
+      LIMIT 1
+    ) pct_global_fallback ON TRUE
+    """
+
+
+def _role_pct_fallback_values(
+    session: Session,
+    *,
+    player_id: int,
+    assigned_role: Optional[str],
+) -> tuple[Optional[float], Optional[float]]:
+    sql = """
+    SELECT
+      (
+        SELECT ps_alt.assigned_role_pct_league
+        FROM player_seasons ps_alt
+        WHERE ps_alt.player_id = :player_id
+          AND ps_alt.assigned_role_pct_league IS NOT NULL
+        ORDER BY
+          CASE WHEN ps_alt.assigned_role = :assigned_role THEN 0 ELSE 1 END,
+          ps_alt.calendar DESC NULLS LAST,
+          ps_alt.minutes_played DESC NULLS LAST
+        LIMIT 1
+      ) AS league_pct,
+      (
+        SELECT ps_alt.assigned_role_pct_global
+        FROM player_seasons ps_alt
+        WHERE ps_alt.player_id = :player_id
+          AND ps_alt.assigned_role_pct_global IS NOT NULL
+        ORDER BY
+          CASE WHEN ps_alt.assigned_role = :assigned_role THEN 0 ELSE 1 END,
+          ps_alt.calendar DESC NULLS LAST,
+          ps_alt.minutes_played DESC NULLS LAST
+        LIMIT 1
+      ) AS global_pct
+    """
+    row = session.execute(
+        text(sql),
+        {"player_id": player_id, "assigned_role": assigned_role},
+    ).fetchone()
+    if not row:
+        return None, None
+    data = _row_to_dict(row)
+    return data.get("league_pct"), data.get("global_pct")
+
+
 @app.get("/ranking", response_model=List[RankingRow])
 def ranking(
     role: Optional[str] = Query(None),
@@ -2398,13 +2468,14 @@ def ranking(
       ps.assigned_role,
       ps.minutes_played,
       ps.global_score_adjusted,
-      ps.assigned_role_pct_league,
-      ps.assigned_role_pct_global,
+      COALESCE(ps.assigned_role_pct_league, pct_league_fallback.fallback_assigned_role_pct_league) AS assigned_role_pct_league,
+      COALESCE(ps.assigned_role_pct_global, pct_global_fallback.fallback_assigned_role_pct_global) AS assigned_role_pct_global,
       pm.age AS age""" + tm_clause + """
     FROM player_seasons ps
     JOIN players p ON p.id = ps.player_id
     JOIN competitions c ON c.id = ps.competition_id
     LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+    """ + _ranking_pct_fallback_join() + """
     WHERE ps.global_score_adjusted IS NOT NULL
       AND ps.minutes_played >= :min_minutes
     """
@@ -2442,6 +2513,7 @@ def ranking_page(
     JOIN players p ON p.id = ps.player_id
     JOIN competitions c ON c.id = ps.competition_id
     LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+    """ + _ranking_pct_fallback_join() + """
     WHERE ps.global_score_adjusted IS NOT NULL
       AND ps.minutes_played >= :min_minutes
     """
@@ -2465,8 +2537,8 @@ def ranking_page(
       ps.assigned_role,
       ps.minutes_played,
       ps.global_score_adjusted,
-      ps.assigned_role_pct_league,
-      ps.assigned_role_pct_global,
+      COALESCE(ps.assigned_role_pct_league, pct_league_fallback.fallback_assigned_role_pct_league) AS assigned_role_pct_league,
+      COALESCE(ps.assigned_role_pct_global, pct_global_fallback.fallback_assigned_role_pct_global) AS assigned_role_pct_global,
       pm.age AS age""" + tm_clause + """
     """ + base_sql + " ORDER BY ps.global_score_adjusted DESC NULLS LAST OFFSET :offset LIMIT :limit"
     params = {**params, "offset": offset, "limit": limit}
@@ -2517,21 +2589,53 @@ def player_card(player_id: int, session: Session = Depends(get_session)):
 
 
 @app.get("/players/{player_id}/report", response_model=Report)
-def player_report(player_id: int, session: Session = Depends(get_session)):
-    # Récup player_season le plus récent
-    sql = """
-    SELECT ps.id AS player_season_id, ps.*, p.name, p.tm_id, p.tm_profile_url, c.name AS competition_name
-    FROM player_seasons ps
-    JOIN players p ON p.id = ps.player_id
-    JOIN competitions c ON c.id = ps.competition_id
-    WHERE p.id = :player_id
-    ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
-    LIMIT 1
-    """
-    row = session.execute(text(sql), {"player_id": player_id}).fetchone()
+def player_report(
+    player_id: int,
+    player_season_id: Optional[int] = Query(None, ge=1),
+    session: Session = Depends(get_session),
+):
+    # Récupère la saison explicitement demandée, sinon la plus récente.
+    if player_season_id is not None:
+        sql = """
+        SELECT ps.id AS player_season_id, ps.*, p.name, p.tm_id, p.tm_profile_url, c.name AS competition_name
+        FROM player_seasons ps
+        JOIN players p ON p.id = ps.player_id
+        JOIN competitions c ON c.id = ps.competition_id
+        WHERE p.id = :player_id AND ps.id = :player_season_id
+        LIMIT 1
+        """
+        row = session.execute(
+            text(sql),
+            {"player_id": player_id, "player_season_id": player_season_id},
+        ).fetchone()
+    else:
+        sql = """
+        SELECT ps.id AS player_season_id, ps.*, p.name, p.tm_id, p.tm_profile_url, c.name AS competition_name
+        FROM player_seasons ps
+        JOIN players p ON p.id = ps.player_id
+        JOIN competitions c ON c.id = ps.competition_id
+        WHERE p.id = :player_id
+        ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+        LIMIT 1
+        """
+        row = session.execute(text(sql), {"player_id": player_id}).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Player not found")
     ps = _row_to_dict(row)
+
+    if (
+        ps.get("assigned_role_pct_league") is None
+        or ps.get("assigned_role_pct_global") is None
+    ):
+        fallback_league, fallback_global = _role_pct_fallback_values(
+            session,
+            player_id=player_id,
+            assigned_role=ps.get("assigned_role"),
+        )
+        if ps.get("assigned_role_pct_league") is None:
+            ps["assigned_role_pct_league"] = fallback_league
+        if ps.get("assigned_role_pct_global") is None:
+            ps["assigned_role_pct_global"] = fallback_global
 
     # Metrics (wide)
     metrics_row = session.execute(
@@ -2550,21 +2654,83 @@ def player_report(player_id: int, session: Session = Depends(get_session)):
     raw_metrics = {key: metrics.get(key) for key in role_metrics}
 
     # Role scores
-    role_rows = session.execute(
-        text("SELECT profile, raw_score, pct_league, pct_global, pct_global_adjusted FROM role_scores WHERE player_season_id = :psid"),
-        {"psid": ps["id"]},
-    ).fetchall()
-    role_scores = [
-        RoleScore(
-            profile=r._mapping["profile"],
-            raw_score=r._mapping["raw_score"],
-            pct_league=r._mapping["pct_league"],
-            pct_global=r._mapping["pct_global"],
-            pct_global_adjusted=r._mapping["pct_global_adjusted"],
-        )
+    def _load_role_rows(psid: int):
+        return session.execute(
+            text(
+                "SELECT profile, raw_score, pct_league, pct_global, pct_global_adjusted "
+                "FROM role_scores WHERE player_season_id = :psid"
+            ),
+            {"psid": psid},
+        ).fetchall()
+
+    role_rows = _load_role_rows(ps["id"])
+    role_fit_metrics = metrics
+    has_role_percentiles = any(
+        (r._mapping.get("pct_league") is not None) or (r._mapping.get("pct_global") is not None)
         for r in role_rows
-        if r._mapping.get("profile")
-    ]
+    )
+    if not has_role_percentiles:
+        fallback_role_ps = session.execute(
+            text(
+                """
+                SELECT ps.id
+                FROM player_seasons ps
+                JOIN role_scores rs ON rs.player_season_id = ps.id
+                WHERE ps.player_id = :player_id
+                  AND (rs.pct_league IS NOT NULL OR rs.pct_global IS NOT NULL)
+                GROUP BY ps.id, ps.assigned_role, ps.calendar, ps.minutes_played
+                ORDER BY
+                  CASE WHEN ps.assigned_role = :assigned_role THEN 0 ELSE 1 END,
+                  ps.calendar DESC NULLS LAST,
+                  ps.minutes_played DESC NULLS LAST
+                LIMIT 1
+                """
+            ),
+            {"player_id": player_id, "assigned_role": ps.get("assigned_role")},
+        ).fetchone()
+        if fallback_role_ps:
+            fallback_psid = int(fallback_role_ps.id)
+            role_rows = _load_role_rows(fallback_psid)
+            fallback_metrics_row = session.execute(
+                text("SELECT * FROM player_metrics WHERE player_season_id = :psid"),
+                {"psid": fallback_psid},
+            ).fetchone()
+            if fallback_metrics_row:
+                role_fit_metrics = _row_to_dict(fallback_metrics_row)
+                role_fit_metrics.pop("player_season_id", None)
+                role_fit_metrics.pop("created_at", None)
+                role_fit_metrics.pop("updated_at", None)
+
+    role_scores: list[RoleScore] = []
+    for r in role_rows:
+        profile_name = r._mapping.get("profile")
+        if not profile_name:
+            continue
+        pct_league = r._mapping.get("pct_league")
+        pct_global = r._mapping.get("pct_global")
+        raw_score = r._mapping.get("raw_score")
+        pct_global_adjusted = r._mapping.get("pct_global_adjusted")
+
+        if pct_league is None:
+            pct_league = role_fit_metrics.get(f"{profile_name}_pct_league")
+        if pct_global is None:
+            pct_global = role_fit_metrics.get(f"{profile_name}_pct_global")
+        if pct_global is None:
+            pct_global = role_fit_metrics.get(profile_name)
+        if raw_score is None:
+            raw_score = role_fit_metrics.get(profile_name)
+        if pct_global_adjusted is None and profile_name == ps.get("assigned_role"):
+            pct_global_adjusted = ps.get("global_score_adjusted")
+
+        role_scores.append(
+            RoleScore(
+                profile=profile_name,
+                raw_score=raw_score,
+                pct_league=pct_league,
+                pct_global=pct_global,
+                pct_global_adjusted=pct_global_adjusted,
+            )
+        )
     role_scores.sort(key=lambda r: r.pct_global if r.pct_global is not None else -1, reverse=True)
 
     # Summary (garde seulement summary_* colonnes)
@@ -2604,6 +2770,7 @@ def player_report(player_id: int, session: Session = Depends(get_session)):
 @app.get("/players/{player_id}/similarities", response_model=List[SimilarityRow])
 def player_similarities(
     player_id: int,
+    player_season_id: Optional[int] = Query(None, ge=1),
     profile: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -2614,14 +2781,26 @@ def player_similarities(
 ):
     tm_clause = _tm_select_clause(session, alias="psb")
     big5 = _competition_aggregate_map().get("Big 5 Leagues", [])
-    seed_sql = """
-    SELECT ps.id AS player_season_id, ps.assigned_role
-    FROM player_seasons ps
-    WHERE ps.player_id = :player_id
-    ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
-    LIMIT 1
-    """
-    seed = session.execute(text(seed_sql), {"player_id": player_id}).fetchone()
+    if player_season_id is not None:
+        seed_sql = """
+        SELECT ps.id AS player_season_id, ps.assigned_role
+        FROM player_seasons ps
+        WHERE ps.player_id = :player_id AND ps.id = :player_season_id
+        LIMIT 1
+        """
+        seed = session.execute(
+            text(seed_sql),
+            {"player_id": player_id, "player_season_id": player_season_id},
+        ).fetchone()
+    else:
+        seed_sql = """
+        SELECT ps.id AS player_season_id, ps.assigned_role
+        FROM player_seasons ps
+        WHERE ps.player_id = :player_id
+        ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+        LIMIT 1
+        """
+        seed = session.execute(text(seed_sql), {"player_id": player_id}).fetchone()
     if not seed:
         raise HTTPException(status_code=404, detail="Player not found")
     profile_value = profile or seed.assigned_role
@@ -3055,6 +3234,7 @@ def prospects_page(
     JOIN player_seasons ps ON ps.player_id = p.id
     JOIN competitions c ON c.id = ps.competition_id
     LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+    """ + _ranking_pct_fallback_join() + """
     WHERE 1=1
     """
     params = {}
@@ -3080,8 +3260,8 @@ def prospects_page(
       ps.assigned_role,
       ps.minutes_played,
       ps.global_score_adjusted,
-      ps.assigned_role_pct_league,
-      ps.assigned_role_pct_global,
+      COALESCE(ps.assigned_role_pct_league, pct_league_fallback.fallback_assigned_role_pct_league) AS assigned_role_pct_league,
+      COALESCE(ps.assigned_role_pct_global, pct_global_fallback.fallback_assigned_role_pct_global) AS assigned_role_pct_global,
       pm.age AS age""" + tm_clause + """
     """ + base_sql + """
     ORDER BY p.id, ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST

@@ -169,6 +169,19 @@ def ensure_schema(engine: Engine) -> None:
         conn.execute(text(SCHEMA_SQL))
 
 
+def truncate_fact_tables(engine: Engine) -> None:
+    """
+    Full refresh mode: rebuild fact and downstream tables from scratch.
+    Dimensions and app tables are kept intact.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "TRUNCATE TABLE player_similarity, role_scores, player_metrics, player_seasons"
+            )
+        )
+
+
 def _execute_upsert(
     conn,
     table: str,
@@ -266,12 +279,81 @@ def _id_map(engine: Engine, table: str, key_col: str) -> dict[str, int]:
     return {str(r[1]): r[0] for r in rows}
 
 
+def _club_id_maps(engine: Engine) -> tuple[dict[str, int], dict[tuple[str, str], int]]:
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.id, c.name, comp.name AS competition_name
+                FROM clubs c
+                LEFT JOIN competitions comp ON comp.id = c.competition_id
+                """
+            )
+        ).fetchall()
+
+    names_to_ids: dict[str, set[int]] = {}
+    by_competition: dict[tuple[str, str], int] = {}
+    for row in rows:
+        club_id = int(row.id)
+        club_name = str(row.name) if row.name is not None else ""
+        competition_name = str(row.competition_name) if row.competition_name is not None else ""
+        if club_name:
+            names_to_ids.setdefault(club_name, set()).add(club_id)
+        if club_name and competition_name:
+            by_competition[(competition_name, club_name)] = club_id
+
+    # Fallback by club name is only safe when name is unique across competitions.
+    by_name_unique = {
+        name: next(iter(ids_set))
+        for name, ids_set in names_to_ids.items()
+        if len(ids_set) == 1
+    }
+    return by_name_unique, by_competition
+
+
+def _map_club_ids(
+    df: pd.DataFrame,
+    *,
+    team_col: str,
+    competition_col: str,
+    clubs_by_competition: dict[tuple[str, str], int],
+    clubs_by_name: dict[str, int],
+    default_value=None,
+) -> pd.Series:
+    if team_col not in df.columns:
+        return pd.Series(default_value, index=df.index, dtype="object")
+
+    teams = df[team_col].astype("string").str.strip().replace({"": pd.NA})
+    if competition_col in df.columns:
+        competitions = df[competition_col].astype("string").str.strip().replace({"": pd.NA})
+        mapped = pd.Series(
+            [
+                clubs_by_competition.get((str(comp), str(team)))
+                if pd.notna(comp) and pd.notna(team)
+                else None
+                for comp, team in zip(competitions, teams)
+            ],
+            index=df.index,
+            dtype="object",
+        )
+    else:
+        mapped = pd.Series(None, index=df.index, dtype="object")
+
+    fallback = teams.map(clubs_by_name).astype("object")
+    mapped = mapped.where(mapped.notna(), fallback)
+    if default_value is None:
+        return mapped.where(mapped.notna(), None)
+    return mapped.where(mapped.notna(), default_value)
+
+
 def resolve_ids(engine: Engine):
+    clubs_by_name, clubs_by_competition = _club_id_maps(engine)
     return {
         "competitions": _id_map(engine, "competitions", "name"),
         "seasons": _id_map(engine, "seasons", "label"),
         "players": _id_map(engine, "players", "wyscout_id"),
-        "clubs": _id_map(engine, "clubs", "name"),
+        "clubs": clubs_by_name,
+        "clubs_by_competition": clubs_by_competition,
     }
 
 
@@ -282,7 +364,17 @@ def upsert_player_seasons(engine: Engine, fact: pd.DataFrame, ids: dict):
     fact["competition_id"] = fact["competition_name"].map(ids["competitions"])
     fact["season_id"] = fact["calendar"].map(ids["seasons"])
     fact["player_id"] = fact["wyscout_id"].astype(str).map(ids["players"])
-    fact["club_id"] = fact["team_in_selected_period"].map(ids["clubs"]) if "team_in_selected_period" in fact.columns else None
+    if "team_in_selected_period" in fact.columns:
+        fact["club_id"] = _map_club_ids(
+            fact,
+            team_col="team_in_selected_period",
+            competition_col="competition_name",
+            clubs_by_competition=ids.get("clubs_by_competition", {}),
+            clubs_by_name=ids.get("clubs", {}),
+            default_value=None,
+        )
+    else:
+        fact["club_id"] = None
     fact = fact.dropna(subset=["competition_id", "season_id", "player_id"])
 
     tm_cols = [c for c in fact.columns if c.startswith("tm_")]
@@ -381,7 +473,17 @@ def upsert_player_metrics(
     metrics["player_id"] = metrics["wyscout_id"].astype(str).map(ids["players"])
     metrics["competition_id"] = metrics["competition_name"].map(ids["competitions"])
     metrics["season_id"] = metrics["calendar"].map(ids["seasons"])
-    metrics["club_id"] = metrics.get("team_in_selected_period", pd.Series([-1] * len(metrics))).map(ids["clubs"]).fillna(-1)
+    if "team_in_selected_period" in metrics.columns:
+        metrics["club_id"] = _map_club_ids(
+            metrics,
+            team_col="team_in_selected_period",
+            competition_col="competition_name",
+            clubs_by_competition=ids.get("clubs_by_competition", {}),
+            clubs_by_name=ids.get("clubs", {}),
+            default_value=-1,
+        )
+    else:
+        metrics["club_id"] = -1
     metrics["player_season_id"] = list(
         zip(
             metrics["player_id"],
@@ -452,12 +554,23 @@ def upsert_role_scores(engine: Engine, role_scores: pd.DataFrame, season_index: 
     if role_scores.empty:
         return
     role_scores = role_scores.copy()
+    if "team_in_selected_period" in role_scores.columns:
+        role_scores["club_id"] = _map_club_ids(
+            role_scores,
+            team_col="team_in_selected_period",
+            competition_col="competition_name",
+            clubs_by_competition=ids.get("clubs_by_competition", {}),
+            clubs_by_name=ids.get("clubs", {}),
+            default_value=-1,
+        )
+    else:
+        role_scores["club_id"] = -1
     role_scores["player_season_id"] = list(
         zip(
             role_scores["wyscout_id"].astype(str).map(ids["players"]),
             role_scores["competition_name"].map(ids["competitions"]),
             role_scores["calendar"].map(ids["seasons"]),
-            role_scores.get("team_in_selected_period", pd.Series([-1] * len(role_scores))).map(ids["clubs"]).fillna(-1),
+            role_scores["club_id"].fillna(-1),
         )
     )
     role_scores["player_season_id"] = role_scores["player_season_id"].map(season_index)
@@ -496,12 +609,30 @@ def upsert_similarity(
     else:
         similarity["player_b_id"] = similarity["player_b"].astype(str).map(ids["players"])
     print(f"[DB] player_similarity ids mapped a={similarity['player_a_id'].notna().sum()} b={similarity['player_b_id'].notna().sum()}")
-    similarity["competition_a_id"] = similarity.get("competition_a", pd.Series()).map(ids["competitions"])
-    similarity["competition_b_id"] = similarity.get("competition_b", pd.Series()).map(ids["competitions"])
-    similarity["season_a_id"] = similarity.get("calendar_a", pd.Series()).map(ids["seasons"])
-    similarity["season_b_id"] = similarity.get("calendar_b", pd.Series()).map(ids["seasons"])
-    similarity["club_a_id"] = similarity.get("team_a", pd.Series([-1] * len(similarity))).map(ids.get("clubs", {})).fillna(-1)
-    similarity["club_b_id"] = similarity.get("team_b", pd.Series([-1] * len(similarity))).map(ids.get("clubs", {})).fillna(-1)
+    competition_a = similarity["competition_a"] if "competition_a" in similarity.columns else pd.Series(index=similarity.index, dtype="object")
+    competition_b = similarity["competition_b"] if "competition_b" in similarity.columns else pd.Series(index=similarity.index, dtype="object")
+    season_a = similarity["calendar_a"] if "calendar_a" in similarity.columns else pd.Series(index=similarity.index, dtype="object")
+    season_b = similarity["calendar_b"] if "calendar_b" in similarity.columns else pd.Series(index=similarity.index, dtype="object")
+    similarity["competition_a_id"] = competition_a.map(ids["competitions"])
+    similarity["competition_b_id"] = competition_b.map(ids["competitions"])
+    similarity["season_a_id"] = season_a.map(ids["seasons"])
+    similarity["season_b_id"] = season_b.map(ids["seasons"])
+    similarity["club_a_id"] = _map_club_ids(
+        similarity,
+        team_col="team_a",
+        competition_col="competition_a",
+        clubs_by_competition=ids.get("clubs_by_competition", {}),
+        clubs_by_name=ids.get("clubs", {}),
+        default_value=-1,
+    )
+    similarity["club_b_id"] = _map_club_ids(
+        similarity,
+        team_col="team_b",
+        competition_col="competition_b",
+        clubs_by_competition=ids.get("clubs_by_competition", {}),
+        clubs_by_name=ids.get("clubs", {}),
+        default_value=-1,
+    )
 
     similarity["player_a_season_id"] = list(
         zip(

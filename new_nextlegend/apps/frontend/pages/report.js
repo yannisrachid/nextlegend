@@ -282,6 +282,7 @@ export default function ReportPage() {
   const [playerQuery, setPlayerQuery] = useState("");
   const [playerResults, setPlayerResults] = useState([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
+  const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [report, setReport] = useState(null);
   const [similarities, setSimilarities] = useState([]);
@@ -311,6 +312,7 @@ export default function ReportPage() {
     if (!playerQuery || playerQuery.trim().length < 2) {
       setPlayerResults([]);
       setSelectedPlayerId("");
+      setSelectedPlayerSeasonId("");
       return;
     }
     const handle = setTimeout(async () => {
@@ -353,8 +355,14 @@ export default function ReportPage() {
       setLoading(true);
       setError("");
       try {
-        const data = await fetchJson(`/players/${selectedPlayerId}/report`);
+        const data = await fetchJson(`/players/${selectedPlayerId}/report`, {
+          player_season_id: selectedPlayerSeasonId || undefined,
+        });
         setReport(data);
+        if (data?.player) {
+          const label = `${data.player.name} - ${data.player.team || "—"} - ${data.player.competition_name || "—"} - ${data.player.calendar || "—"}`;
+          setPlayerQuery(label);
+        }
       } catch (err) {
         setError(err.message);
       } finally {
@@ -362,7 +370,7 @@ export default function ReportPage() {
       }
     };
     loadReport();
-  }, [selectedPlayerId]);
+  }, [selectedPlayerId, selectedPlayerSeasonId]);
 
   useEffect(() => {
     if (!selectedPlayerId) {
@@ -405,6 +413,7 @@ export default function ReportPage() {
         const sims = await fetchJson(
           `/players/${selectedPlayerId}/similarities`,
           {
+            player_season_id: selectedPlayerSeasonId || undefined,
             limit: similarLimit,
             offset: similarPage * similarLimit,
             age_min: similarFilters.ageMin || undefined,
@@ -421,7 +430,7 @@ export default function ReportPage() {
       }
     };
     loadSimilarities();
-  }, [selectedPlayerId, similarPage, similarFilters]);
+  }, [selectedPlayerId, selectedPlayerSeasonId, similarPage, similarFilters]);
 
   const playerOptions = useMemo(() => {
     return playerResults.map((p) => ({
@@ -432,6 +441,7 @@ export default function ReportPage() {
 
   const handlePlayerSelect = (player) => {
     setSelectedPlayerId(player.id);
+    setSelectedPlayerSeasonId("");
     setPlayerQuery(player.label);
     setShowResults(false);
     setSimilarPage(0);
@@ -475,10 +485,13 @@ export default function ReportPage() {
   useEffect(() => {
     if (!router.isReady || hydratedQuery.current) return;
     const queryId = router.query.player_id || router.query.playerId;
+    const querySeasonId = router.query.player_season_id || router.query.playerSeasonId;
     if (!queryId) return;
     const playerId = String(queryId);
+    const seasonId = querySeasonId ? String(querySeasonId) : "";
     hydratedQuery.current = true;
     setSelectedPlayerId(playerId);
+    setSelectedPlayerSeasonId(seasonId);
     fetchJson(`/players/${playerId}`)
       .then((data) => {
         if (!data) return;
@@ -727,8 +740,34 @@ export default function ReportPage() {
   }, [similarities, similarSort]);
 
   const topRoles = useMemo(() => {
-    if (!report?.role_scores) return [];
-    return report.role_scores.slice(0, 3);
+    const roles = Array.isArray(report?.role_scores) ? report.role_scores : [];
+    const withPercentiles = roles.filter(
+      (role) => role?.pct_league != null || role?.pct_global != null
+    );
+    if (withPercentiles.length > 0) {
+      const withoutPercentiles = roles.filter(
+        (role) => role?.pct_league == null && role?.pct_global == null
+      );
+      return [...withPercentiles, ...withoutPercentiles].slice(0, 3);
+    }
+
+    const fallbackProfile = report?.player?.assigned_role;
+    const fallbackLeague = report?.player?.assigned_role_pct_league;
+    const fallbackGlobal = report?.player?.assigned_role_pct_global;
+    if (
+      fallbackProfile &&
+      (fallbackLeague != null || fallbackGlobal != null)
+    ) {
+      return [
+        {
+          profile: fallbackProfile,
+          pct_league: fallbackLeague,
+          pct_global: fallbackGlobal,
+        },
+        ...roles,
+      ].slice(0, 3);
+    }
+    return roles.slice(0, 3);
   }, [report]);
 
   return (

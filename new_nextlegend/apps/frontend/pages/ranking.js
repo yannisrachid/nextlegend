@@ -394,13 +394,17 @@ export default function RankingPage() {
                 role="button"
                 tabIndex={0}
                 onClick={() =>
-                  window.open(`/report?player_id=${row.player_id}`, "_blank", "noopener,noreferrer")
+                  window.open(
+                    `/report?player_id=${row.player_id}&player_season_id=${row.player_season_id}`,
+                    "_blank",
+                    "noopener,noreferrer"
+                  )
                 }
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     window.open(
-                      `/report?player_id=${row.player_id}`,
+                      `/report?player_id=${row.player_id}&player_season_id=${row.player_season_id}`,
                       "_blank",
                       "noopener,noreferrer"
                     );
