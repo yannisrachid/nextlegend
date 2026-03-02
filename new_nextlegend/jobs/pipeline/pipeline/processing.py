@@ -952,6 +952,15 @@ def _normalize_raw(df: pd.DataFrame) -> pd.DataFrame:
     df = df.replace("-", pd.NA)
     for col in df.select_dtypes(include=["object"]).columns:
         df[col] = df[col].astype("string").str.strip()
+    string_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
+    if string_cols:
+        match_counts = pd.Series(0, index=df.index, dtype="int64")
+        for col in string_cols:
+            match_counts = match_counts.add(df[col].eq(col).fillna(False).astype("int64"), fill_value=0)
+        embedded_headers = match_counts >= 3
+        if embedded_headers.any():
+            print(f"[PIPELINE] drop embedded header rows={int(embedded_headers.sum())}")
+            df = df.loc[~embedded_headers].copy()
     if "age" in df.columns:
         df["age"] = df["age"].apply(_safe_age)
     for col in ("competition_name", "calendar", "team", "team_in_selected_period"):
@@ -981,6 +990,21 @@ def _ensure_player_id(df: pd.DataFrame) -> pd.DataFrame:
 
     df["player_id"] = df["player_id"].apply(_clean_pid)
     return df
+
+
+def _coerce_fact_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
+    fact_df = df.copy()
+    for col in (
+        "minutes_played",
+        "matches_played",
+        "assigned_role_pct_league",
+        "assigned_role_pct_global",
+        "global_score_adjusted",
+        "league_strength_factor",
+    ):
+        if col in fact_df.columns:
+            fact_df[col] = pd.to_numeric(fact_df[col], errors="coerce")
+    return fact_df
 
 
 def _load_profiles_path() -> Path:
@@ -1250,8 +1274,9 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     for col in tm_cols:
         if col not in fact_aggs:
             fact_aggs[col] = (col, "first")
+    fact_source = _coerce_fact_numeric_columns(enriched)
     fact = (
-        enriched.assign(wyscout_id=enriched["player_id"])
+        fact_source.assign(wyscout_id=fact_source["player_id"])
         .groupby(group_cols, dropna=False)
         .agg(**fact_aggs)
         .reset_index()
@@ -1578,7 +1603,8 @@ def build_artifacts_from_enriched(
     for col in tm_cols:
         agg_map[col] = (col, "first")
 
-    fact = df.groupby(group_cols, dropna=False).agg(**agg_map).reset_index()
+    fact_source = _coerce_fact_numeric_columns(df)
+    fact = fact_source.groupby(group_cols, dropna=False).agg(**agg_map).reset_index()
     if team_col and team_col != "team_in_selected_period":
         fact = fact.rename(columns={team_col: "team_in_selected_period"})
 

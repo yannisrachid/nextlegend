@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Iterable, Sequence
 
+import numpy as np
 import pandas as pd
 from io import StringIO
 
@@ -206,6 +207,8 @@ def _execute_upsert(
     def _clean_value(value):
         if value is None:
             return None
+        if isinstance(value, np.generic):
+            value = value.item()
         try:
             return None if pd.isna(value) else value
         except Exception:

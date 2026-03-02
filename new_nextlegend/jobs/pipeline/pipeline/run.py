@@ -222,7 +222,7 @@ def upload_raw_if_local(cfg: PipelineConfig, local_path: Path):
 
 
 def load_dataframe(path: Path, limit: Optional[int]) -> pd.DataFrame:
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, low_memory=False)
     if limit:
         df = df.head(limit)
     return df
@@ -230,6 +230,31 @@ def load_dataframe(path: Path, limit: Optional[int]) -> pd.DataFrame:
 
 def process_dataframe(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     return processing.build_artifacts(df)
+
+
+def _prepare_artifact_for_parquet(df: pd.DataFrame) -> pd.DataFrame:
+    parquet_df = df.copy()
+    object_cols = parquet_df.select_dtypes(include=["object"]).columns
+    for col in object_cols:
+        parquet_df[col] = parquet_df[col].astype("string")
+    return parquet_df
+
+
+def export_local_artifacts(artifacts: dict[str, pd.DataFrame]):
+    enriched_csv_path = os.getenv("PIPELINE_LOCAL_ENRICHED_CSV", "").strip()
+    if not enriched_csv_path:
+        return
+    enriched = artifacts.get("enriched", pd.DataFrame())
+    if enriched.empty:
+        print("[EXPORT] enriched artifact is empty; skip local CSV export.")
+        return
+    try:
+        output_path = Path(enriched_csv_path).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        enriched.to_csv(output_path, index=False)
+        print(f"[EXPORT] enriched -> {output_path}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[EXPORT] unable to write enriched CSV: {exc}")
 
 
 def archive_to_s3(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
@@ -243,7 +268,7 @@ def archive_to_s3(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
         key = f"{prefix}/{name}.parquet"
         print(f"[ARCHIVE] {name} -> s3://{cfg.bucket}/{key}")
         buf = BytesIO()
-        df.to_parquet(buf, index=False)
+        _prepare_artifact_for_parquet(df).to_parquet(buf, index=False)
         buf.seek(0)
         client.put_object(Bucket=cfg.bucket, Key=key, Body=buf.getvalue())
 
@@ -378,6 +403,7 @@ def main():
         sizes = {k: len(v) if isinstance(v, pd.DataFrame) else 0 for k, v in artifacts.items()}
         print(f"[PIPELINE] artifact sizes: {sizes}")
         run_log.message = json.dumps({"artifacts": sizes})
+        export_local_artifacts(artifacts)
 
         if not cfg.dry_run:
             archive_to_s3(cfg, artifacts)
