@@ -1,5 +1,6 @@
 import "@/styles/globals.css";
 import Link from "next/link";
+import Head from "next/head";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { fetchJson, postJson } from "@/lib/api";
@@ -73,6 +74,11 @@ export default function App({ Component, pageProps }) {
 
   return (
     <AuthContext.Provider value={{ me, status: authStatus, refreshAuth }}>
+      <Head>
+        <title>NextLegend</title>
+        <link rel="icon" type="image/png" href="/logo_nl.png" />
+        <link rel="shortcut icon" href="/logo_nl.png" />
+      </Head>
       {!isLogin ? (
         <header className="sticky top-0 z-40 border-b border-white/5 bg-slate-900/80 backdrop-blur">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
