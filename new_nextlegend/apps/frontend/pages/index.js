@@ -4,6 +4,7 @@ import { fetchJson } from "@/lib/api";
 
 export default function Home() {
   const [opsMetrics, setOpsMetrics] = useState(null);
+  const [seasons, setSeasons] = useState([]);
   const [seasonCount, setSeasonCount] = useState(0);
   const [competitionCount, setCompetitionCount] = useState(0);
   const [metricCount, setMetricCount] = useState(0);
@@ -19,7 +20,9 @@ export default function Home() {
           fetchJson("/meta/stats-research/metrics"),
         ]);
         setOpsMetrics(ops);
-        setSeasonCount((seasons || []).length);
+        const seasonList = Array.isArray(seasons) ? seasons : [];
+        setSeasons(seasonList);
+        setSeasonCount(seasonList.length);
         setCompetitionCount((competitions || []).length);
         setMetricCount((metrics?.metrics || []).length);
       } catch (err) {
@@ -48,12 +51,54 @@ export default function Home() {
   }, [opsMetrics, competitionCount, seasonCount, metricCount]);
 
   const lastRun = opsMetrics?.last_pipeline_run;
+  const lastRunTs = lastRun?.started_at ? new Date(lastRun.started_at) : null;
   const lastRunDate = lastRun?.started_at
-    ? new Date(lastRun.started_at).toLocaleDateString()
+    ? new Date(lastRun.started_at).toLocaleString()
     : "--";
   const lastRunRows = lastRun?.rows_processed
     ? formatNumber(lastRun.rows_processed)
     : "--";
+  const currentSeasonLoaded =
+    seasons.includes("2025/2026") || seasons.includes("2026");
+
+  const pipelineStatus = useMemo(() => {
+    if (!lastRun || !lastRunTs || Number.isNaN(lastRunTs.getTime())) {
+      return {
+        tone: "amber",
+        title: "Pipeline status unavailable",
+        detail: "No completed pipeline run found yet.",
+      };
+    }
+    const status = String(lastRun.status || "").toLowerCase();
+    const ageMs = Date.now() - lastRunTs.getTime();
+    const staleMs = 8 * 24 * 60 * 60 * 1000;
+    if (status !== "success") {
+      return {
+        tone: "red",
+        title: "Pipeline run failed",
+        detail: `Last run status: ${lastRun.status || "unknown"}.`,
+      };
+    }
+    if (ageMs > staleMs) {
+      return {
+        tone: "amber",
+        title: "Pipeline data is stale",
+        detail: "Last successful run is older than 8 days.",
+      };
+    }
+    return {
+      tone: "green",
+      title: "Pipeline healthy",
+      detail: "Last run completed successfully and is recent.",
+    };
+  }, [lastRun, lastRunTs]);
+
+  const statusClasses =
+    pipelineStatus.tone === "green"
+      ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+      : pipelineStatus.tone === "red"
+      ? "border-rose-400/30 bg-rose-500/10 text-rose-100"
+      : "border-amber-400/30 bg-amber-500/10 text-amber-100";
 
   const tools = [
     {
@@ -182,6 +227,15 @@ export default function Home() {
                 Prospect Hub
               </Link>
             </div>
+          </div>
+          <div className={`mt-4 rounded-xl border px-4 py-3 ${statusClasses}`}>
+            <p className="text-sm font-semibold">{pipelineStatus.title}</p>
+            <p className="text-xs mt-1 opacity-90">{pipelineStatus.detail}</p>
+            <p className="text-xs mt-1 opacity-90">
+              Current season data ({currentSeasonLoaded ? "loaded" : "missing"}):
+              {" "}
+              2025/2026 or 2026
+            </p>
           </div>
         </section>
 

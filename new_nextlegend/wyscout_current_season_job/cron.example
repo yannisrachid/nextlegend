@@ -1,0 +1,4 @@
+# Every Monday at 07:00 (server local time)
+# Current season only (2025/2026 fallback 2026).
+# Monitoring is shown on Home page via pipeline status. Email alerts are optional.
+0 7 * * 1 cd /path/to/new_nextlegend/wyscout_current_season_job && /usr/bin/flock -n /tmp/nextlegend_current_season.lock DOCKER_COMPOSE_FILE=/path/to/new_nextlegend/infra/compose/docker-compose-prod.yml SKIP_EMAIL_ALERTS=1 PIPELINE_REPLACE_INPUT_SLICES=1 PIPELINE_REPLACE_SIMILARITY=1 ./run_current_season_e2e.sh >> logs/cron_current_season.log 2>&1

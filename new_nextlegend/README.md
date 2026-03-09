@@ -196,7 +196,32 @@ sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run
 sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build api frontend
 ```
 
-## 9) Optional: stop MinIO (if using external S3)
+## 9) VPS backfill without scraping (existing season CSVs)
+If the VPS DB is empty for historical seasons, backfill directly from local CSV files already present in `data/`:
+
+```bash
+chmod +x scripts/backfill_vps_from_existing_csvs.sh
+DOCKER_COMPOSE_FILE=infra/compose/docker-compose-prod.yml ./scripts/backfill_vps_from_existing_csvs.sh
+```
+
+Preview only (no DB write):
+```bash
+DOCKER_COMPOSE_FILE=infra/compose/docker-compose-prod.yml DRY_RUN=1 ./scripts/backfill_vps_from_existing_csvs.sh
+```
+
+This runs pipeline upserts on:
+- `/data/wyscout_players_2022_2023_final.csv`
+- `/data/wyscout_players_2023_2024_final.csv`
+- `/data/wyscout_players_2024_2025_final.csv`
+- `/data/wyscout_players_2025_final.csv`
+- `/data/wyscout_players_2025_2026_final.csv` (with similarity rebuild by default)
+
+For the current-season cron + alerting, use:
+- `wyscout_current_season_job/run_current_season_e2e.sh`
+- `wyscout_current_season_job/cron.example`
+- `REQUIRE_SMTP_ALERTS=1` with `SMTP_*` configured.
+
+## 10) Optional: stop MinIO (if using external S3)
 MinIO is not needed for prod if you use external S3.
 ```bash
 sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml stop minio
