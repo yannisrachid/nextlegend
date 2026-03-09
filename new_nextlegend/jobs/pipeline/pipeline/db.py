@@ -106,6 +106,10 @@ CREATE TABLE IF NOT EXISTS role_scores (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS role_scores_unique ON role_scores (player_season_id, profile);
+CREATE INDEX IF NOT EXISTS player_seasons_competition_season_idx ON player_seasons (competition_id, season_id);
+CREATE INDEX IF NOT EXISTS player_similarity_a_season_idx ON player_similarity (player_a_season_id);
+CREATE INDEX IF NOT EXISTS player_similarity_b_season_idx ON player_similarity (player_b_season_id);
+CREATE INDEX IF NOT EXISTS role_scores_player_season_idx ON role_scores (player_season_id);
 
 CREATE TABLE IF NOT EXISTS player_similarity (
     id SERIAL PRIMARY KEY,
@@ -180,6 +184,119 @@ def truncate_fact_tables(engine: Engine) -> None:
             text(
                 "TRUNCATE TABLE player_similarity, role_scores, player_metrics, player_seasons"
             )
+        )
+
+
+def purge_fact_slice(engine: Engine, fact: pd.DataFrame, ids: dict) -> None:
+    """
+    Delete existing fact rows for the same (competition, season) slices as the incoming dataset.
+    This keeps historical seasons untouched while ensuring refreshed slices do not keep stale rows.
+    """
+    if fact.empty or "competition_name" not in fact.columns or "calendar" not in fact.columns:
+        return
+
+    scope = (
+        fact[["competition_name", "calendar"]]
+        .dropna()
+        .drop_duplicates()
+        .copy()
+    )
+    if scope.empty:
+        return
+
+    scope["competition_id"] = scope["competition_name"].map(ids.get("competitions", {}))
+    scope["season_id"] = scope["calendar"].map(ids.get("seasons", {}))
+    scope = scope.dropna(subset=["competition_id", "season_id"])
+    if scope.empty:
+        return
+
+    pairs = [
+        {"competition_id": int(row.competition_id), "season_id": int(row.season_id)}
+        for row in scope.itertuples(index=False)
+    ]
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TEMP TABLE IF NOT EXISTS _nl_slice (
+                    competition_id INT NOT NULL,
+                    season_id INT NOT NULL
+                ) ON COMMIT DROP
+                """
+            )
+        )
+        conn.execute(text("TRUNCATE _nl_slice"))
+        conn.execute(
+            text("INSERT INTO _nl_slice (competition_id, season_id) VALUES (:competition_id, :season_id)"),
+            pairs,
+        )
+
+        targeted = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM player_seasons ps
+                JOIN _nl_slice s
+                  ON s.competition_id = ps.competition_id
+                 AND s.season_id = ps.season_id
+                """
+            )
+        ).scalar()
+        if not targeted:
+            print(f"[DB] fact slice purge: no existing rows for pairs={len(pairs)}")
+            return
+
+        similarity_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM player_similarity
+                USING player_seasons ps, _nl_slice s
+                WHERE s.competition_id = ps.competition_id
+                  AND s.season_id = ps.season_id
+                  AND (
+                        player_similarity.player_a_season_id = ps.id
+                     OR player_similarity.player_b_season_id = ps.id
+                  )
+                """
+            ),
+        ).rowcount
+        role_scores_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM role_scores
+                USING player_seasons ps, _nl_slice s
+                WHERE s.competition_id = ps.competition_id
+                  AND s.season_id = ps.season_id
+                  AND role_scores.player_season_id = ps.id
+                """
+            )
+        ).rowcount
+        metrics_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM player_metrics
+                USING player_seasons ps, _nl_slice s
+                WHERE s.competition_id = ps.competition_id
+                  AND s.season_id = ps.season_id
+                  AND player_metrics.player_season_id = ps.id
+                """
+            )
+        ).rowcount
+        player_seasons_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM player_seasons
+                USING _nl_slice s
+                WHERE s.competition_id = player_seasons.competition_id
+                  AND s.season_id = player_seasons.season_id
+                """
+            )
+        ).rowcount
+        print(
+            "[DB] fact slice purge:"
+            f" pairs={len(pairs)} targeted={int(targeted)}"
+            f" deleted player_seasons={player_seasons_deleted}"
+            f" metrics={metrics_deleted} role_scores={role_scores_deleted} similarity={similarity_deleted}"
         )
 
 
@@ -498,6 +615,9 @@ def upsert_player_metrics(
     metrics["player_season_id"] = metrics["player_season_id"].map(season_index)
     before_rows = len(metrics)
     metrics = metrics.dropna(subset=["player_season_id"])
+    metrics["player_season_id"] = pd.to_numeric(metrics["player_season_id"], errors="coerce")
+    metrics = metrics.dropna(subset=["player_season_id"])
+    metrics["player_season_id"] = metrics["player_season_id"].astype("Int64")
     dropped = before_rows - len(metrics)
     print(f"[DB] player_metrics mapped rows={len(metrics)} dropped={dropped}")
     # Remove helper columns
@@ -578,6 +698,9 @@ def upsert_role_scores(engine: Engine, role_scores: pd.DataFrame, season_index: 
     )
     role_scores["player_season_id"] = role_scores["player_season_id"].map(season_index)
     role_scores = role_scores.dropna(subset=["player_season_id"])
+    role_scores["player_season_id"] = pd.to_numeric(role_scores["player_season_id"], errors="coerce")
+    role_scores = role_scores.dropna(subset=["player_season_id"])
+    role_scores["player_season_id"] = role_scores["player_season_id"].astype("Int64")
     cols = ["player_season_id", "profile", "raw_score", "pct_league", "pct_global", "pct_global_adjusted"]
     rows = role_scores[cols].itertuples(index=False, name=None)
     with engine.begin() as conn:

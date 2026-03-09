@@ -131,6 +131,30 @@ const formatMetricLabel = (key) => {
   return key.replace(/_/g, " ");
 };
 
+const seasonSortKey = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
+  if (matchRange) {
+    const start = Number(matchRange[1]);
+    const rawEnd = matchRange[2];
+    const end =
+      rawEnd.length === 2
+        ? Math.floor(start / 100) * 100 + Number(rawEnd)
+        : Number(rawEnd.slice(-4));
+    return end * 10000 + start;
+  }
+  const matchYear = text.match(/20\d{2}/);
+  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
+};
+
+const sortSeasonsDesc = (items) =>
+  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
+    const diff = seasonSortKey(b) - seasonSortKey(a);
+    if (diff !== 0) return diff;
+    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
+  });
+
 const buildDynamicSections = (percentiles, enforceTop) => {
   if (!enforceTop) return { sections: SECTIONS, reason: "Full analytical breakdown retained." };
   const sections = [];
@@ -453,6 +477,9 @@ export default function VizualisationPage() {
   const [playerQuery, setPlayerQuery] = useState("");
   const [playerResults, setPlayerResults] = useState([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
+  const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
+  const [seasons, setSeasons] = useState([]);
+  const [selectedSeason, setSelectedSeason] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [vizData, setVizData] = useState(null);
   const [context, setContext] = useState("League");
@@ -487,14 +514,24 @@ export default function VizualisationPage() {
   }, []);
 
   useEffect(() => {
+    fetchJsonCached("/meta/seasons")
+      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .catch(() => setSeasons([]));
+  }, []);
+
+  useEffect(() => {
     if (!playerQuery || playerQuery.trim().length < 2) {
       setPlayerResults([]);
       setSelectedPlayerId("");
+      setSelectedPlayerSeasonId("");
       return;
     }
     const handle = setTimeout(async () => {
       try {
-        const res = await fetchJson("/players", { q: playerQuery.trim() });
+        const res = await fetchJson("/players", {
+          q: playerQuery.trim(),
+          season: selectedSeason || undefined,
+        });
         const unique = new Map();
         (res || []).forEach((item) => {
           const normalize = (value) =>
@@ -517,7 +554,7 @@ export default function VizualisationPage() {
       }
     }, 200);
     return () => clearTimeout(handle);
-  }, [playerQuery]);
+  }, [playerQuery, selectedSeason]);
 
   useEffect(() => {
     if (!selectedPlayerId) {
@@ -531,6 +568,9 @@ export default function VizualisationPage() {
       try {
         const data = await postJson("/viz/percentiles", {
           player_id: Number(selectedPlayerId),
+          player_season_id: selectedPlayerSeasonId
+            ? Number(selectedPlayerSeasonId)
+            : null,
           metrics,
           context,
           positions: positionsAll ? [] : selectedPositions,
@@ -544,7 +584,7 @@ export default function VizualisationPage() {
       }
     };
     load();
-  }, [selectedPlayerId, context, positionsAll, selectedPositions, minMinutes]);
+  }, [selectedPlayerId, selectedPlayerSeasonId, context, positionsAll, selectedPositions, minMinutes]);
 
   useEffect(() => {
     if (!positionsOpen) return;
@@ -591,12 +631,14 @@ export default function VizualisationPage() {
   const playerOptions = useMemo(() => {
     return playerResults.map((player) => ({
       id: String(player.id),
+      seasonId: player.player_season_id ? String(player.player_season_id) : "",
       label: `${player.name} - ${player.team || "--"} - ${player.competition_name || "--"} - ${player.calendar || "--"}`,
     }));
   }, [playerResults]);
 
   const handlePlayerSelect = (player) => {
     setSelectedPlayerId(player.id);
+    setSelectedPlayerSeasonId(player.seasonId || "");
     setPlayerQuery(player.label);
     setShowResults(false);
   };
@@ -676,6 +718,27 @@ export default function VizualisationPage() {
 
         <Card className="relative z-30">
           <div className="relative">
+            <div className="flex flex-col gap-2 mb-3 max-w-xs">
+              <Label>Season Filter</Label>
+              <Select
+                value={selectedSeason}
+                onChange={(e) => {
+                  setSelectedSeason(e.target.value);
+                  setPlayerQuery("");
+                  setSelectedPlayerId("");
+                  setSelectedPlayerSeasonId("");
+                  setPlayerResults([]);
+                  setVizData(null);
+                }}
+              >
+                <option value="">All seasons</option>
+                {seasons.map((season) => (
+                  <option key={season} value={season}>
+                    {season}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <div className="flex flex-col gap-2">
               <Label>Player</Label>
               <input
@@ -685,12 +748,14 @@ export default function VizualisationPage() {
                 onChange={(e) => {
                   setPlayerQuery(e.target.value);
                   setSelectedPlayerId("");
+                  setSelectedPlayerSeasonId("");
                   setShowResults(true);
                 }}
                 onFocus={() => {
                   if (selectedPlayerId) {
                     setPlayerQuery("");
                     setSelectedPlayerId("");
+                    setSelectedPlayerSeasonId("");
                     setVizData(null);
                   }
                   setShowResults(true);
@@ -699,6 +764,7 @@ export default function VizualisationPage() {
                   if (selectedPlayerId) {
                     setPlayerQuery("");
                     setSelectedPlayerId("");
+                    setSelectedPlayerSeasonId("");
                     setVizData(null);
                     setShowResults(true);
                   }
@@ -713,7 +779,7 @@ export default function VizualisationPage() {
                 ) : (
                   playerOptions.map((player) => (
                     <button
-                      key={player.id}
+                      key={`${player.id}-${player.seasonId || "latest"}`}
                       type="button"
                       className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
                       onMouseDown={(e) => e.preventDefault()}

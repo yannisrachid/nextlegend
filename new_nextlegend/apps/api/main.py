@@ -32,7 +32,9 @@ from models import (
     Report,
     SimilarityRow,
     RankingPage,
+    ReportSeasonOption,
     RoleScore,
+    ScoreHistoryPoint,
 )
 from agentic import (
     PlayerFilters,
@@ -174,6 +176,122 @@ DEFAULT_SESSION_DAYS = 365
 PASSWORD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
 LEGACY_SHA256 = "sha256"
 ADMIN_USERNAME = "yrachid"
+CURRENT_SEASON_LABEL = os.getenv("CURRENT_SEASON_LABEL", "2025/2026")
+
+
+def _season_bounds(label: Optional[str]) -> tuple[int, int]:
+    if label is None:
+        return (0, 0)
+    raw = str(label).strip()
+    if not raw:
+        return (0, 0)
+
+    full_range = re.search(r"(\d{4})\s*[/\-_]\s*(\d{4})", raw)
+    if full_range:
+        return (int(full_range.group(1)), int(full_range.group(2)))
+
+    short_range = re.search(r"(\d{4})\s*[/\-_]\s*(\d{2})", raw)
+    if short_range:
+        start = int(short_range.group(1))
+        end_short = int(short_range.group(2))
+        end = (start // 100) * 100 + end_short
+        if end < start:
+            end += 100
+        return (start, end)
+
+    years = [int(item) for item in re.findall(r"\d{4}", raw)]
+    if not years:
+        return (0, 0)
+    if len(years) == 1:
+        return (years[0], years[0])
+    return (years[0], years[-1])
+
+
+def _season_sort_key_desc(label: Optional[str]) -> tuple[int, int, str]:
+    start, end = _season_bounds(label)
+    return (end, start, str(label or ""))
+
+
+def _season_sort_key_asc(label: Optional[str]) -> tuple[int, int, str]:
+    start, end = _season_bounds(label)
+    return (start, end, str(label or ""))
+
+
+def _season_filter_values(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    raw = str(value).strip()
+    if not raw:
+        return []
+    labels = {raw}
+    start, end = _season_bounds(raw)
+    if start and end:
+        labels.add(f"{start}/{end}")
+        labels.add(f"{start}-{end}")
+        labels.add(f"{start}/{str(end)[-2:]}")
+        labels.add(str(start))
+        labels.add(str(end))
+    return [label for label in sorted(labels) if label]
+
+
+def _current_season_labels() -> list[str]:
+    return _season_filter_values(CURRENT_SEASON_LABEL)
+
+
+def _load_player_season_context(session: Session, player_id: int) -> list[dict]:
+    rows = session.execute(
+        text(
+            """
+            SELECT
+              ps.id AS player_season_id,
+              ps.calendar,
+              ps.minutes_played,
+              ps.global_score_adjusted,
+              ps.team_in_selected_period AS team,
+              c.name AS competition_name
+            FROM player_seasons ps
+            JOIN competitions c ON c.id = ps.competition_id
+            WHERE ps.player_id = :player_id
+            """
+        ),
+        {"player_id": player_id},
+    ).fetchall()
+    items = [_row_to_dict(row) for row in rows]
+    items.sort(
+        key=lambda item: (
+            _season_sort_key_desc(item.get("calendar")),
+            float(item.get("minutes_played") or -1),
+            str(item.get("competition_name") or ""),
+        ),
+        reverse=True,
+    )
+    return items
+
+
+def _build_score_history(season_items: list[dict]) -> list[ScoreHistoryPoint]:
+    by_calendar: dict[str, dict] = {}
+    for item in season_items:
+        calendar = str(item.get("calendar") or "").strip()
+        if not calendar:
+            continue
+        current_best = by_calendar.get(calendar)
+        minutes = float(item.get("minutes_played") or -1)
+        if current_best is None or minutes > float(current_best.get("minutes_played") or -1):
+            by_calendar[calendar] = item
+
+    history = [
+        ScoreHistoryPoint(
+            player_season_id=int(item["player_season_id"]),
+            calendar=calendar,
+            competition_name=item.get("competition_name"),
+            team=item.get("team"),
+            minutes_played=item.get("minutes_played"),
+            global_score_adjusted=item.get("global_score_adjusted"),
+        )
+        for calendar, item in by_calendar.items()
+    ]
+    history.sort(key=lambda point: _season_sort_key_asc(point.calendar))
+    return history
 
 
 def _ensure_prospect_schema(session: Session) -> None:
@@ -895,7 +1013,11 @@ def ai_player_report(request: AIPlayerReportRequest, session: Session = Depends(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"OpenAI client error: {exc}") from exc
 
-    report = player_report(request.player_id, session)
+    report = player_report(
+        request.player_id,
+        player_season_id=request.player_season_id,
+        session=session,
+    )
     player_context = _build_player_context(report)
 
     language = request.language or "auto"
@@ -1153,7 +1275,11 @@ def ai_conversation_message(
     if mode == "player":
         if not payload.player_id:
             raise HTTPException(status_code=400, detail="player_id is required for player mode")
-        report = player_report(payload.player_id, session)
+        report = player_report(
+            payload.player_id,
+            player_season_id=payload.player_season_id,
+            session=session,
+        )
         player_context = _build_player_context(report)
         try:
             llm = get_llm()
@@ -1179,7 +1305,7 @@ def ai_conversation_message(
         result = _run_scout_flow(
             session=session,
             prompt=payload.prompt,
-            overrides={},
+            overrides={"season": payload.season} if payload.season else {},
             language_override=language,
             conversation_context=conversation_context,
             requested_count_hint=requested_count,
@@ -1270,6 +1396,8 @@ def _build_player_context(report: Report) -> dict:
         "role_metrics": raw_metrics,
         "key_metrics": key_metrics,
         "radar_metrics": report.radar_metrics,
+        "available_seasons": [item.model_dump() for item in report.available_seasons],
+        "score_history": [item.model_dump() for item in report.score_history],
     }
 
 
@@ -1700,6 +1828,73 @@ def _build_conversation_context(
     return "Previous conversation context:\n" + "\n".join(lines)
 
 
+def _extract_season_from_text(text: str) -> Optional[str]:
+    raw_text = str(text or "")
+    if not raw_text.strip():
+        return None
+    lowered = raw_text.lower()
+    if "current season" in lowered or "saison actuelle" in lowered:
+        return CURRENT_SEASON_LABEL
+
+    range_match = re.search(r"\b(20\d{2})\s*[/\-_]\s*((?:20)?\d{2,4})\b", raw_text)
+    if range_match:
+        start = int(range_match.group(1))
+        end_raw = range_match.group(2)
+        if len(end_raw) == 2:
+            end = (start // 100) * 100 + int(end_raw)
+            if end < start:
+                end += 100
+        else:
+            end = int(end_raw[-4:])
+        return f"{start}/{end}"
+
+    season_year_match = re.search(
+        r"(?:season|saison|campaign)[^0-9]{0,12}(20\d{2})",
+        lowered,
+    )
+    if season_year_match:
+        return season_year_match.group(1)
+    return None
+
+
+def _detect_trend_mode(text: str) -> Optional[str]:
+    normalized = _normalize_phrase(text)
+    if not normalized:
+        return None
+    decline_markers = [
+        "plus en difficulte",
+        "en difficulte aujourd hui",
+        "en baisse",
+        "regression",
+        "moins performants aujourd hui",
+        "decline",
+        "drop off",
+        "struggling now",
+        "worse now",
+    ]
+    improve_markers = [
+        "vice versa",
+        "vice versa",
+        "a l inverse",
+        "inversement",
+        "progression",
+        "progresses",
+        "improved now",
+        "better now",
+        "now performing better",
+        "rebound",
+    ]
+    decline = any(marker in normalized for marker in decline_markers)
+    improve = any(marker in normalized for marker in improve_markers)
+    if decline and improve:
+        return "both"
+    if decline:
+        return "decline_now"
+    if improve:
+        return "improved_now"
+    return None
+
+
 def _extract_prompt_constraints(text: str) -> dict:
     lowered = text.lower()
     normalized_text = _normalize_phrase(text)
@@ -1743,7 +1938,137 @@ def _extract_prompt_constraints(text: str) -> dict:
     if position and "position" not in constraints:
         constraints["position"] = position
 
+    season = _extract_season_from_text(text)
+    if season:
+        constraints["season"] = season
+
+    trend_mode = _detect_trend_mode(text)
+    if trend_mode:
+        constraints["trend_mode"] = trend_mode
+
     return constraints
+
+
+def _trend_candidates(
+    session: Session,
+    filters: PlayerFilters,
+    *,
+    trend_mode: str,
+    requested_count: Optional[int] = None,
+) -> list[dict]:
+    reference_labels = (
+        _season_filter_values(filters.season) if filters.season else _current_season_labels()
+    )
+    if not reference_labels:
+        reference_labels = [CURRENT_SEASON_LABEL]
+
+    requested_limit = requested_count * 3 if requested_count else 0
+    limit_value = max(filters.limit or 30, requested_limit or 0, 20)
+    limit_value = min(limit_value, 80)
+    params: dict[str, object] = {
+        "current_labels": reference_labels,
+        "limit": limit_value,
+    }
+    clauses: list[str] = ["cb.global_score_adjusted IS NOT NULL", "past.past_samples > 0"]
+
+    if filters.league:
+        league_value = str(filters.league).strip()
+        if "*" in league_value or "%" in league_value:
+            clauses.append("cb.competition_name ILIKE :league_pattern")
+            params["league_pattern"] = league_value.replace("*", "%")
+        else:
+            clauses.append("LOWER(cb.competition_name) = LOWER(:league)")
+            params["league"] = league_value
+    if filters.role:
+        clauses.append("cb.assigned_role ILIKE :role")
+        params["role"] = f"%{str(filters.role).strip()}%"
+    if filters.position:
+        clauses.append("(cb.position ILIKE :position OR cb.second_position ILIKE :position)")
+        params["position"] = f"%{str(filters.position).strip()}%"
+    if filters.max_age is not None:
+        clauses.append("cb.age <= :max_age")
+        params["max_age"] = filters.max_age
+    if filters.min_minutes is not None:
+        clauses.append("cb.minutes_played >= :min_minutes")
+        params["min_minutes"] = filters.min_minutes
+    if filters.min_league_strength is not None:
+        clauses.append("cb.league_strength_factor >= :min_league_strength")
+        params["min_league_strength"] = filters.min_league_strength
+
+    metric_cols = set(_stats_metric_columns(session))
+    for metric, threshold in (filters.min_metrics or {}).items():
+        if metric not in metric_cols:
+            continue
+        key = f"metric_{metric}"
+        clauses.append(f'cb."{metric}" >= :{key}')
+        params[key] = threshold
+
+    where_clause = " AND ".join(clauses)
+    order_dir = "ASC" if trend_mode == "decline_now" else "DESC"
+    sql = f"""
+    WITH current_base AS (
+      SELECT
+        ps.id AS player_season_id,
+        ps.player_id,
+        p.name AS player_name,
+        c.name AS competition_name,
+        ps.calendar,
+        ps.team_in_selected_period AS team,
+        ps.position,
+        ps.second_position,
+        ps.assigned_role,
+        ps.minutes_played,
+        ps.global_score_adjusted,
+        ps.assigned_role_pct_league,
+        ps.assigned_role_pct_global,
+        ps.league_strength_factor,
+        pm.age,
+        pm."goals_per_90" AS goals_per_90,
+        pm."xg_per_90" AS xg_per_90,
+        pm."xa_per_90" AS xa_per_90,
+        pm."assists_per_90" AS assists_per_90,
+        pm."progressive_runs_per_90" AS progressive_runs_per_90,
+        pm."successful_dribbles_percent" AS successful_dribbles_percent
+      FROM player_seasons ps
+      JOIN players p ON p.id = ps.player_id
+      JOIN competitions c ON c.id = ps.competition_id
+      LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+      WHERE ps.calendar = ANY(:current_labels)
+    ),
+    current_best AS (
+      SELECT DISTINCT ON (player_id) *
+      FROM current_base
+      ORDER BY player_id, minutes_played DESC NULLS LAST, global_score_adjusted DESC NULLS LAST
+    ),
+    past_scores AS (
+      SELECT
+        ps.player_id,
+        AVG(ps.global_score_adjusted) AS past_score_avg,
+        MAX(ps.global_score_adjusted) AS past_score_peak,
+        COUNT(*) AS past_samples
+      FROM player_seasons ps
+      WHERE ps.calendar <> ALL(:current_labels)
+        AND ps.global_score_adjusted IS NOT NULL
+      GROUP BY ps.player_id
+    )
+    SELECT
+      cb.*,
+      past.past_score_avg,
+      past.past_score_peak,
+      past.past_samples,
+      (cb.global_score_adjusted - past.past_score_avg) AS trend_delta,
+      CASE
+        WHEN (cb.global_score_adjusted - past.past_score_avg) >= 0 THEN 'up'
+        ELSE 'down'
+      END AS trend_direction
+    FROM current_best cb
+    JOIN past_scores past ON past.player_id = cb.player_id
+    WHERE {where_clause}
+    ORDER BY trend_delta {order_dir}, cb.minutes_played DESC NULLS LAST
+    LIMIT :limit
+    """
+    rows = session.execute(text(sql), params).fetchall()
+    return [_row_to_dict(row) for row in rows]
 
 
 def _attach_candidate_ids(candidates: list[dict], shortlist: list[dict]) -> list[dict]:
@@ -1767,10 +2092,14 @@ def _attach_candidate_ids(candidates: list[dict], shortlist: list[dict]) -> list
         match = name_index.get(norm)
         if match:
             candidate["player_id"] = match.get("player_id")
+            if match.get("player_season_id") is not None:
+                candidate["player_season_id"] = match.get("player_season_id")
             continue
         for norm_name, row in shortlist_rows:
             if norm in norm_name or norm_name in norm:
                 candidate["player_id"] = row.get("player_id")
+                if row.get("player_season_id") is not None:
+                    candidate["player_season_id"] = row.get("player_season_id")
                 break
     return candidates
 
@@ -1890,8 +2219,11 @@ def _run_scout_flow(
     constraints = _extract_prompt_constraints(prompt)
     if conversation_context:
         constraints = {**_extract_prompt_constraints(conversation_context), **constraints}
+    trend_mode = str(constraints.get("trend_mode") or "").strip()
     for key, value in constraints.items():
         if value is None:
+            continue
+        if key == "trend_mode":
             continue
         if key == "league":
             if filters.league != value:
@@ -1900,73 +2232,110 @@ def _run_scout_flow(
         if getattr(filters, key, None) in (None, ""):
             filters = PlayerFilters.parse_obj({**filters.dict(), key: value})
 
-    shortlist_rows = filter_candidates(session, filters)
-    unique_count = _shortlist_unique_count(shortlist_rows)
-    if requested_count and unique_count < requested_count and filters.limit < 50:
-        expanded = PlayerFilters.parse_obj({**filters.dict(), "limit": 50})
-        shortlist_rows = filter_candidates(session, expanded)
-        filters = expanded
+    if trend_mode:
+        if trend_mode == "both":
+            decline_rows = _trend_candidates(
+                session,
+                filters,
+                trend_mode="decline_now",
+                requested_count=requested_count,
+            )
+            improve_rows = _trend_candidates(
+                session,
+                filters,
+                trend_mode="improved_now",
+                requested_count=requested_count,
+            )
+            shortlisted: list[dict] = []
+            seen: set[int] = set()
+            for row in decline_rows + improve_rows:
+                pid = row.get("player_id")
+                if pid is not None and pid in seen:
+                    continue
+                if pid is not None:
+                    seen.add(pid)
+                shortlisted.append(row)
+                if len(shortlisted) >= (filters.limit or 30):
+                    break
+            shortlist_rows = shortlisted
+        else:
+            shortlist_rows = _trend_candidates(
+                session,
+                filters,
+                trend_mode=trend_mode,
+                requested_count=requested_count,
+            )
+        if not shortlist_rows:
+            shortlist_rows = filter_candidates(session, filters)
         unique_count = _shortlist_unique_count(shortlist_rows)
+    else:
+        shortlist_rows = filter_candidates(session, filters)
+        unique_count = _shortlist_unique_count(shortlist_rows)
+        if requested_count and unique_count < requested_count and filters.limit < 50:
+            expanded = PlayerFilters.parse_obj({**filters.dict(), "limit": 50})
+            shortlist_rows = filter_candidates(session, expanded)
+            filters = expanded
+            unique_count = _shortlist_unique_count(shortlist_rows)
 
-    if not shortlist_rows:
-        relaxed = PlayerFilters.parse_obj(
-            {
-                **filters.dict(),
-                "min_metrics": {},
-                "max_age": None,
-                "min_minutes": None,
-                "min_minutes_ratio": None,
-            }
-        )
-        shortlist_rows = filter_candidates(session, relaxed)
-        filters = relaxed
-        unique_count = _shortlist_unique_count(shortlist_rows)
+        if not shortlist_rows:
+            relaxed = PlayerFilters.parse_obj(
+                {
+                    **filters.dict(),
+                    "min_metrics": {},
+                    "max_age": None,
+                    "min_minutes": None,
+                    "min_minutes_ratio": None,
+                }
+            )
+            shortlist_rows = filter_candidates(session, relaxed)
+            filters = relaxed
+            unique_count = _shortlist_unique_count(shortlist_rows)
 
-    if (
-        requested_count
-        and unique_count < requested_count
-        and (
-            filters.min_metrics
-            or filters.min_minutes_ratio
-            or filters.min_minutes
-        )
-    ):
-        relaxed = PlayerFilters.parse_obj(
-            {
-                **filters.dict(),
-                "min_metrics": {},
-                "min_minutes_ratio": None,
-                "min_minutes": None,
-            }
-        )
-        shortlist_rows = filter_candidates(session, relaxed)
-        filters = relaxed
-        unique_count = _shortlist_unique_count(shortlist_rows)
+        if (
+            requested_count
+            and unique_count < requested_count
+            and (
+                filters.min_metrics
+                or filters.min_minutes_ratio
+                or filters.min_minutes
+            )
+        ):
+            relaxed = PlayerFilters.parse_obj(
+                {
+                    **filters.dict(),
+                    "min_metrics": {},
+                    "min_minutes_ratio": None,
+                    "min_minutes": None,
+                }
+            )
+            shortlist_rows = filter_candidates(session, relaxed)
+            filters = relaxed
+            unique_count = _shortlist_unique_count(shortlist_rows)
 
-    if (
-        requested_count
-        and unique_count < requested_count
-        and filters.min_league_strength is not None
-    ):
-        relaxed = PlayerFilters.parse_obj(
-            {
-                **filters.dict(),
-                "min_league_strength": None,
-            }
-        )
-        shortlist_rows = filter_candidates(session, relaxed)
-        filters = relaxed
-        unique_count = _shortlist_unique_count(shortlist_rows)
+        if (
+            requested_count
+            and unique_count < requested_count
+            and filters.min_league_strength is not None
+        ):
+            relaxed = PlayerFilters.parse_obj(
+                {
+                    **filters.dict(),
+                    "min_league_strength": None,
+                }
+            )
+            shortlist_rows = filter_candidates(session, relaxed)
+            filters = relaxed
+            unique_count = _shortlist_unique_count(shortlist_rows)
 
-    if (
-        (not shortlist_rows or (requested_count and unique_count < requested_count))
-        and filters.league
-        and "league" not in constraints
-    ):
-        relaxed = PlayerFilters.parse_obj({**filters.dict(), "league": None})
-        shortlist_rows = filter_candidates(session, relaxed)
-        filters = relaxed
-        unique_count = _shortlist_unique_count(shortlist_rows)
+        if (
+            (not shortlist_rows or (requested_count and unique_count < requested_count))
+            and filters.league
+            and "league" not in constraints
+        ):
+            relaxed = PlayerFilters.parse_obj({**filters.dict(), "league": None})
+            shortlist_rows = filter_candidates(session, relaxed)
+            filters = relaxed
+            unique_count = _shortlist_unique_count(shortlist_rows)
 
     target_club = _resolve_target_club(f"{conversation_context or ''} {prompt}")
     if target_club:
@@ -2588,6 +2957,24 @@ def player_card(player_id: int, session: Session = Depends(get_session)):
     return RankingRow(**payload)
 
 
+@app.get("/players/{player_id}/seasons", response_model=List[ReportSeasonOption])
+def player_seasons(player_id: int, session: Session = Depends(get_session)):
+    items = _load_player_season_context(session, player_id)
+    if not items:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return [
+        ReportSeasonOption(
+            player_season_id=int(item["player_season_id"]),
+            calendar=item.get("calendar"),
+            competition_name=item.get("competition_name"),
+            team=item.get("team"),
+            minutes_played=item.get("minutes_played"),
+            global_score_adjusted=item.get("global_score_adjusted"),
+        )
+        for item in items
+    ]
+
+
 @app.get("/players/{player_id}/report", response_model=Report)
 def player_report(
     player_id: int,
@@ -2622,6 +3009,20 @@ def player_report(
     if not row:
         raise HTTPException(status_code=404, detail="Player not found")
     ps = _row_to_dict(row)
+    season_items = _load_player_season_context(session, player_id)
+    available_seasons = [
+        ReportSeasonOption(
+            player_season_id=int(item["player_season_id"]),
+            calendar=item.get("calendar"),
+            competition_name=item.get("competition_name"),
+            team=item.get("team"),
+            minutes_played=item.get("minutes_played"),
+            global_score_adjusted=item.get("global_score_adjusted"),
+        )
+        for item in season_items
+    ]
+    score_history = _build_score_history(season_items)
+    similarities_enabled = True
 
     if (
         ps.get("assigned_role_pct_league") is None
@@ -2731,7 +3132,14 @@ def player_report(
                 pct_global_adjusted=pct_global_adjusted,
             )
         )
-    role_scores.sort(key=lambda r: r.pct_global if r.pct_global is not None else -1, reverse=True)
+    assigned_role_name = ps.get("assigned_role")
+    role_scores.sort(
+        key=lambda r: (
+            -(r.pct_global if r.pct_global is not None else -1.0),
+            -(r.pct_league if r.pct_league is not None else -1.0),
+            0 if assigned_role_name and r.profile == assigned_role_name else 1,
+        )
+    )
 
     # Summary (garde seulement summary_* colonnes)
     summary = {k: v for k, v in metrics.items() if k.startswith("summary_")}
@@ -2764,6 +3172,10 @@ def player_report(
         tm_fields=tm_fields,
         role_scores=role_scores,
         summary=summary,
+        available_seasons=available_seasons,
+        score_history=score_history,
+        similarities_enabled=similarities_enabled,
+        current_season_label=CURRENT_SEASON_LABEL,
     )
 
 
@@ -2777,13 +3189,14 @@ def player_similarities(
     age_min: Optional[float] = Query(None, ge=0),
     age_max: Optional[float] = Query(None, ge=0),
     big5_only: bool = Query(False),
+    current_season_only: bool = Query(False),
     session: Session = Depends(get_session),
 ):
     tm_clause = _tm_select_clause(session, alias="psb")
     big5 = _competition_aggregate_map().get("Big 5 Leagues", [])
     if player_season_id is not None:
         seed_sql = """
-        SELECT ps.id AS player_season_id, ps.assigned_role
+        SELECT ps.id AS player_season_id, ps.assigned_role, ps.calendar
         FROM player_seasons ps
         WHERE ps.player_id = :player_id AND ps.id = :player_season_id
         LIMIT 1
@@ -2794,7 +3207,7 @@ def player_similarities(
         ).fetchone()
     else:
         seed_sql = """
-        SELECT ps.id AS player_season_id, ps.assigned_role
+        SELECT ps.id AS player_season_id, ps.assigned_role, ps.calendar
         FROM player_seasons ps
         WHERE ps.player_id = :player_id
         ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
@@ -2843,6 +3256,9 @@ def player_similarities(
     if big5_only:
         sql += " AND cb.name = ANY(:big5)"
         params["big5"] = big5
+    if current_season_only:
+        sql += " AND psb.calendar = ANY(:current_season_labels)"
+        params["current_season_labels"] = _current_season_labels()
     sql += """
     ORDER BY sim.similarity DESC NULLS LAST
     OFFSET :offset LIMIT :limit
@@ -2888,6 +3304,9 @@ def player_similarities(
         if big5_only:
             fallback_sql += " AND cb.name = ANY(:big5)"
             fallback_params["big5"] = big5
+        if current_season_only:
+            fallback_sql += " AND psb.calendar = ANY(:current_season_labels)"
+            fallback_params["current_season_labels"] = _current_season_labels()
         fallback_sql += """
         ORDER BY sim.similarity DESC NULLS LAST
         OFFSET :offset LIMIT :limit
@@ -3137,6 +3556,7 @@ def meta_players(
 @app.get("/players")
 def search_players(
     q: str = Query(..., min_length=1),
+    season: Optional[str] = Query(None),
     limit: int = Query(20, ge=1, le=50),
     session: Session = Depends(get_session),
 ):
@@ -3176,22 +3596,50 @@ def search_players(
         return []
     where_clause = " AND ".join(token_clauses)
 
+    fetch_limit = min(500, max(limit * 20, limit))
+    params["fetch_limit"] = fetch_limit
     sql = f"""
-    SELECT DISTINCT ON (p.name, ps.team_in_selected_period, c.name, ps.calendar)
+    SELECT DISTINCT ON (p.id, ps.calendar, c.name, ps.team_in_selected_period)
       p.id,
+      ps.id AS player_season_id,
       p.name,
       c.name AS competition_name,
       ps.calendar,
-      ps.team_in_selected_period AS team
+      ps.team_in_selected_period AS team,
+      ps.minutes_played
     FROM players p
     JOIN player_seasons ps ON ps.player_id = p.id
     JOIN competitions c ON c.id = ps.competition_id
     WHERE {where_clause}
-    ORDER BY p.name, ps.team_in_selected_period, c.name, ps.calendar, ps.minutes_played DESC NULLS LAST
-    LIMIT :limit
+    """
+    if season:
+        season_values = _season_filter_values(season)
+        if len(season_values) <= 1:
+            sql += " AND ps.calendar = :season"
+            params["season"] = season_values[0] if season_values else season
+        else:
+            sql += " AND ps.calendar = ANY(:season_values)"
+            params["season_values"] = season_values
+    sql += """
+    ORDER BY p.id, ps.calendar, c.name, ps.team_in_selected_period, ps.minutes_played DESC NULLS LAST
+    LIMIT :fetch_limit
     """
     rows = session.execute(text(sql), params).fetchall()
-    return [_row_to_dict(row) for row in rows]
+    items = [_row_to_dict(row) for row in rows]
+    items.sort(
+        key=lambda item: (
+            _season_sort_key_desc(item.get("calendar")),
+            float(item.get("minutes_played") or -1),
+            str(item.get("name") or ""),
+            str(item.get("competition_name") or ""),
+            str(item.get("team") or ""),
+        ),
+        reverse=True,
+    )
+    trimmed = items[:limit]
+    for item in trimmed:
+        item.pop("minutes_played", None)
+    return trimmed
 
 
 @app.get("/prospects/ids")
@@ -3487,6 +3935,7 @@ def reorder_need_players(need_id: int, payload: ClubNeedPlayerOrder, session: Se
 
 class VizPercentileRequest(BaseModel):
     player_id: int
+    player_season_id: Optional[int] = None
     metrics: list[str]
     context: str = "League"
     positions: list[str] = []
@@ -3500,23 +3949,47 @@ def viz_percentiles(payload: VizPercentileRequest, session: Session = Depends(ge
     if not metrics:
         raise HTTPException(status_code=400, detail="No valid metrics provided")
 
-    player_sql = """
-    SELECT ps.id AS player_season_id,
-      p.id AS player_id,
-      p.name,
-      ps.team_in_selected_period AS team,
-      c.name AS competition_name,
-      ps.position,
-      ps.second_position,
-      ps.minutes_played
-    FROM player_seasons ps
-    JOIN players p ON p.id = ps.player_id
-    JOIN competitions c ON c.id = ps.competition_id
-    WHERE p.id = :player_id
-    ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
-    LIMIT 1
-    """
-    player_row = session.execute(text(player_sql), {"player_id": payload.player_id}).fetchone()
+    if payload.player_season_id:
+        player_sql = """
+        SELECT ps.id AS player_season_id,
+          p.id AS player_id,
+          p.name,
+          ps.team_in_selected_period AS team,
+          c.name AS competition_name,
+          ps.position,
+          ps.second_position,
+          ps.minutes_played,
+          ps.calendar
+        FROM player_seasons ps
+        JOIN players p ON p.id = ps.player_id
+        JOIN competitions c ON c.id = ps.competition_id
+        WHERE p.id = :player_id
+          AND ps.id = :player_season_id
+        LIMIT 1
+        """
+        player_row = session.execute(
+            text(player_sql),
+            {"player_id": payload.player_id, "player_season_id": payload.player_season_id},
+        ).fetchone()
+    else:
+        player_sql = """
+        SELECT ps.id AS player_season_id,
+          p.id AS player_id,
+          p.name,
+          ps.team_in_selected_period AS team,
+          c.name AS competition_name,
+          ps.position,
+          ps.second_position,
+          ps.minutes_played,
+          ps.calendar
+        FROM player_seasons ps
+        JOIN players p ON p.id = ps.player_id
+        JOIN competitions c ON c.id = ps.competition_id
+        WHERE p.id = :player_id
+        ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+        LIMIT 1
+        """
+        player_row = session.execute(text(player_sql), {"player_id": payload.player_id}).fetchone()
     if not player_row:
         raise HTTPException(status_code=404, detail="Player not found")
     player = _row_to_dict(player_row)
@@ -3544,6 +4017,9 @@ def viz_percentiles(payload: VizPercentileRequest, session: Session = Depends(ge
     if context == "league":
         cohort_sql += " AND c.name = :competition"
         params["competition"] = player.get("competition_name")
+    if player.get("calendar"):
+        cohort_sql += " AND ps.calendar = :season"
+        params["season"] = player.get("calendar")
 
     positions = [p.strip() for p in payload.positions or [] if p.strip()]
     if positions:
@@ -3597,6 +4073,7 @@ def stats_research(
     metric_x: str = Query(..., min_length=1),
     metric_y: str = Query(..., min_length=1),
     league: Optional[str] = Query(None),
+    season: Optional[str] = Query(None),
     positions: Optional[str] = Query(None),
     min_minutes: float = Query(270, ge=0),
     limit: int = Query(5000, ge=1, le=20000),
@@ -3632,6 +4109,14 @@ def stats_research(
     if min_minutes is not None:
         sql += " AND ps.minutes_played >= :min_minutes"
         params["min_minutes"] = min_minutes
+    if season:
+        season_values = _season_filter_values(season)
+        if len(season_values) <= 1:
+            sql += " AND ps.calendar = :season"
+            params["season"] = season_values[0] if season_values else season
+        else:
+            sql += " AND ps.calendar = ANY(:season_values)"
+            params["season_values"] = season_values
     if positions:
         pos_list = [p.strip() for p in positions.split(",") if p.strip()]
         if pos_list:

@@ -7,16 +7,18 @@ assigned_role, global_score_adjusted, summary_*, similarités).
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import time
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Mapping, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from fuzzywuzzy import fuzz, process
+from fuzzywuzzy import fuzz
 
 PCT_SUFFIX_GLOBAL = "_pct_global"
 SUMMARY_DEFINITIONS: dict[str, tuple[str, ...]] = {
@@ -64,6 +66,11 @@ SUMMARY_DEFINITIONS: dict[str, tuple[str, ...]] = {
 }
 
 _ZSCORE_CACHE: dict[str, pd.Series] = {}
+SCORE_BAND_MIN = float(os.getenv("SCORE_BAND_MIN", "50") or "50")
+SCORE_BAND_MAX = float(os.getenv("SCORE_BAND_MAX", "95") or "95")
+if not np.isfinite(SCORE_BAND_MIN) or not np.isfinite(SCORE_BAND_MAX) or SCORE_BAND_MIN >= SCORE_BAND_MAX:
+    SCORE_BAND_MIN = 50.0
+    SCORE_BAND_MAX = 95.0
 
 
 # --- Helpers v1 (extraits) ----------------------------------------------------
@@ -203,6 +210,37 @@ def percentiles_by_group(series: pd.Series, group: Optional[pd.Series]) -> pd.Se
     return result
 
 
+def _scale_score_series(series: pd.Series, skip_if_already_scaled: bool = False) -> pd.Series:
+    numeric = _coerce_numeric(series)
+    scaled = pd.Series(np.nan, index=series.index, dtype=float)
+    mask = numeric.notna()
+    if not mask.any():
+        return scaled
+
+    values = numeric.loc[mask]
+    if skip_if_already_scaled:
+        min_val = float(values.min())
+        max_val = float(values.max())
+        if min_val >= SCORE_BAND_MIN and max_val <= SCORE_BAND_MAX:
+            scaled.loc[mask] = values
+            return scaled
+
+    values = values.clip(lower=0, upper=100)
+    band_width = SCORE_BAND_MAX - SCORE_BAND_MIN
+    scaled.loc[mask] = SCORE_BAND_MIN + (values / 100.0) * band_width
+    return scaled
+
+
+def _scale_score_frame(frame: pd.DataFrame, skip_if_already_scaled: bool = False) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    scaled_cols = {
+        col: _scale_score_series(frame[col], skip_if_already_scaled=skip_if_already_scaled)
+        for col in frame.columns
+    }
+    return pd.DataFrame(scaled_cols, index=frame.index)
+
+
 def compute_scores_percentiles(raw_scores: pd.DataFrame) -> pd.DataFrame:
     pct = raw_scores.copy()
     for col in pct.columns:
@@ -268,6 +306,39 @@ def _league_group(df: pd.DataFrame) -> pd.Series:
     comp = df.get("competition_name", pd.Series(index=df.index, dtype="object")).fillna("GLOBAL").astype(str)
     cal = df.get("calendar", pd.Series(index=df.index, dtype="object")).fillna("GLOBAL").astype(str)
     return comp + "||" + cal
+
+
+def _league_strength_from_meta(df: pd.DataFrame) -> pd.Series:
+    league_meta_path = Path("/helpers/csv/league_translation_meta.csv")
+    if not league_meta_path.exists() or "competition_name" not in df.columns:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+    try:
+        meta_df = pd.read_csv(league_meta_path)
+        if not {"competition", "difficulty"}.issubset(meta_df.columns):
+            return pd.Series(np.nan, index=df.index, dtype=float)
+        difficulty = pd.to_numeric(meta_df["difficulty"], errors="coerce")
+        mean_val = difficulty.mean(skipna=True)
+        if not np.isfinite(mean_val) or mean_val == 0:
+            return pd.Series(np.nan, index=df.index, dtype=float)
+        normalized = (difficulty / mean_val).clip(lower=0.8, upper=1.2)
+        strength_map = {
+            str(comp): float(val)
+            for comp, val in zip(meta_df["competition"], normalized)
+            if pd.notna(comp) and np.isfinite(val)
+        }
+        return df["competition_name"].map(strength_map).astype(float)
+    except Exception:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+
+
+def _resolve_league_strength_factors(df: pd.DataFrame) -> pd.Series:
+    meta_series = _league_strength_from_meta(df)
+    if "league_strength_factor" in df.columns:
+        provided = _coerce_numeric(df["league_strength_factor"])
+        merged = meta_series.where(meta_series.notna(), provided)
+    else:
+        merged = meta_series
+    return _coerce_numeric(merged).fillna(1.0).clip(lower=0.8, upper=1.2)
 
 
 def roles_league_percentiles(
@@ -654,21 +725,81 @@ def _safe_age(value: object) -> Optional[float]:
 def _fuzzy_match_within_club(club_profiles: pd.DataFrame, target_name: str, target_age: Optional[float]) -> Optional[str]:
     if club_profiles.empty:
         return None
-    choices = club_profiles["tm_player_name"].tolist()
     target_norm = _normalise_name(target_name)
-    best, score = process.extractOne(target_norm, choices, scorer=fuzz.token_sort_ratio) if choices else (None, 0)
-    if score < 70:
+    if not target_norm:
         return None
-    # Optionally filter on age difference if available
-    target_age_value = _safe_age(target_age)
-    if target_age_value is not None and "tm_age" in club_profiles.columns:
-        candidate = club_profiles[club_profiles["tm_player_name"] == best]
-        if not candidate.empty:
-            tm_age_value = _safe_age(candidate["tm_age"].iloc[0])
-            if tm_age_value is not None and abs(tm_age_value - target_age_value) > 3:
-                return None
-    tm_id = club_profiles.loc[club_profiles["tm_player_name"] == best, "tm_player_id"].iloc[0]
-    return str(tm_id)
+    target_tokens = target_norm.split()
+    target_token_set = set(target_tokens)
+
+    candidates: list[dict[str, object]] = []
+    for row in club_profiles.itertuples(index=False):
+        candidate_name = getattr(row, "tm_player_name", None)
+        candidate_id = getattr(row, "tm_player_id", None)
+        if not candidate_name or pd.isna(candidate_name) or pd.isna(candidate_id):
+            continue
+        candidate_norm = _normalise_name(str(candidate_name))
+        if not candidate_norm:
+            continue
+        candidate_tokens = candidate_norm.split()
+        candidate_token_set = set(candidate_tokens)
+        overlap = target_token_set.intersection(candidate_token_set)
+        sort_score = fuzz.token_sort_ratio(target_norm, candidate_norm)
+        set_score = fuzz.token_set_ratio(target_norm, candidate_norm)
+        score = max(sort_score, set_score)
+
+        age_diff = None
+        target_age_value = _safe_age(target_age)
+        tm_age_value = _safe_age(getattr(row, "tm_age", None))
+        if target_age_value is not None and tm_age_value is not None:
+            age_diff = abs(tm_age_value - target_age_value)
+            if age_diff > 3:
+                continue
+
+        compatible = False
+        if len(overlap) >= 2:
+            compatible = score >= 75
+        elif len(overlap) == 1:
+            target_remaining = [tok for tok in target_tokens if tok not in overlap]
+            candidate_remaining = [tok for tok in candidate_tokens if tok not in overlap]
+            if target_remaining and candidate_remaining:
+                t = target_remaining[0]
+                c = candidate_remaining[0]
+                initial_ok = (len(t) == 1 and c.startswith(t)) or (len(c) == 1 and t.startswith(c))
+                exact_ok = t == c
+                if exact_ok or initial_ok:
+                    compatible = score >= 75
+                else:
+                    compatible = score >= 92
+            else:
+                compatible = score >= 92
+            if compatible and age_diff is not None and age_diff > 1:
+                compatible = False
+        else:
+            compatible = score >= 96
+
+        if not compatible:
+            continue
+
+        candidates.append(
+            {
+                "name": str(candidate_name),
+                "tm_player_id": str(candidate_id),
+                "score": float(score),
+                "overlap": len(overlap),
+                "age_diff": age_diff if age_diff is not None else 99.0,
+            }
+        )
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: (-item["score"], -item["overlap"], item["age_diff"], item["name"]))
+    best = candidates[0]
+    if len(candidates) > 1:
+        second = candidates[1]
+        if (best["score"] - second["score"]) <= 3 and best["overlap"] == second["overlap"]:
+            return None
+    return str(best["tm_player_id"])
 
 
 def merge_transfermarkt(enriched: pd.DataFrame, players: pd.DataFrame, sources: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -973,22 +1104,148 @@ def _normalize_raw(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _canonical_player_name(value: object) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip().lower()
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return " ".join(text.split())
+
+
+def _stable_generated_player_id(row: pd.Series, fallback_idx: int) -> str:
+    key_cols = [
+        "player",
+        "birth_date",
+        "age",
+        "country",
+        "calendar",
+        "competition_name",
+        "team_in_selected_period",
+        "team",
+    ]
+    parts: list[str] = []
+    for col in key_cols:
+        if col not in row.index:
+            continue
+        val = row[col]
+        if pd.isna(val):
+            continue
+        sval = str(val).strip()
+        if sval:
+            parts.append(f"{col}={sval}")
+    if not parts:
+        parts = [f"row={fallback_idx}"]
+    digest = hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:12]
+    return f"gen_{digest}"
+
+
+def _resolve_player_id_conflicts(df: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
+    if "player_id" not in df.columns or "player" not in df.columns:
+        return df, 0, 0
+
+    working = df.copy()
+    player_ids = working["player_id"].astype("string")
+    name_keys = working["player"].apply(_canonical_player_name).astype("string")
+    valid = player_ids.notna() & (player_ids.str.strip() != "") & name_keys.notna() & (name_keys.str.strip() != "")
+    if not valid.any():
+        return working, 0, 0
+
+    conflict_counts = (
+        pd.DataFrame({"player_id": player_ids[valid], "name_key": name_keys[valid]})
+        .groupby("player_id")["name_key"]
+        .nunique()
+    )
+    conflict_ids = conflict_counts[conflict_counts > 1].index.tolist()
+    if not conflict_ids:
+        return working, 0, 0
+
+    minutes = (
+        _coerce_numeric(working.get("minutes_played", pd.Series(0.0, index=working.index)))
+        .reindex(working.index)
+        .fillna(0.0)
+    )
+    detail = pd.DataFrame(
+        {
+            "player_id": player_ids[valid],
+            "name_key": name_keys[valid],
+            "minutes": minutes[valid],
+        }
+    )
+    detail = detail[detail["player_id"].isin(conflict_ids)]
+    stats = (
+        detail.groupby(["player_id", "name_key"], as_index=False)
+        .agg(rows=("name_key", "size"), minutes=("minutes", "sum"))
+        .sort_values(
+            ["player_id", "rows", "minutes", "name_key"],
+            ascending=[True, False, False, True],
+        )
+    )
+    keep_name_by_id = stats.drop_duplicates(subset=["player_id"]).set_index("player_id")["name_key"].to_dict()
+
+    remap: dict[tuple[str, str], str] = {}
+    for row in stats.itertuples(index=False):
+        pid = str(row.player_id)
+        name_key = str(row.name_key)
+        if keep_name_by_id.get(pid) == name_key:
+            continue
+        digest = hashlib.sha1(f"{pid}|{name_key}".encode("utf-8")).hexdigest()[:10]
+        remap[(pid, name_key)] = f"{pid}__alt_{digest}"
+
+    if not remap:
+        return working, len(conflict_ids), 0
+
+    apply_mask = valid & player_ids.isin(conflict_ids)
+    apply_index = working.index[apply_mask]
+    updated_values = []
+    changed_rows = 0
+    for idx in apply_index:
+        pid = str(player_ids.at[idx])
+        name_key = str(name_keys.at[idx])
+        new_pid = remap.get((pid, name_key), pid)
+        if new_pid != pid:
+            changed_rows += 1
+        updated_values.append(new_pid)
+
+    working.loc[apply_index, "player_id"] = pd.Series(updated_values, index=apply_index, dtype="string")
+    return working, len(conflict_ids), changed_rows
+
+
 def _ensure_player_id(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if "player_id" not in df.columns:
-        df["player_id"] = df.index.astype(int) + 1
+        df["player_id"] = pd.Series(pd.NA, index=df.index, dtype="string")
     else:
         player_id = df["player_id"].astype("string")
         missing = player_id.isna() | (player_id.str.strip() == "")
-        df.loc[missing, "player_id"] = (df.index[missing] + 1).astype(str)
+        if missing.any():
+            missing_index = list(df.index[missing])
+            generated = [
+                _stable_generated_player_id(df.loc[idx], int(idx) if isinstance(idx, (int, np.integer)) else pos + 1)
+                for pos, idx in enumerate(missing_index)
+            ]
+            df.loc[missing_index, "player_id"] = pd.Series(generated, index=missing_index, dtype="string")
 
     def _clean_pid(val):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return pd.NA
+        sval = str(val).strip()
+        if not sval:
+            return pd.NA
         try:
-            return str(abs(int(val)))
+            if re.fullmatch(r"-?\d+(?:\.0+)?", sval):
+                return str(int(float(sval)))
         except Exception:  # noqa: BLE001
-            return str(val)
+            pass
+        return sval
 
-    df["player_id"] = df["player_id"].apply(_clean_pid)
+    df["player_id"] = df["player_id"].apply(_clean_pid).astype("string")
+    df, conflict_ids, remapped_rows = _resolve_player_id_conflicts(df)
+    if conflict_ids:
+        print(f"[PIPELINE] player_id conflicts resolved={conflict_ids} remapped_rows={remapped_rows}")
     return df
 
 
@@ -1091,6 +1348,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
     print("[PIPELINE] assignation rôle")
     assigned_role = assign_role(df, scores_pct, profiles)
+    scores_pct = _scale_score_frame(scores_pct)
 
     print("[PIPELINE] éligibilités")
     minutes_possible = estimate_minutes_possible(df)
@@ -1101,6 +1359,8 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     print("[PIPELINE] percentiles rôle ligue/global")
     roles_scores_league = roles_league_percentiles(df, raw_scores, assigned_role, profiles)
     roles_scores_global = roles_global_percentiles(df, raw_scores, assigned_role, profiles, min_minutes=270)
+    roles_scores_league = _scale_score_frame(roles_scores_league)
+    roles_scores_global = _scale_score_frame(roles_scores_global)
 
     print("[PIPELINE] similarités")
     sim_topk = int(os.getenv("SIM_TOPK", "30") or "30")
@@ -1159,31 +1419,14 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     metrics_base = df.drop(columns=["_elig_league"], errors="ignore")
     metrics_league_pct, metrics_global_pct = compute_metric_percentiles(metrics_base, league_group)
     scores_league_pct, scores_global_pct = compute_metric_percentiles(raw_scores, league_group)
+    scores_league_pct = _scale_score_frame(scores_league_pct)
+    scores_global_pct = _scale_score_frame(scores_global_pct)
     summary_scores = compute_summary_scores(metrics_global_pct)
 
-    # League strength factors (optional)
-    league_meta_path = Path("/helpers/csv/league_translation_meta.csv")
-    if league_meta_path.exists():
-        try:
-            meta_df = pd.read_csv(league_meta_path)
-            if {"competition", "difficulty"}.issubset(meta_df.columns):
-                difficulty = pd.to_numeric(meta_df["difficulty"], errors="coerce")
-                mean_val = difficulty.mean(skipna=True)
-                if np.isfinite(mean_val) and mean_val != 0:
-                    normalized = (difficulty / mean_val).clip(lower=0.8, upper=1.2)
-                    league_strength = {
-                        str(c): float(v) if np.isfinite(v) else 1.0
-                        for c, v in zip(meta_df["competition"], normalized)
-                    }
-                    factor_series = df["competition_name"].map(league_strength).fillna(1.0)
-                else:
-                    factor_series = pd.Series(1.0, index=df.index, dtype=float)
-            else:
-                factor_series = pd.Series(1.0, index=df.index, dtype=float)
-        except Exception:
-            factor_series = pd.Series(1.0, index=df.index, dtype=float)
-    else:
-        factor_series = pd.Series(1.0, index=df.index, dtype=float)
+    factor_series = _resolve_league_strength_factors(df)
+    df["league_strength_factor"] = factor_series
+    strength_non_default = int((factor_series != 1.0).sum())
+    print(f"[PIPELINE] league strength factors non-default={strength_non_default}/{len(factor_series)}")
 
     baseline_strength = factor_series.mean(skipna=True)
     if not np.isfinite(baseline_strength) or baseline_strength == 0:
@@ -1206,6 +1449,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
             ranks = adj_raw.rank(method="first", ascending=False, na_option="keep")
             pct_vals = (valid_count - ranks) / (valid_count - 1) * 100
         global_score_adjusted_series.loc[mask] = pct_vals.clip(lower=0, upper=100)
+    global_score_adjusted_series = _scale_score_series(global_score_adjusted_series)
 
     role_league_pct = pd.Series(np.nan, index=df.index, dtype=float)
     role_global_pct = pd.Series(np.nan, index=df.index, dtype=float)
@@ -1214,8 +1458,8 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         if mask.any():
             if profile_name in roles_scores_league:
                 role_league_pct.loc[mask] = roles_scores_league.loc[mask, profile_name]
-            if profile_name in roles_scores_global:
-                role_global_pct.loc[mask] = roles_scores_global.loc[mask, profile_name]
+            # Keep a single source of truth: assigned role global pct mirrors adjusted global score.
+            role_global_pct.loc[mask] = global_score_adjusted_series.loc[mask]
 
     enriched_extra = pd.concat(
         [
@@ -1264,7 +1508,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         "matches_played": ("matches_played", "max") if "matches_played" in enriched.columns else ("player_id", "size"),
         "assigned_role": ("assigned_role", "first") if "assigned_role" in enriched.columns else ("player_id", "first"),
         "assigned_role_pct_league": ("assigned_role_pct_league", "first") if "assigned_role_pct_league" in enriched.columns else ("player_id", "size"),
-        "assigned_role_pct_global": ("assigned_role_pct_global", "first") if "assigned_role_pct_global" in enriched.columns else ("player_id", "size"),
+        "assigned_role_pct_global": ("assigned_role_pct_global", "max") if "assigned_role_pct_global" in enriched.columns else ("player_id", "size"),
         "global_score_adjusted": ("global_score_adjusted", "max") if "global_score_adjusted" in enriched.columns else ("player_id", "size"),
         "position": ("position", "first"),
         "second_position": ("second_position", "first"),
@@ -1313,8 +1557,25 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     for idx, row in raw_scores.iterrows():
         for profile_name in profiles.keys():
             raw_val = row.get(profile_name)
-            pct_league = roles_scores_league.loc[idx, profile_name] if profile_name in roles_scores_league else np.nan
-            pct_global = roles_scores_global.loc[idx, profile_name] if profile_name in roles_scores_global else np.nan
+            pct_league_col = f"{profile_name}_pct_league"
+            pct_global_col = f"{profile_name}_pct_global"
+            if pct_league_col in scores_league_pct.columns:
+                pct_league = scores_league_pct.loc[idx, pct_league_col]
+            elif profile_name in scores_league_pct.columns:
+                # Backward-compatible fallback for legacy column naming.
+                pct_league = scores_league_pct.loc[idx, profile_name]
+            else:
+                pct_league = np.nan
+            if pct_global_col in scores_global_pct.columns:
+                pct_global = scores_global_pct.loc[idx, pct_global_col]
+            elif profile_name in scores_global_pct.columns:
+                # Backward-compatible fallback for legacy column naming.
+                pct_global = scores_global_pct.loc[idx, profile_name]
+            else:
+                pct_global = np.nan
+            pct_global_adjusted = (
+                global_score_adjusted_series.loc[idx] if assigned_role.loc[idx] == profile_name else np.nan
+            )
             role_records.append(
                 {
                     "wyscout_id": df.at[idx, "player_id"],
@@ -1325,7 +1586,7 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
                     "raw_score": raw_val,
                     "pct_league": pct_league,
                     "pct_global": pct_global,
-                    "pct_global_adjusted": global_score_adjusted_series.loc[idx] if assigned_role.loc[idx] == profile_name else np.nan,
+                    "pct_global_adjusted": pct_global_adjusted,
                 }
             )
     role_scores = pd.DataFrame(role_records)
@@ -1553,6 +1814,23 @@ def build_artifacts_from_enriched(
 
     profiles = load_profiles_from_env()
     print(f"[PIPELINE] profils chargés: {len(profiles)}")
+    df["league_strength_factor"] = _resolve_league_strength_factors(df)
+
+    score_columns = {
+        "assigned_role_pct_league",
+        "assigned_role_pct_global",
+        "global_score_adjusted",
+    }
+    for profile_name in profiles.keys():
+        score_columns.add(profile_name)
+        score_columns.add(f"{profile_name}_pct_league")
+        score_columns.add(f"{profile_name}_pct_global")
+    for column in score_columns:
+        if column in df.columns:
+            df[column] = _scale_score_series(df[column], skip_if_already_scaled=True)
+    if "global_score_adjusted" in df.columns and "assigned_role_pct_global" in df.columns:
+        mask = _coerce_numeric(df["global_score_adjusted"]).notna()
+        df.loc[mask, "assigned_role_pct_global"] = df.loc[mask, "global_score_adjusted"]
 
     team_col = _resolve_team_column(df)
     if team_col:
@@ -1592,7 +1870,7 @@ def build_artifacts_from_enriched(
         "matches_played": ("matches_played", "max") if "matches_played" in df.columns else ("player_id", "size"),
         "assigned_role": ("assigned_role", "first") if "assigned_role" in df.columns else ("player_id", "first"),
         "assigned_role_pct_league": ("assigned_role_pct_league", "first") if "assigned_role_pct_league" in df.columns else ("player_id", "size"),
-        "assigned_role_pct_global": ("assigned_role_pct_global", "first") if "assigned_role_pct_global" in df.columns else ("player_id", "size"),
+        "assigned_role_pct_global": ("assigned_role_pct_global", "max") if "assigned_role_pct_global" in df.columns else ("player_id", "size"),
         "global_score_adjusted": ("global_score_adjusted", "max") if "global_score_adjusted" in df.columns else ("player_id", "size"),
         "position": ("position", "first"),
         "second_position": ("second_position", "first"),

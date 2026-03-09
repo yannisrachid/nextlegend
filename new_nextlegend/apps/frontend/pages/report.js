@@ -8,6 +8,11 @@ import {
   PolarRadiusAxis,
   Tooltip,
   ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
 } from "recharts";
 import { fetchJson, fetchJsonCached, postJson, deleteJson } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
@@ -55,7 +60,7 @@ const Label = ({ children }) => (
 
 const Select = ({ value, onChange, children }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    className="w-full min-w-0 max-w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 pr-8 text-slate-100 overflow-hidden text-ellipsis whitespace-nowrap"
     value={value}
     onChange={onChange}
   >
@@ -296,6 +301,7 @@ export default function ReportPage() {
     ageMin: "",
     ageMax: "",
     big5Only: false,
+    currentSeasonOnly: false,
   });
   const [radarContext, setRadarContext] = useState("global");
   const [isProspect, setIsProspect] = useState(false);
@@ -406,6 +412,12 @@ export default function ReportPage() {
     if (!selectedPlayerId) {
       return;
     }
+    if (!report?.similarities_enabled) {
+      setSimilarities([]);
+      setSimilarHasNext(false);
+      setSimilarLoading(false);
+      return;
+    }
     const loadSimilarities = async () => {
       setSimilarLoading(true);
       setError("");
@@ -419,6 +431,7 @@ export default function ReportPage() {
             age_min: similarFilters.ageMin || undefined,
             age_max: similarFilters.ageMax || undefined,
             big5_only: similarFilters.big5Only ? "true" : undefined,
+            current_season_only: similarFilters.currentSeasonOnly ? "true" : undefined,
           }
         );
         setSimilarities(sims);
@@ -430,18 +443,25 @@ export default function ReportPage() {
       }
     };
     loadSimilarities();
-  }, [selectedPlayerId, selectedPlayerSeasonId, similarPage, similarFilters]);
+  }, [
+    selectedPlayerId,
+    selectedPlayerSeasonId,
+    similarPage,
+    similarFilters,
+    report?.similarities_enabled,
+  ]);
 
   const playerOptions = useMemo(() => {
     return playerResults.map((p) => ({
       id: String(p.id),
+      seasonId: p.player_season_id ? String(p.player_season_id) : "",
       label: `${p.name} - ${p.team || "—"} - ${p.competition_name || "—"} - ${p.calendar || "—"}`,
     }));
   }, [playerResults]);
 
   const handlePlayerSelect = (player) => {
     setSelectedPlayerId(player.id);
-    setSelectedPlayerSeasonId("");
+    setSelectedPlayerSeasonId(player.seasonId || "");
     setPlayerQuery(player.label);
     setShowResults(false);
     setSimilarPage(0);
@@ -770,6 +790,22 @@ export default function ReportPage() {
     return roles.slice(0, 3);
   }, [report]);
 
+  const availableSeasons = useMemo(() => {
+    return Array.isArray(report?.available_seasons) ? report.available_seasons : [];
+  }, [report]);
+
+  const seasonSelectValue =
+    selectedPlayerSeasonId || (report?.player?.player_season_id ? String(report.player.player_season_id) : "");
+
+  const scoreHistoryData = useMemo(() => {
+    const rows = Array.isArray(report?.score_history) ? report.score_history : [];
+    return rows.map((row) => ({
+      ...row,
+      global_score_adjusted:
+        row?.global_score_adjusted == null ? null : Number(row.global_score_adjusted),
+    }));
+  }, [report]);
+
   return (
     <main className="min-h-screen bg-hero-pattern text-slate-100 py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -797,12 +833,14 @@ export default function ReportPage() {
                 onChange={(e) => {
                   setPlayerQuery(e.target.value);
                   setSelectedPlayerId("");
+                  setSelectedPlayerSeasonId("");
                   setShowResults(true);
                 }}
                 onFocus={() => {
                   if (selectedPlayerId) {
                     setPlayerQuery("");
                     setSelectedPlayerId("");
+                    setSelectedPlayerSeasonId("");
                     setReport(null);
                     setSimilarities([]);
                   }
@@ -812,6 +850,7 @@ export default function ReportPage() {
                   if (selectedPlayerId) {
                     setPlayerQuery("");
                     setSelectedPlayerId("");
+                    setSelectedPlayerSeasonId("");
                     setReport(null);
                     setSimilarities([]);
                     setShowResults(true);
@@ -829,7 +868,7 @@ export default function ReportPage() {
                 ) : (
                   playerOptions.map((player) => (
                     <button
-                      key={player.id}
+                      key={`${player.id}-${player.seasonId || "latest"}`}
                       type="button"
                       className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
                       onMouseDown={(e) => e.preventDefault()}
@@ -944,6 +983,24 @@ export default function ReportPage() {
                     ) : null}
                   </div>
                 </div>
+                {availableSeasons.length > 0 ? (
+                  <div className="space-y-2 min-w-0">
+                    <Label>Season</Label>
+                    <Select
+                      value={seasonSelectValue}
+                      onChange={(e) => {
+                        setSelectedPlayerSeasonId(e.target.value);
+                        setSimilarPage(0);
+                      }}
+                    >
+                      {availableSeasons.map((season) => (
+                        <option key={season.player_season_id} value={season.player_season_id}>
+                          {season.calendar || "—"} • {season.competition_name || "—"} • {season.team || "—"}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap gap-2">
                   {report.player.assigned_role && (
                     <Badge>{report.player.assigned_role}</Badge>
@@ -1028,7 +1085,7 @@ export default function ReportPage() {
                     </p>
                     <p className="text-lg font-semibold">
                       {report.player.assigned_role_pct_league?.toFixed(0) ?? "—"} /
-                      {report.player.assigned_role_pct_global?.toFixed(0) ?? "—"}
+                      {report.player.assigned_role_pct_global?.toFixed(1) ?? "—"}
                     </p>
                   </div>
                 </div>
@@ -1110,7 +1167,7 @@ export default function ReportPage() {
                     </p>
                     <p className="text-sm text-slate-300 mt-2">
                       League: {role.pct_league?.toFixed(0) ?? "—"} • Global:{" "}
-                      {role.pct_global?.toFixed(0) ?? "—"}
+                      {role.pct_global?.toFixed(1) ?? "—"}
                     </p>
                   </div>
                 ))}
@@ -1274,203 +1331,268 @@ export default function ReportPage() {
               <h3 className="text-lg font-semibold text-white mb-3">
                 Similar Players
               </h3>
-              <div className="flex flex-wrap items-end gap-4 mb-4">
-                <div className="flex flex-col gap-2">
-                  <Label>Age min</Label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-28"
-                    value={similarFilters.ageMin}
-                    onChange={(e) => {
-                      setSimilarFilters((prev) => ({ ...prev, ageMin: e.target.value }));
-                      setSimilarPage(0);
-                    }}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Age max</Label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-28"
-                    value={similarFilters.ageMax}
-                    onChange={(e) => {
-                      setSimilarFilters((prev) => ({ ...prev, ageMax: e.target.value }));
-                      setSimilarPage(0);
-                    }}
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    className="accent-emerald-400"
-                    checked={similarFilters.big5Only}
-                    onChange={(e) => {
-                      setSimilarFilters((prev) => ({ ...prev, big5Only: e.target.checked }));
-                      setSimilarPage(0);
-                    }}
-                  />
-                  5 Big Leagues Only
-                </label>
-              </div>
-              {similarLoading ? (
-                <p className="text-slate-400 text-sm mb-2">Loading similar players…</p>
-              ) : null}
-              {similarities.length === 0 ? (
-                <p className="text-slate-400">No similar players found.</p>
+              {!report?.similarities_enabled ? (
+                <p className="text-slate-400">
+                  Similarities are available only for the current season ({report?.current_season_label || "2025/2026"}).
+                </p>
               ) : (
-                <div className="space-y-3">
-                  <div className="hidden md:grid grid-cols-[minmax(0,2.3fr)_repeat(5,minmax(0,1fr))] text-xs uppercase text-slate-400 border-b border-white/5 pb-2">
-                    <button
-                      type="button"
-                      className="text-left cursor-pointer select-none"
-                      onClick={() => handleSimilarSort("player")}
-                    >
-                      Player {similarSortIndicator("player")}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-right cursor-pointer select-none"
-                      onClick={() => handleSimilarSort("age")}
-                    >
-                      Age {similarSortIndicator("age")}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-right cursor-pointer select-none"
-                      onClick={() => handleSimilarSort("similarity")}
-                    >
-                      Similarity {similarSortIndicator("similarity")}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-right cursor-pointer select-none"
-                      onClick={() => handleSimilarSort("adjusted")}
-                    >
-                      Adjusted score {similarSortIndicator("adjusted")}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-right cursor-pointer select-none"
-                      onClick={() => handleSimilarSort("league")}
-                    >
-                      League pct {similarSortIndicator("league")}
-                    </button>
-                    <button
-                      type="button"
-                      className="text-right cursor-pointer select-none"
-                      onClick={() => handleSimilarSort("global")}
-                    >
-                      Global pct {similarSortIndicator("global")}
-                    </button>
+                <>
+                  <div className="flex flex-wrap items-end gap-4 mb-4">
+                    <div className="flex flex-col gap-2">
+                      <Label>Age min</Label>
+                      <input
+                        type="number"
+                        min={0}
+                        className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-28"
+                        value={similarFilters.ageMin}
+                        onChange={(e) => {
+                          setSimilarFilters((prev) => ({ ...prev, ageMin: e.target.value }));
+                          setSimilarPage(0);
+                        }}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label>Age max</Label>
+                      <input
+                        type="number"
+                        min={0}
+                        className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-28"
+                        value={similarFilters.ageMax}
+                        onChange={(e) => {
+                          setSimilarFilters((prev) => ({ ...prev, ageMax: e.target.value }));
+                          setSimilarPage(0);
+                        }}
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="accent-emerald-400"
+                        checked={similarFilters.big5Only}
+                        onChange={(e) => {
+                          setSimilarFilters((prev) => ({ ...prev, big5Only: e.target.checked }));
+                          setSimilarPage(0);
+                        }}
+                      />
+                      5 Big Leagues Only
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="accent-emerald-400"
+                        checked={similarFilters.currentSeasonOnly}
+                        onChange={(e) => {
+                          setSimilarFilters((prev) => ({ ...prev, currentSeasonOnly: e.target.checked }));
+                          setSimilarPage(0);
+                        }}
+                      />
+                      Current season only ({report?.current_season_label || "2025/2026"})
+                    </label>
                   </div>
-                  <div className="space-y-3">
-                    {sortedSimilarities.map((sim) => {
-                      const tmFields = sim.tm_fields || {};
-                      const tmPhotoUrl = toAbsoluteUrl(
-                        tmFields.tm_profile_image_url || tmFields.profile_image_url
-                      );
-                      const tmProfileUrl = toAbsoluteUrl(
-                        tmFields.tm_profile_url || sim.tm_profile_url
-                      );
-                      const reportUrl = `/report?player_id=${sim.player_b_id}`;
-                      const leagueStyle = percentileStyle(sim.assigned_role_pct_league);
-                      const globalStyle = percentileStyle(sim.assigned_role_pct_global);
-                      return (
-                        <div
-                          key={`${sim.player_b_id}-${sim.profile}`}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => window.open(reportUrl, "_blank", "noopener,noreferrer")}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              window.open(reportUrl, "_blank", "noopener,noreferrer");
-                            }
-                          }}
-                          className="grid grid-cols-1 md:grid-cols-[minmax(0,2.3fr)_repeat(5,minmax(0,1fr))] gap-3 items-center border border-white/5 rounded-lg p-3 bg-slate-900/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
+                  {similarLoading ? (
+                    <p className="text-slate-400 text-sm mb-2">Loading similar players…</p>
+                  ) : null}
+                  {similarities.length === 0 ? (
+                    <p className="text-slate-400">No similar players found.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="hidden md:grid grid-cols-[minmax(0,2.3fr)_repeat(5,minmax(0,1fr))] text-xs uppercase text-slate-400 border-b border-white/5 pb-2">
+                        <button
+                          type="button"
+                          className="text-left cursor-pointer select-none"
+                          onClick={() => handleSimilarSort("player")}
                         >
-                          <div className="flex items-center gap-3">
-                            {tmPhotoUrl ? (
-                              <img
-                                src={tmPhotoUrl}
-                                alt={sim.player_b_name}
-                                className="h-12 w-12 rounded-full object-cover border border-white/10"
-                              />
-                            ) : (
-                              <div className="h-12 w-12 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-200 font-semibold">
-                                {getInitials(sim.player_b_name)}
+                          Player {similarSortIndicator("player")}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-right cursor-pointer select-none"
+                          onClick={() => handleSimilarSort("age")}
+                        >
+                          Age {similarSortIndicator("age")}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-right cursor-pointer select-none"
+                          onClick={() => handleSimilarSort("similarity")}
+                        >
+                          Similarity {similarSortIndicator("similarity")}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-right cursor-pointer select-none"
+                          onClick={() => handleSimilarSort("adjusted")}
+                        >
+                          Adjusted score {similarSortIndicator("adjusted")}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-right cursor-pointer select-none"
+                          onClick={() => handleSimilarSort("league")}
+                        >
+                          League pct {similarSortIndicator("league")}
+                        </button>
+                        <button
+                          type="button"
+                          className="text-right cursor-pointer select-none"
+                          onClick={() => handleSimilarSort("global")}
+                        >
+                          Global pct {similarSortIndicator("global")}
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        {sortedSimilarities.map((sim) => {
+                          const tmFields = sim.tm_fields || {};
+                          const tmPhotoUrl = toAbsoluteUrl(
+                            tmFields.tm_profile_image_url || tmFields.profile_image_url
+                          );
+                          const tmProfileUrl = toAbsoluteUrl(
+                            tmFields.tm_profile_url || sim.tm_profile_url
+                          );
+                          const reportUrl = `/report?player_id=${sim.player_b_id}`;
+                          const leagueStyle = percentileStyle(sim.assigned_role_pct_league);
+                          const globalStyle = percentileStyle(sim.assigned_role_pct_global);
+                          return (
+                            <div
+                              key={`${sim.player_b_id}-${sim.profile}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => window.open(reportUrl, "_blank", "noopener,noreferrer")}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  window.open(reportUrl, "_blank", "noopener,noreferrer");
+                                }
+                              }}
+                              className="grid grid-cols-1 md:grid-cols-[minmax(0,2.3fr)_repeat(5,minmax(0,1fr))] gap-3 items-center border border-white/5 rounded-lg p-3 bg-slate-900/50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
+                            >
+                              <div className="flex items-center gap-3">
+                                {tmPhotoUrl ? (
+                                  <img
+                                    src={tmPhotoUrl}
+                                    alt={sim.player_b_name}
+                                    className="h-12 w-12 rounded-full object-cover border border-white/10"
+                                  />
+                                ) : (
+                                  <div className="h-12 w-12 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-200 font-semibold">
+                                    {getInitials(sim.player_b_name)}
+                                  </div>
+                                )}
+                                <div>
+                                  <p className="text-base font-semibold text-white">
+                                    {sim.player_b_name}
+                                    <span className="text-sm font-normal text-slate-300">
+                                      {" "}
+                                      • {sim.calendar || "—"}
+                                    </span>
+                                  </p>
+                                  <p className="text-sm text-slate-400">
+                                    {sim.team || "—"} • {sim.competition_name || "—"}
+                                  </p>
+                                  {tmProfileUrl ? (
+                                    <a
+                                      href={tmProfileUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-xs text-primary hover:text-primary/80"
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      Transfermarkt profile
+                                    </a>
+                                  ) : null}
+                                </div>
                               </div>
-                            )}
-                            <div>
-                              <p className="text-base font-semibold text-white">
-                                {sim.player_b_name}
-                              </p>
-                              <p className="text-sm text-slate-400">
-                                {sim.team || "—"} • {sim.competition_name || "—"}
-                              </p>
-                              {tmProfileUrl ? (
-                                <a
-                                  href={tmProfileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-xs text-primary hover:text-primary/80"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  Transfermarkt profile
-                                </a>
-                              ) : null}
+                              <div className="text-right text-sm text-slate-100">
+                                {sim.age != null ? Number(sim.age).toFixed(0) : "—"}
+                              </div>
+                              <div className="text-right text-sm text-slate-100">
+                                {sim.similarity != null
+                                  ? `${(Number(sim.similarity) * 100).toFixed(1)}%`
+                                  : "—"}
+                              </div>
+                              <div className="text-right text-sm text-slate-100">
+                                {sim.global_score_adjusted != null
+                                  ? Number(sim.global_score_adjusted).toFixed(1)
+                                  : "—"}
+                              </div>
+                              <div className={`text-right text-sm ${leagueStyle.className}`} style={leagueStyle.style}>
+                                {sim.assigned_role_pct_league != null
+                                  ? Number(sim.assigned_role_pct_league).toFixed(0)
+                                  : "—"}
+                              </div>
+                              <div className={`text-right text-sm ${globalStyle.className}`} style={globalStyle.style}>
+                                {sim.assigned_role_pct_global != null
+                                  ? Number(sim.assigned_role_pct_global).toFixed(0)
+                                  : "—"}
+                              </div>
                             </div>
-                          </div>
-                          <div className="text-right text-sm text-slate-100">
-                            {sim.age != null ? Number(sim.age).toFixed(0) : "—"}
-                          </div>
-                          <div className="text-right text-sm text-slate-100">
-                            {sim.similarity != null
-                              ? `${(Number(sim.similarity) * 100).toFixed(1)}%`
-                              : "—"}
-                          </div>
-                          <div className="text-right text-sm text-slate-100">
-                            {sim.global_score_adjusted != null
-                              ? Number(sim.global_score_adjusted).toFixed(1)
-                              : "—"}
-                          </div>
-                          <div className={`text-right text-sm ${leagueStyle.className}`} style={leagueStyle.style}>
-                            {sim.assigned_role_pct_league != null
-                              ? Number(sim.assigned_role_pct_league).toFixed(0)
-                              : "—"}
-                          </div>
-                          <div className={`text-right text-sm ${globalStyle.className}`} style={globalStyle.style}>
-                            {sim.assigned_role_pct_global != null
-                              ? Number(sim.assigned_role_pct_global).toFixed(0)
-                              : "—"}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center justify-between pt-2">
-                    <button
-                      type="button"
-                      className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
-                      disabled={similarPage === 0}
-                      onClick={() => setSimilarPage((prev) => Math.max(0, prev - 1))}
-                    >
-                      Prev
-                    </button>
-                    <span className="text-xs text-slate-400">
-                      Page {similarPage + 1}
-                    </span>
-                    <button
-                      type="button"
-                      className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
-                      disabled={!similarHasNext}
-                      onClick={() => setSimilarPage((prev) => prev + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center justify-between pt-2">
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
+                          disabled={similarPage === 0}
+                          onClick={() => setSimilarPage((prev) => Math.max(0, prev - 1))}
+                        >
+                          Prev
+                        </button>
+                        <span className="text-xs text-slate-400">
+                          Page {similarPage + 1}
+                        </span>
+                        <button
+                          type="button"
+                          className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
+                          disabled={!similarHasNext}
+                          onClick={() => setSimilarPage((prev) => prev + 1)}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </Card>
+
+            <Card>
+              <h3 className="text-lg font-semibold text-white mb-3">
+                Global Score Evolution
+              </h3>
+              {scoreHistoryData.length === 0 ? (
+                <p className="text-slate-400">No historical score data available.</p>
+              ) : (
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={scoreHistoryData} margin={{ top: 12, right: 18, left: 4, bottom: 8 }}>
+                      <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                      <XAxis dataKey="calendar" stroke="#94a3b8" tick={{ fill: "#94a3b8", fontSize: 12 }} />
+                      <YAxis
+                        stroke="#94a3b8"
+                        tick={{ fill: "#94a3b8", fontSize: 12 }}
+                        domain={[0, 100]}
+                      />
+                      <Tooltip
+                        contentStyle={{ color: "#000000" }}
+                        labelStyle={{ color: "#000000" }}
+                        itemStyle={{ color: "#000000" }}
+                        formatter={(value) => [
+                          value == null ? "—" : Number(value).toFixed(1),
+                          "Global score",
+                        ]}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="global_score_adjusted"
+                        stroke="#7bd389"
+                        strokeWidth={2}
+                        dot={{ r: 4, stroke: "#7bd389", fill: "#0f172a", strokeWidth: 1.5 }}
+                        activeDot={{ r: 6 }}
+                        connectNulls
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
               )}
             </Card>

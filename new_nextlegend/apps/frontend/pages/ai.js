@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchJson, postJson, patchJson } from "@/lib/api";
+import { fetchJson, fetchJsonCached, postJson, patchJson } from "@/lib/api";
 
 const TM_BASE_URL = "https://www.transfermarkt.com";
 
@@ -93,6 +93,30 @@ const getInitials = (value) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+const seasonSortKey = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
+  if (matchRange) {
+    const start = Number(matchRange[1]);
+    const rawEnd = matchRange[2];
+    const end =
+      rawEnd.length === 2
+        ? Math.floor(start / 100) * 100 + Number(rawEnd)
+        : Number(rawEnd.slice(-4));
+    return end * 10000 + start;
+  }
+  const matchYear = text.match(/20\d{2}/);
+  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
+};
+
+const sortSeasonsDesc = (items) =>
+  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
+    const diff = seasonSortKey(b) - seasonSortKey(a);
+    if (diff !== 0) return diff;
+    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
+  });
+
 const extractTmFields = (row) => {
   const tmFields = {};
   Object.entries(row || {}).forEach(([key, value]) => {
@@ -136,6 +160,9 @@ export default function AIPage() {
   const [playerResults, setPlayerResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
+  const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
+  const [seasons, setSeasons] = useState([]);
+  const [selectedSeason, setSelectedSeason] = useState("");
   const [usageTotal, setUsageTotal] = useState(null);
   const [usageConversation, setUsageConversation] = useState(null);
   const [usageError, setUsageError] = useState("");
@@ -229,14 +256,24 @@ export default function AIPage() {
   }, [activeConversationId, messages.length, userId]);
 
   useEffect(() => {
+    fetchJsonCached("/meta/seasons")
+      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .catch(() => setSeasons([]));
+  }, []);
+
+  useEffect(() => {
     if (!playerQuery || playerQuery.trim().length < 2) {
       setPlayerResults([]);
       setSelectedPlayerId("");
+      setSelectedPlayerSeasonId("");
       return;
     }
     const handle = setTimeout(async () => {
       try {
-        const res = await fetchJson("/players", { q: playerQuery.trim() });
+        const res = await fetchJson("/players", {
+          q: playerQuery.trim(),
+          season: selectedSeason || undefined,
+        });
         const unique = new Map();
         (res || []).forEach((item) => {
           const normalize = (value) =>
@@ -259,11 +296,12 @@ export default function AIPage() {
       }
     }, 200);
     return () => clearTimeout(handle);
-  }, [playerQuery]);
+  }, [playerQuery, selectedSeason]);
 
   const playerOptions = useMemo(() => {
     return playerResults.map((p) => ({
       id: String(p.id),
+      seasonId: p.player_season_id ? String(p.player_season_id) : "",
       label: `${p.name} - ${p.team || "—"} - ${p.competition_name || "—"} - ${p.calendar || "—"}`,
     }));
   }, [playerResults]);
@@ -375,6 +413,11 @@ export default function AIPage() {
         prompt: content,
         mode,
         player_id: mode === "player" ? Number(selectedPlayerId) : null,
+        player_season_id:
+          mode === "player" && selectedPlayerSeasonId
+            ? Number(selectedPlayerSeasonId)
+            : null,
+        season: mode === "scout" ? selectedSeason || null : null,
         language,
       });
       setMessages((prev) => [
@@ -403,9 +446,13 @@ export default function AIPage() {
 
   const handleOpenReport = async (candidate) => {
     if (!candidate) return;
+    const seasonQuery =
+      candidate.player_season_id != null
+        ? `?player_id=${candidate.player_id}&player_season_id=${candidate.player_season_id}`
+        : `?player_id=${candidate.player_id}`;
     if (candidate.player_id) {
       window.open(
-        `/report/${candidate.player_id}`,
+        `/report${seasonQuery}`,
         "_blank",
         "noopener,noreferrer"
       );
@@ -414,14 +461,20 @@ export default function AIPage() {
     if (!candidate.player_name) return;
     const popup = window.open("", "_blank", "noopener,noreferrer");
     try {
-      const res = await fetchJson("/players", { q: candidate.player_name });
+      const res = await fetchJson("/players", {
+        q: candidate.player_name,
+        season: selectedSeason || undefined,
+      });
       const first = (res || [])[0];
       if (first?.id) {
+        const firstQuery = first.player_season_id
+          ? `?player_id=${first.id}&player_season_id=${first.player_season_id}`
+          : `?player_id=${first.id}`;
         if (popup) {
-          popup.location = `/report/${first.id}`;
+          popup.location = `/report${firstQuery}`;
         } else {
           window.open(
-            `/report/${first.id}`,
+            `/report${firstQuery}`,
             "_blank",
             "noopener,noreferrer"
           );
@@ -569,7 +622,7 @@ export default function AIPage() {
 
           <section className="space-y-4">
             <Card>
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div>
                   <Label>Mode</Label>
                   <Select
@@ -589,6 +642,28 @@ export default function AIPage() {
                     <option value="auto">Auto</option>
                     <option value="en">English</option>
                     <option value="fr">Francais</option>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Season Filter</Label>
+                  <Select
+                    value={selectedSeason}
+                    onChange={(e) => {
+                      setSelectedSeason(e.target.value);
+                      setPlayerResults([]);
+                      setSelectedPlayerId("");
+                      setSelectedPlayerSeasonId("");
+                      if (mode === "player") {
+                        setPlayerQuery("");
+                      }
+                    }}
+                  >
+                    <option value="">All seasons</option>
+                    {seasons.map((season) => (
+                      <option key={season} value={season}>
+                        {season}
+                      </option>
+                    ))}
                   </Select>
                 </div>
               </div>
@@ -660,7 +735,11 @@ export default function AIPage() {
                               const reportHref =
                                 candidate.player_id !== null &&
                                 candidate.player_id !== undefined
-                                  ? `/report/${candidate.player_id}`
+                                  ? `/report?player_id=${candidate.player_id}${
+                                      candidate.player_season_id != null
+                                        ? `&player_season_id=${candidate.player_season_id}`
+                                        : ""
+                                    }`
                                   : null;
                               const cardContent = (
                                 <Card
@@ -858,6 +937,7 @@ export default function AIPage() {
                     onChange={(e) => {
                       setPlayerQuery(e.target.value);
                       setSelectedPlayerId("");
+                      setSelectedPlayerSeasonId("");
                       setShowResults(true);
                     }}
                     onFocus={() => setShowResults(true)}
@@ -872,12 +952,13 @@ export default function AIPage() {
                       ) : (
                         playerOptions.map((player) => (
                           <button
-                            key={player.id}
+                            key={`${player.id}-${player.seasonId || "latest"}`}
                             type="button"
                             className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               setSelectedPlayerId(player.id);
+                              setSelectedPlayerSeasonId(player.seasonId || "");
                               setPlayerQuery(player.label);
                               setShowResults(false);
                             }}

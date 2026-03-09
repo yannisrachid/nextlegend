@@ -357,10 +357,13 @@ def upsert_db(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
     similarity = artifacts.get("player_similarity", pd.DataFrame())
 
     db.upsert_dimensions(engine, comps, seasons, players, clubs)
-    replace_tables = os.getenv("PIPELINE_REPLACE_TABLES", "1").lower() not in {"0", "false", "no"}
+    replace_tables = os.getenv("PIPELINE_REPLACE_TABLES", "0").lower() not in {"0", "false", "no"}
     if replace_tables:
         db.truncate_fact_tables(engine)
     ids = db.resolve_ids(engine)
+    replace_input_slices = os.getenv("PIPELINE_REPLACE_INPUT_SLICES", "1").lower() not in {"0", "false", "no"}
+    if not replace_tables and replace_input_slices:
+        db.purge_fact_slice(engine, fact, ids)
     season_index = db.upsert_player_seasons(engine, fact, ids)
     replace_similarity = os.getenv("PIPELINE_REPLACE_SIMILARITY", "1").lower() not in {"0", "false", "no"}
     copy_similarity = os.getenv("PIPELINE_COPY_SIMILARITY", "0").lower() in {"1", "true", "yes"}

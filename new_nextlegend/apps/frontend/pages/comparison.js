@@ -8,7 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { fetchJson } from "@/lib/api";
+import { fetchJson, fetchJsonCached } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
 
 const DEFAULT_RADAR_METRICS = [
@@ -146,6 +146,30 @@ const makeSortIndicator = (sortConfig, key) => {
   return sortConfig.dir === "asc" ? "^" : "v";
 };
 
+const seasonSortKey = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
+  if (matchRange) {
+    const start = Number(matchRange[1]);
+    const rawEnd = matchRange[2];
+    const end =
+      rawEnd.length === 2
+        ? Math.floor(start / 100) * 100 + Number(rawEnd)
+        : Number(rawEnd.slice(-4));
+    return end * 10000 + start;
+  }
+  const matchYear = text.match(/20\d{2}/);
+  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
+};
+
+const sortSeasonsDesc = (items) =>
+  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
+    const diff = seasonSortKey(b) - seasonSortKey(a);
+    if (diff !== 0) return diff;
+    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
+  });
+
 const selectRadarMetrics = (reports, maxCount = 10) => {
   const fallback = DEFAULT_RADAR_METRICS;
   if (!reports || reports.length === 0) return fallback;
@@ -200,7 +224,7 @@ const selectRadarMetrics = (reports, maxCount = 10) => {
   return combined.slice(0, maxCount);
 };
 
-const usePlayerSearch = (onSelect) => {
+const usePlayerSearch = (onSelect, seasonFilter) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
@@ -213,7 +237,10 @@ const usePlayerSearch = (onSelect) => {
     }
     const handle = setTimeout(async () => {
       try {
-        const res = await fetchJson("/players", { q: query.trim() });
+        const res = await fetchJson("/players", {
+          q: query.trim(),
+          season: seasonFilter || undefined,
+        });
         const unique = new Map();
         (res || []).forEach((item) => {
           const normalize = (value) =>
@@ -236,11 +263,12 @@ const usePlayerSearch = (onSelect) => {
       }
     }, 200);
     return () => clearTimeout(handle);
-  }, [query]);
+  }, [query, seasonFilter]);
 
   const options = useMemo(() => {
     return results.map((player) => ({
       id: String(player.id),
+      seasonId: player.player_season_id ? String(player.player_season_id) : "",
       label: `${player.name} - ${player.team || "--"} - ${player.competition_name || "--"} - ${player.calendar || "--"}`,
     }));
   }, [results]);
@@ -305,6 +333,8 @@ export default function ComparisonPage() {
   const [error, setError] = useState("");
   const [compareLoading, setCompareLoading] = useState(false);
   const [comparison, setComparison] = useState([]);
+  const [seasons, setSeasons] = useState([]);
+  const [selectedSeason, setSelectedSeason] = useState("");
   const [radarContext, setRadarContext] = useState("global");
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   const [radarSort, setRadarSort] = useState({ key: "metric", dir: "asc" });
@@ -313,15 +343,21 @@ export default function ComparisonPage() {
 
   const [selectedPlayers, setSelectedPlayers] = useState([null, null, null]);
 
+  useEffect(() => {
+    fetchJsonCached("/meta/seasons")
+      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .catch(() => setSeasons([]));
+  }, []);
+
   const search1 = usePlayerSearch((player) => {
     setSelectedPlayers((prev) => [player, prev[1], prev[2]]);
-  });
+  }, selectedSeason);
   const search2 = usePlayerSearch((player) => {
     setSelectedPlayers((prev) => [prev[0], player, prev[2]]);
-  });
+  }, selectedSeason);
   const search3 = usePlayerSearch((player) => {
     setSelectedPlayers((prev) => [prev[0], prev[1], player]);
-  });
+  }, selectedSeason);
 
   const activeSelections = useMemo(() => {
     return selectedPlayers
@@ -339,7 +375,9 @@ export default function ComparisonPage() {
     try {
       const reports = await Promise.all(
         activeSelections.map((player) =>
-          fetchJson(`/players/${player.id}/report`)
+          fetchJson(`/players/${player.id}/report`, {
+            player_season_id: player.seasonId || undefined,
+          })
         )
       );
       const merged = activeSelections.map((player, index) => ({
@@ -503,6 +541,31 @@ export default function ComparisonPage() {
         </header>
 
         <Card className="relative z-30">
+          <div className="mb-4 max-w-xs">
+            <div className="flex flex-col gap-2">
+              <Label>Season Filter</Label>
+              <select
+                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                value={selectedSeason}
+                onChange={(e) => {
+                  setSelectedSeason(e.target.value);
+                  setSelectedPlayers([null, null, null]);
+                  [search1, search2, search3].forEach((search) => {
+                    search.setQuery("");
+                    search.clearSelection();
+                  });
+                  setComparison([]);
+                }}
+              >
+                <option value="">All seasons</option>
+                {seasons.map((season) => (
+                  <option key={season} value={season}>
+                    {season}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {[search1, search2, search3].map((search, index) => (
               <div key={`search-${index}`} className="relative">
@@ -543,7 +606,7 @@ export default function ComparisonPage() {
                     ) : (
                       search.options.map((player) => (
                         <button
-                          key={player.id}
+                          key={`${player.id}-${player.seasonId || "latest"}`}
                           type="button"
                           className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
                           onMouseDown={(e) => e.preventDefault()}

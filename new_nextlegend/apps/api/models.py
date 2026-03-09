@@ -61,6 +61,24 @@ class RankingRow(BaseModel):
     tm_fields: Optional[dict[str, Optional[float | str]]] = None
 
 
+class ReportSeasonOption(BaseModel):
+    player_season_id: int
+    calendar: Optional[str] = None
+    competition_name: Optional[str] = None
+    team: Optional[str] = None
+    minutes_played: Optional[float] = None
+    global_score_adjusted: Optional[float] = None
+
+
+class ScoreHistoryPoint(BaseModel):
+    player_season_id: int
+    calendar: str
+    competition_name: Optional[str] = None
+    team: Optional[str] = None
+    minutes_played: Optional[float] = None
+    global_score_adjusted: Optional[float] = None
+
+
 class Report(BaseModel):
     player: RankingRow
     metrics: dict[str, Optional[float]]
@@ -69,6 +87,10 @@ class Report(BaseModel):
     tm_fields: dict[str, Optional[float | str]]
     role_scores: list["RoleScore"]
     summary: dict[str, Optional[float]]
+    available_seasons: list[ReportSeasonOption] = []
+    score_history: list[ScoreHistoryPoint] = []
+    similarities_enabled: bool = False
+    current_season_label: str = "2025/2026"
 
 
 class SimilarityRow(BaseModel):
@@ -103,6 +125,7 @@ class RankingPage(BaseModel):
 
 class AIOverrides(BaseModel):
     league: Optional[str] = None
+    season: Optional[str] = None
     role: Optional[str] = None
     position: Optional[str] = None
     max_age: Optional[int] = None
@@ -125,6 +148,7 @@ class AIScoutResponse(BaseModel):
 
 class AIPlayerReportRequest(BaseModel):
     player_id: int
+    player_season_id: Optional[int] = None
     prompt: str
     language: Optional[str] = "auto"
 
@@ -184,6 +208,8 @@ class AIMessageCreate(BaseModel):
     prompt: str
     mode: Optional[str] = None
     player_id: Optional[int] = None
+    player_season_id: Optional[int] = None
+    season: Optional[str] = None
     language: Optional[str] = "auto"
 
 

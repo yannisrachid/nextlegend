@@ -32,6 +32,7 @@ load_dotenv()
 
 class PlayerFilters(BaseModel):
     league: Optional[str] = Field(None, description="Competition or league name.")
+    season: Optional[str] = Field(None, description="Season label (e.g. 2025/2026).")
     role: Optional[str] = Field(None, description="Assigned role.")
     position: Optional[str] = Field(None, description="Position or positional family.")
     max_age: Optional[int] = Field(None, description="Maximum age.")
@@ -275,6 +276,48 @@ def _expand_patterns(value: Optional[str]) -> list[str]:
     return [f"%{item}%" for item in patterns if item]
 
 
+def _season_bounds(label: Optional[str]) -> tuple[int, int]:
+    if label is None:
+        return (0, 0)
+    raw = str(label).strip()
+    if not raw:
+        return (0, 0)
+    full_range = re.search(r"(\d{4})\s*[/\-_]\s*(\d{4})", raw)
+    if full_range:
+        return (int(full_range.group(1)), int(full_range.group(2)))
+    short_range = re.search(r"(\d{4})\s*[/\-_]\s*(\d{2})", raw)
+    if short_range:
+        start = int(short_range.group(1))
+        end_short = int(short_range.group(2))
+        end = (start // 100) * 100 + end_short
+        if end < start:
+            end += 100
+        return (start, end)
+    years = [int(item) for item in re.findall(r"\d{4}", raw)]
+    if not years:
+        return (0, 0)
+    if len(years) == 1:
+        return (years[0], years[0])
+    return (years[0], years[-1])
+
+
+def _season_filter_values(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    raw = str(value).strip()
+    if not raw:
+        return []
+    labels = {raw}
+    start, end = _season_bounds(raw)
+    if start and end:
+        labels.add(f"{start}/{end}")
+        labels.add(f"{start}-{end}")
+        labels.add(f"{start}/{str(end)[-2:]}")
+        labels.add(str(start))
+        labels.add(str(end))
+    return [label for label in sorted(labels) if label]
+
+
 def _column_stats(session: Session, table: str, column: str, alias: str) -> Optional[str]:
     try:
         sql = text(
@@ -323,7 +366,7 @@ def build_column_catalog(session: Session) -> str:
             if stat:
                 catalog_entries.append(stat)
 
-    base_cols = ["competition_name", "assigned_role", "position", "age", "league_strength_factor"]
+    base_cols = ["competition_name", "season", "assigned_role", "position", "age", "league_strength_factor"]
     catalog_entries.append(f"filterable_fields: {', '.join(base_cols)}")
 
     catalog = "; ".join(catalog_entries[:25])
@@ -389,6 +432,14 @@ def filter_candidates(session: Session, filters: PlayerFilters) -> list[dict]:
         else:
             clauses.append("LOWER(c.name) = LOWER(:league)")
             params["league"] = league_value
+    if filters.season:
+        season_values = _season_filter_values(filters.season)
+        if len(season_values) <= 1:
+            clauses.append("ps.calendar = :season")
+            params["season"] = season_values[0] if season_values else str(filters.season).strip()
+        else:
+            clauses.append("ps.calendar = ANY(:season_values)")
+            params["season_values"] = season_values
     if filters.role:
         role_patterns = _expand_patterns(filters.role) or [f"%{filters.role}%"]
         role_clauses = []
@@ -492,15 +543,21 @@ def filter_candidates(session: Session, filters: PlayerFilters) -> list[dict]:
 
 def select_payload_columns(rows: Iterable[dict]) -> list[str]:
     base = [
+        "player_season_id",
         "player_id",
         "player_name",
         "competition_name",
+        "calendar",
         "team",
         "position",
         "assigned_role",
         "age",
         "minutes_played",
         "global_score_adjusted",
+        "past_score_avg",
+        "past_score_peak",
+        "trend_delta",
+        "trend_direction",
         "accelerations_per_90",
         "progressive_runs_per_90",
         "dribbles_per_90",

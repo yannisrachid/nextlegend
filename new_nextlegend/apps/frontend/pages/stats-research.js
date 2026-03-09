@@ -59,11 +59,42 @@ const percentile = (values, p) => {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * weight;
 };
 
+const seasonSortKey = (value) => {
+  if (!value) return -Infinity;
+  const raw = String(value).trim();
+  if (!raw) return -Infinity;
+  const range = raw.match(/^(\d{4})\s*[\/-]\s*(\d{2,4})$/);
+  if (range) {
+    const start = Number(range[1]);
+    const endRaw = range[2];
+    let end = Number(endRaw.length === 2 ? `${range[1].slice(0, 2)}${endRaw}` : endRaw.slice(-4));
+    if (end < start) end += 100;
+    return start * 10000 + end;
+  }
+  const single = raw.match(/^(\d{4})$/);
+  if (single) {
+    const year = Number(single[1]);
+    return year * 10000 + year;
+  }
+  const digits = raw.match(/(\d{4})/g);
+  if (digits?.length) return Number(digits[0]) * 10000 + Number(digits[digits.length - 1]);
+  return -Infinity;
+};
+
+const sortSeasonValues = (values) =>
+  [...(values || [])].sort((a, b) => {
+    const diff = seasonSortKey(b) - seasonSortKey(a);
+    if (diff !== 0) return diff;
+    return String(b || "").localeCompare(String(a || ""), undefined, { sensitivity: "base" });
+  });
+
 export default function StatsResearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [leagueOptions, setLeagueOptions] = useState(["All leagues"]);
   const [selectedLeague, setSelectedLeague] = useState("All leagues");
+  const [seasons, setSeasons] = useState([]);
+  const [selectedSeason, setSelectedSeason] = useState("");
   const [positions, setPositions] = useState([]);
   const [positionsOpen, setPositionsOpen] = useState(false);
   const [positionsAll, setPositionsAll] = useState(true);
@@ -83,8 +114,9 @@ export default function StatsResearchPage() {
   useEffect(() => {
     const loadMeta = async () => {
       try {
-        const [competitions, positionsData, metricsData] = await Promise.all([
+        const [competitions, seasonsData, positionsData, metricsData] = await Promise.all([
           fetchJsonCached("/meta/competitions"),
+          fetchJsonCached("/meta/seasons"),
           fetchJsonCached("/meta/positions"),
           fetchJsonCached("/meta/stats-research/metrics"),
         ]);
@@ -103,6 +135,7 @@ export default function StatsResearchPage() {
           unique.push(name);
         });
         setLeagueOptions(["All leagues", ...unique]);
+        setSeasons(sortSeasonValues((seasonsData || []).filter(Boolean)));
         const positionList = (positionsData || []).map((code) => ({
           code,
           label: POSITIONS_GLOSSARY[code] || code,
@@ -143,6 +176,7 @@ export default function StatsResearchPage() {
           metric_x: metricX,
           metric_y: metricY,
           league: selectedLeague !== "All leagues" ? selectedLeague : undefined,
+          season: selectedSeason || undefined,
           positions: positionsAll ? undefined : selectedPositions.join(","),
           min_minutes: minMinutes,
         });
@@ -155,7 +189,7 @@ export default function StatsResearchPage() {
       }
     }, 200);
     return () => clearTimeout(handle);
-  }, [metricX, metricY, selectedLeague, positionsAll, selectedPositions, minMinutes]);
+  }, [metricX, metricY, selectedLeague, selectedSeason, positionsAll, selectedPositions, minMinutes]);
 
   useEffect(() => {
     if (!metricX || !metricY || metricX !== metricY) return;
@@ -275,9 +309,12 @@ export default function StatsResearchPage() {
         .join(", ");
       title += ` | Positions: ${labels}`;
     }
+    if (selectedSeason) {
+      title += ` | Season: ${selectedSeason}`;
+    }
     title += ` | Min ${minMinutes} mins`;
     return title;
-  }, [metricXLabel, metricYLabel, selectedLeague, positionsAll, selectedPositions, minMinutes]);
+  }, [metricXLabel, metricYLabel, selectedLeague, selectedSeason, positionsAll, selectedPositions, minMinutes]);
 
   const scatterData = useMemo(() => {
     const baseCustom = normalizedRows.map((row) => [
@@ -464,13 +501,24 @@ export default function StatsResearchPage() {
         </header>
 
         <Card>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <Label>League</Label>
               <Select value={selectedLeague} onChange={(e) => setSelectedLeague(e.target.value)}>
                 {leagueOptions.map((league) => (
                   <option key={league} value={league}>
                     {league}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Season</Label>
+              <Select value={selectedSeason} onChange={(e) => setSelectedSeason(e.target.value)}>
+                <option value="">All seasons</option>
+                {seasons.map((season) => (
+                  <option key={season} value={season}>
+                    {season}
                   </option>
                 ))}
               </Select>
