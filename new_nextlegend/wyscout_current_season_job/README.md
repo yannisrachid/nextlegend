@@ -14,12 +14,12 @@ Le dossier contient 2 niveaux de job:
 - lance le scraping/renaming ci-dessus
 - copie le CSV final vers `../data/wyscout_players_2025_2026_final.csv`
 - déclenche le pipeline Docker `new_nextlegend` (cleaning + scores + similarités + TM + upsert DB)
-- envoie un email de statut (SUCCESS/FAILED) avec tail de log
+- journalise le statut et met à jour les données visibles sur la Home (`Pipeline status`)
 
 ## Contenu
 
 - `run_wyscout_current_weekly.sh`: scraping + renommage uniquement
-- `run_current_season_e2e.sh`: scraping + pipeline + alerting (cron recommandé)
+- `run_current_season_e2e.sh`: scraping + pipeline + logs (cron recommandé)
 - `scripts/`: scripts Python requis (Playwright + reprise + renommage)
 - `wyscout_scraper/`: package scraper
 - `data/leagues.txt`: liste des compétitions à scraper
@@ -45,17 +45,11 @@ Puis renseigner dans `.env`:
 - `WYSCOUT_EMAIL`
 - `WYSCOUT_PASSWORD`
 
-Pour les alertes email (via SMTP), exporter aussi dans l'environnement (ou dans un wrapper cron):
-- `SMTP_HOST`
-- `SMTP_PORT` (default `587`)
-- `SMTP_USERNAME`
-- `SMTP_PASSWORD`
-- `SMTP_FROM`
-- `SMTP_TO` (ex: `you@example.com` ou `a@x.com,b@y.com`)
-- `SMTP_USE_TLS` (`1` par défaut)
+Monitoring principal:
+- Home de l'application (`Pipeline status`)
+- logs `wyscout_current_season_job/logs/*`
 
-Le monitoring principal peut se faire via la Home de l'application (`Pipeline status`).
-Les emails SMTP sont optionnels.
+SMTP reste optionnel et n'est pas requis en prod si `SKIP_EMAIL_ALERTS=1`.
 
 ## Test manuel
 
@@ -90,9 +84,10 @@ Variables d'environnement optionnelles:
 - `PYTHON_BIN` (défaut: `python3`)
 - `SKIP_SCRAPE=1` (test pipeline sans scraping)
 - `SKIP_PIPELINE=1` (test scraping sans DB upsert)
-- `SKIP_EMAIL_ALERTS=1` (désactive email pour test local)
+- `SKIP_EMAIL_ALERTS=1` (recommandé en prod actuelle)
 - `DOCKER_COMPOSE_FILE` (ex: `../infra/compose/docker-compose-prod.yml` sur VPS)
 - `SIM_TOPK` (défaut `30`, similarités pipeline)
+- `REQUIRE_SMTP_ALERTS=1` (optionnel, force échec si SMTP non configuré)
 
 Exemple:
 

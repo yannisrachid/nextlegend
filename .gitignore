@@ -6,6 +6,11 @@
 #!nextlegend/data/wyscout_players_cleaned.csv
 
 docs/
+!new_nextlegend/docs/
+new_nextlegend/docs/*
+!new_nextlegend/docs/README.md
+!new_nextlegend/docs/RUNBOOK.md
+!new_nextlegend/docs/HANDOFF_2026-03-11.md
 
 venv/
 .env
