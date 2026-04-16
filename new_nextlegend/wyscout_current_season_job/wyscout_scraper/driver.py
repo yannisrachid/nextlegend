@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from dataclasses import dataclass
 
 from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
@@ -29,7 +30,14 @@ class PlaywrightDriver:
             "--no-first-run",
             "--force-device-scale-factor=1",
         ]
-        browser = manager.chromium.launch(headless=config.headless, args=launch_args)
+        browser_channel = (os.getenv("PLAYWRIGHT_BROWSER_CHANNEL") or "").strip() or None
+        browser_executable = (os.getenv("PLAYWRIGHT_BROWSER_EXECUTABLE_PATH") or "").strip() or None
+        launch_kwargs = {"headless": config.headless, "args": launch_args}
+        if browser_channel:
+            launch_kwargs["channel"] = browser_channel
+        if browser_executable:
+            launch_kwargs["executable_path"] = browser_executable
+        browser = manager.chromium.launch(**launch_kwargs)
         context = browser.new_context(
             viewport={"width": 1600, "height": 1000},
             accept_downloads=True,

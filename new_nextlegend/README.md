@@ -5,7 +5,7 @@ This repository contains the production-ready NextLegend v2 stack:
 - Backend: FastAPI
 - Database: Postgres
 - Batch pipeline: Docker job
-- Object storage: external S3
+- Object storage: MinIO (S3-compatible)
 
 The docs are written to be self-contained for Codex: you should be able to understand and operate the project by reading this file + `apps/api/README.md`.
 
@@ -35,7 +35,7 @@ Database:
 - `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`
 - `DATABASE_URL`
 
-S3 (external):
+Object storage (MinIO, S3-compatible):
 - `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
 
 API / Front:
@@ -63,22 +63,20 @@ AI:
 
 ## Pipeline (batch)
 Pipeline flow:
-1) Download raw CSV from S3.
+1) Download raw CSV from MinIO (S3-compatible API).
 2) Normalize + clean.
 3) Transfermarkt enrichment (club mapping + player mapping + fuzzy fallback).
 4) Scores + percentiles + similarities.
-5) Archive artifacts to S3 and upsert Postgres.
+5) Archive artifacts to MinIO and upsert Postgres.
 
 Run (dev, local CSV at `data/wyscout_players_final.csv`):
 ```bash
 sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
 ```
 
-Run (prod, S3 CSV):
-```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml build pipeline-refresh
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm -e PIPELINE_REPLACE_TABLES=1 pipeline-refresh
-```
+Run (prod):
+- do not run the full raw pipeline directly on the current VPS,
+- follow `docs/RUNBOOK.md`.
 
 Important pipeline flags:
 - `SIM_TOPK` : top-k similarities per profile (default 30)
@@ -96,7 +94,7 @@ Transfermarkt reference files (`helpers/csv`):
 - `club_matching_reference.csv`
 - `tm_clubs_reference.csv`
 
-## S3 archives
+## MinIO archives
 - `s3://$S3_BUCKET/new_nextlegend/enriched/<run_id>_<timestamp>/...`
 - Artifacts: `raw`, `enriched`, `competitions`, `seasons`, `players`, `clubs`, `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`
 
@@ -186,35 +184,34 @@ Both should return 200.
 - Refresh -> stay logged in
 
 ## 8) Weekly data refresh
-Upload `wyscout_players_final.csv` to:
-- `s3://$S3_BUCKET/data/wyscout_players_final.csv`
+Current production refresh mode is local-compute, PRD-load.
 
-Then run:
-```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml build pipeline-refresh
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm -e PIPELINE_REPLACE_TABLES=1 pipeline-refresh
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build api frontend
-```
+Run the full current-season job locally, then publish the final CSVs and
+artifacts to the VPS/MinIO, and load those artifacts into PRD Postgres.
+
+Source of truth:
+- `docs/RUNBOOK.md`, section "Weekly refresh procedure"
+
+Do not run the full raw pipeline directly on the current VPS. The current VPS
+has about 3.7 GiB RAM and no swap; full runs with `SIM_TOPK=30` were OOM-killed
+with exit code `137`.
 
 ## 9) Current operating mode on VPS
-For routine operations, no CSV copy/manual backfill is needed anymore.
+For routine operations, the VPS is the serving and loading target, not the heavy
+compute host.
 
-The only recurring process is the weekly current-season cron on VPS
-(scrape + cleaning + scoring + TM + similarity + upsert):
-- `wyscout_current_season_job/run_current_season_e2e.sh`
-- `wyscout_current_season_job/cron.example`
-- `SKIP_EMAIL_ALERTS=1` (monitoring is done on Home page with `Pipeline status`).
+The recurring process must run locally or on a separate worker:
+- scrape current season,
+- clean and rename Wyscout data,
+- enrich Transfermarkt,
+- compute scores and similarity,
+- export artifacts,
+- upload/copy them to PRD,
+- run the PRD artifact loader.
 
 Historical note:
 - The one-time historical backfill has already been completed.
 - `scripts/backfill_vps_from_existing_csvs.sh` is kept only as disaster-recovery tooling.
-
-## 10) Optional: stop MinIO (if using external S3)
-MinIO is not needed for prod if you use external S3.
-```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml stop minio
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml rm -f minio
-```
 
 ---
 
@@ -251,13 +248,8 @@ cat backup.sql | sudo docker compose --env-file .env -f infra/compose/docker-com
 ```
 
 ## 6) Clear and rebuild similarity table
-```bash
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec db \
-  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TRUNCATE player_similarity;"
-
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm \
-  -e PIPELINE_REPLACE_SIMILARITY=1 pipeline-refresh
-```
+- Do not rebuild similarity directly on the current VPS.
+- Rebuild it through the local-compute, PRD-load flow in `docs/RUNBOOK.md`.
 
 ## 7) Health + auth checks
 ```bash
@@ -266,8 +258,9 @@ curl -I https://api.nextlegend.fr/health
 ```
 
 ## 8) Pipeline troubleshooting
-- If the pipeline is OOM killed: stop `api` + `frontend` temporarily.
-- Enable swap if needed.
+- If the full pipeline is OOM killed on the VPS, do not retry it as-is.
+- Use the local-compute, PRD-load flow in `docs/RUNBOOK.md`.
+- Upgrade the VPS or add swap before considering a VPS-hosted cron again.
 - Use TM progress logs: `TM_CLUB_LOG_EVERY`, `TM_FUZZY_LOG_EVERY`.
 
 ## 9) Caddy reload

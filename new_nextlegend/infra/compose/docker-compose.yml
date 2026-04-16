@@ -84,7 +84,7 @@ services:
         condition: service_started
     volumes:
       - ../../jobs/pipeline:/app
-      - ../../data:/data:ro
+      - ../../data:/data
       - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
@@ -108,10 +108,33 @@ services:
         condition: service_started
     volumes:
       - ../../jobs/pipeline:/app
-      - ../../data:/data:ro
+      - ../../data:/data
       - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
+
+  current-season-job:
+    build:
+      context: ../../
+      dockerfile: wyscout_current_season_job/Dockerfile
+    env_file:
+      - ../../.env
+      - ../../wyscout_current_season_job/.env
+    environment:
+      PROFILES_PATH: /profiles/player_profiles.json
+      PIPELINE_RUNNER: python
+      PIPELINE_INPUT_URI: /workspace/data/wyscout_players_final.csv
+      PIPELINE_INPUT_KIND: raw
+      TARGET_FINAL_CSV: /workspace/data/wyscout_players_final.csv
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - ../../:/workspace
+      - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../helpers/csv:/helpers/csv:ro
 
 volumes:
   db_data:

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import json
+import re
+import select
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -67,6 +71,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--passthrough",
         nargs=argparse.REMAINDER,
         help="Arguments passes a scripts/run_playwright.py --passthrough ...",
+    )
+    parser.add_argument(
+        "--attempt-idle-timeout-seconds",
+        type=int,
+        default=900,
+        help=(
+            "Timeout d'inactivite (sans nouvelle ligne stdout) pour une tentative. "
+            "Au-dela, interruption propre puis echec de la tentative. Defaut: 900"
+        ),
     )
     return parser.parse_args(argv)
 
@@ -275,7 +288,8 @@ def run_attempt(
     download_dir: Path,
     output_csv_name: str,
     calendar_preferences: list[str] | None,
-) -> int:
+    idle_timeout_seconds: int,
+) -> tuple[int, dict[str, dict[str, str]]]:
     """Run one scraper attempt on the current subset of remaining competitions."""
     with tempfile.NamedTemporaryFile(
         "w",
@@ -297,7 +311,76 @@ def run_attempt(
         )
         print(f"\n=== Tentative {attempt_idx} | competitions restantes: {len(competitions)} ===")
         print(f"Commande: {shlex.join(cmd)}")
-        return subprocess.run(cmd, cwd=PROJECT_ROOT, check=False).returncode
+        process = subprocess.Popen(
+            cmd,
+            cwd=PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        attempt_statuses: dict[str, dict[str, str]] = {}
+        success_pattern = re.compile(r"Données enregistrées pour (.+?) \((\d+) lignes\)\.")
+        skip_pattern = re.compile(r"(?:\[[^\]]+\]\s+\[DEBUG\]\s+)?(.+?): calendrier non conforme, compétition ignorée\.")
+        empty_pattern = re.compile(r"Aucun joueur trouvé pour (.+)\.")
+        error_pattern = re.compile(r"\[Export\] Erreur lors du traitement de '(.+?)'")
+
+        def collect_status_from_line(line: str) -> None:
+            line = line.strip()
+            if not line:
+                return
+            m = success_pattern.search(line)
+            if m:
+                attempt_statuses[m.group(1).strip()] = {
+                    "status": "success",
+                    "detail": m.group(2).strip(),
+                }
+                return
+            m = skip_pattern.search(line)
+            if m:
+                attempt_statuses[m.group(1).strip()] = {"status": "skipped_calendar"}
+                return
+            m = empty_pattern.search(line)
+            if m:
+                attempt_statuses[m.group(1).strip()] = {"status": "empty"}
+                return
+            m = error_pattern.search(line)
+            if m:
+                attempt_statuses[m.group(1).strip()] = {"status": "error"}
+
+        last_output_at = time.time()
+        idle_timeout_seconds = max(0, int(idle_timeout_seconds))
+        while True:
+            if process.poll() is not None:
+                break
+            readable, _, _ = select.select([process.stdout], [], [], 1.0)
+            if readable:
+                line = process.stdout.readline()
+                if line:
+                    print(line, end="")
+                    collect_status_from_line(line)
+                    last_output_at = time.time()
+                continue
+            if idle_timeout_seconds and (time.time() - last_output_at) > idle_timeout_seconds:
+                print(
+                    "[WATCHDOG] tentative interrompue: "
+                    f"aucune sortie stdout depuis {idle_timeout_seconds}s."
+                )
+                with contextlib.suppress(Exception):
+                    process.send_signal(signal.SIGINT)
+                try:
+                    process.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    with contextlib.suppress(Exception):
+                        process.kill()
+                break
+        with contextlib.suppress(Exception):
+            for line in process.stdout.readlines():
+                if line:
+                    print(line, end="")
+                    collect_status_from_line(line)
+        return process.wait(), attempt_statuses
     finally:
         cleanup_path(selected_path)
 
@@ -378,17 +461,20 @@ def main(argv: list[str] | None = None) -> int:
         state["updated_at"] = now_iso()
         save_json(state_path, state)
 
-        rc = run_attempt(
+        rc, attempt_statuses = run_attempt(
             attempt_idx=int(state["attempts_used"]),
             competitions=remaining,
             passthrough=passthrough,
             download_dir=download_dir,
             output_csv_name=args.output_csv_name,
             calendar_preferences=args.calendar_preferences,
+            idle_timeout_seconds=args.attempt_idle_timeout_seconds,
         )
 
         report = load_json(report_path)
         merge_report_into_state(state, report)
+        if attempt_statuses:
+            merge_report_into_state(state, {"competition_status": attempt_statuses})
         state["last_exit_code"] = rc
         state["updated_at"] = now_iso()
         save_json(state_path, state)

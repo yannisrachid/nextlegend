@@ -21,6 +21,7 @@ DOCKER_ENV_FILE="${DOCKER_ENV_FILE:-$REPO_ROOT/.env}"
 DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-$REPO_ROOT/infra/compose/docker-compose.yml}"
 PIPELINE_INPUT_URI="${PIPELINE_INPUT_URI:-/data/wyscout_players_2025_2026_final.csv}"
 PIPELINE_INPUT_KIND="${PIPELINE_INPUT_KIND:-raw}"
+PIPELINE_RUNNER="${PIPELINE_RUNNER:-docker}" # docker|python
 
 PIPELINE_REPLACE_TABLES="${PIPELINE_REPLACE_TABLES:-0}"
 PIPELINE_REPLACE_INPUT_SLICES="${PIPELINE_REPLACE_INPUT_SLICES:-1}"
@@ -101,14 +102,40 @@ verify_pipeline_run_status() {
     echo "[WARN] unable to verify pipeline run in DB (run_id missing)"
     return 0
   fi
-  local pg_user="${POSTGRES_USER:-nextlegend}"
-  local pg_db="${POSTGRES_DB:-nextlegend}"
   local status
-  status="$(
-    cd "$REPO_ROOT" && docker compose --env-file "$DOCKER_ENV_FILE" -f "$DOCKER_COMPOSE_FILE" exec -T db \
-      psql -U "$pg_user" -d "$pg_db" -Atc \
-      "SELECT status FROM pipeline_runs WHERE run_id='${PIPELINE_RUN_ID}' ORDER BY id DESC LIMIT 1;"
-  )"
+  if [[ "$PIPELINE_RUNNER" == "python" ]]; then
+    status="$(
+      PIPELINE_RUN_ID="$PIPELINE_RUN_ID" DATABASE_URL="${DATABASE_URL:-}" "$PYTHON_BIN" - <<'PY'
+import os
+import re
+import psycopg
+
+run_id = os.getenv("PIPELINE_RUN_ID", "").strip()
+db_url = os.getenv("DATABASE_URL", "").strip()
+if not run_id or not db_url:
+    raise SystemExit(0)
+
+db_url = re.sub(r"^postgresql\+[^:]+://", "postgresql://", db_url)
+with psycopg.connect(db_url) as conn:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM pipeline_runs WHERE run_id=%s ORDER BY id DESC LIMIT 1;",
+            (run_id,),
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            print(str(row[0]).strip())
+PY
+    )"
+  else
+    local pg_user="${POSTGRES_USER:-nextlegend}"
+    local pg_db="${POSTGRES_DB:-nextlegend}"
+    status="$(
+      cd "$REPO_ROOT" && docker compose --env-file "$DOCKER_ENV_FILE" -f "$DOCKER_COMPOSE_FILE" exec -T db \
+        psql -U "$pg_user" -d "$pg_db" -Atc \
+        "SELECT status FROM pipeline_runs WHERE run_id='${PIPELINE_RUN_ID}' ORDER BY id DESC LIMIT 1;"
+    )"
+  fi
   status="$(echo "$status" | tr -d '[:space:]')"
   if [[ "$status" != "success" ]]; then
     echo "[ERROR] pipeline run verification failed: run_id=${PIPELINE_RUN_ID} status='${status}'"
@@ -182,9 +209,11 @@ echo "[START] run_current_season_e2e started_at=${RUN_STARTED_AT}"
 echo "[INFO] log_file=${LOG_FILE}"
 echo "[INFO] repo_root=${REPO_ROOT}"
 
-check_command docker
 check_command awk
 check_command df
+if [[ "$PIPELINE_RUNNER" == "docker" ]]; then
+  check_command docker
+fi
 check_smtp_requirements
 free_mb="$(check_free_space_mb "$REPO_ROOT" || echo 0)"
 if [[ "$free_mb" =~ ^[0-9]+$ ]]; then
@@ -199,10 +228,15 @@ else
   echo "[WARN] unable to determine free disk space"
 fi
 
-(
-  cd "$REPO_ROOT"
-  docker compose --env-file "$DOCKER_ENV_FILE" -f "$DOCKER_COMPOSE_FILE" ps >/dev/null
-)
+if [[ "$PIPELINE_RUNNER" == "docker" ]]; then
+  (
+    cd "$REPO_ROOT"
+    docker compose --env-file "$DOCKER_ENV_FILE" -f "$DOCKER_COMPOSE_FILE" ps >/dev/null
+  )
+elif [[ "$PIPELINE_RUNNER" != "python" ]]; then
+  echo "[ERROR] unsupported PIPELINE_RUNNER=${PIPELINE_RUNNER} (expected: docker|python)"
+  exit 1
+fi
 
 if [[ "$SKIP_SCRAPE" != "1" ]]; then
   CURRENT_PHASE="scrape"
@@ -240,17 +274,30 @@ fi
 if [[ "$SKIP_PIPELINE" != "1" ]]; then
   CURRENT_PHASE="pipeline"
   echo "[STEP] pipeline upsert current season"
-  (
-    cd "$REPO_ROOT"
-    docker compose --env-file "$DOCKER_ENV_FILE" -f "$DOCKER_COMPOSE_FILE" run --rm \
-      -e PIPELINE_REPLACE_TABLES="$PIPELINE_REPLACE_TABLES" \
-      -e PIPELINE_REPLACE_INPUT_SLICES="$PIPELINE_REPLACE_INPUT_SLICES" \
-      -e PIPELINE_REPLACE_SIMILARITY="$PIPELINE_REPLACE_SIMILARITY" \
-      -e SIM_TOPK="$SIM_TOPK" \
-      pipeline \
-      --input-uri "$PIPELINE_INPUT_URI" \
-      --input-kind "$PIPELINE_INPUT_KIND"
-  )
+  if [[ "$PIPELINE_RUNNER" == "docker" ]]; then
+    (
+      cd "$REPO_ROOT"
+      docker compose --env-file "$DOCKER_ENV_FILE" -f "$DOCKER_COMPOSE_FILE" run --rm \
+        -e PIPELINE_REPLACE_TABLES="$PIPELINE_REPLACE_TABLES" \
+        -e PIPELINE_REPLACE_INPUT_SLICES="$PIPELINE_REPLACE_INPUT_SLICES" \
+        -e PIPELINE_REPLACE_SIMILARITY="$PIPELINE_REPLACE_SIMILARITY" \
+        -e SIM_TOPK="$SIM_TOPK" \
+        pipeline \
+        --input-uri "$PIPELINE_INPUT_URI" \
+        --input-kind "$PIPELINE_INPUT_KIND"
+    )
+  else
+    (
+      cd "$REPO_ROOT/jobs/pipeline"
+      PIPELINE_REPLACE_TABLES="$PIPELINE_REPLACE_TABLES" \
+      PIPELINE_REPLACE_INPUT_SLICES="$PIPELINE_REPLACE_INPUT_SLICES" \
+      PIPELINE_REPLACE_SIMILARITY="$PIPELINE_REPLACE_SIMILARITY" \
+      SIM_TOPK="$SIM_TOPK" \
+      "$PYTHON_BIN" -m pipeline.run \
+        --input-uri "$PIPELINE_INPUT_URI" \
+        --input-kind "$PIPELINE_INPUT_KIND"
+    )
+  fi
 
   PIPELINE_RUN_ID="$(grep -Eo 'run_id=[0-9a-f-]+' "$LOG_FILE" | tail -n1 | cut -d'=' -f2 || true)"
   if [[ -n "$PIPELINE_RUN_ID" ]]; then

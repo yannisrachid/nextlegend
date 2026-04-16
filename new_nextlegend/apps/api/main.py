@@ -68,6 +68,20 @@ app.add_middleware(
 )
 
 
+def _auth_json_response(request: Request, detail: str, status_code: int = 401) -> JSONResponse:
+    """
+    Return auth errors with explicit CORS headers so browser clients can read the
+    401 payload and trigger login redirect logic instead of generic CORS failures.
+    """
+    response = JSONResponse({"detail": detail}, status_code=status_code)
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    return response
+
+
 @app.middleware("http")
 async def auth_middleware(request, call_next):
     public_paths = {"/", "/health", "/auth/login", "/auth/logout", "/auth/me"}
@@ -77,7 +91,7 @@ async def auth_middleware(request, call_next):
         return await call_next(request)
     session_id = request.cookies.get(AUTH_COOKIE_NAME)
     if not session_id:
-        return JSONResponse({"detail": "Authentication required"}, status_code=401)
+        return _auth_json_response(request, "Authentication required", status_code=401)
     db_session = SessionLocal()
     try:
         _ensure_auth_schema(db_session)
@@ -85,7 +99,7 @@ async def auth_middleware(request, call_next):
     finally:
         db_session.close()
     if not user:
-        return JSONResponse({"detail": "Invalid session"}, status_code=401)
+        return _auth_json_response(request, "Invalid session", status_code=401)
     request.state.user = user
     return await call_next(request)
 
@@ -767,6 +781,7 @@ def auth_login(payload: AuthLoginRequest, session: Session = Depends(get_session
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if payload.legacy_user_id and payload.legacy_user_id != user["username"]:
+        _ensure_ai_schema(session)
         session.execute(
             text("UPDATE ai_conversations SET user_id = :new_id WHERE user_id = :old_id"),
             {"new_id": user["username"], "old_id": payload.legacy_user_id},

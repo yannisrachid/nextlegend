@@ -19,6 +19,7 @@ from typing import Optional
 import boto3
 import pandas as pd
 from botocore.client import Config
+from botocore.exceptions import ClientError
 from sqlalchemy import create_engine
 from io import BytesIO
 
@@ -115,6 +116,22 @@ def s3_client(cfg: PipelineConfig):
         aws_secret_access_key=cfg.s3_secret_key or None,
         config=Config(signature_version="s3v4"),
     )
+
+
+def ensure_bucket_exists(cfg: PipelineConfig):
+    if not cfg.bucket:
+        return
+    client = s3_client(cfg)
+    try:
+        client.head_bucket(Bucket=cfg.bucket)
+        return
+    except ClientError as exc:
+        err = (exc.response or {}).get("Error", {})
+        code = str(err.get("Code", "")).strip()
+        if code not in {"404", "NoSuchBucket", "NotFound"}:
+            raise
+    print(f"[S3] bucket missing, creating: {cfg.bucket}")
+    client.create_bucket(Bucket=cfg.bucket)
 
 
 def download_input(cfg: PipelineConfig, tmp_dir: Path) -> Path:
@@ -392,6 +409,7 @@ def main():
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
+        ensure_bucket_exists(cfg)
         input_path = download_input(cfg, tmp_dir)
         upload_raw_if_local(cfg, input_path)
         df_raw = load_dataframe(input_path, cfg.limit)

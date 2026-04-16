@@ -107,8 +107,6 @@ CREATE TABLE IF NOT EXISTS role_scores (
 
 CREATE UNIQUE INDEX IF NOT EXISTS role_scores_unique ON role_scores (player_season_id, profile);
 CREATE INDEX IF NOT EXISTS player_seasons_competition_season_idx ON player_seasons (competition_id, season_id);
-CREATE INDEX IF NOT EXISTS player_similarity_a_season_idx ON player_similarity (player_a_season_id);
-CREATE INDEX IF NOT EXISTS player_similarity_b_season_idx ON player_similarity (player_b_season_id);
 CREATE INDEX IF NOT EXISTS role_scores_player_season_idx ON role_scores (player_season_id);
 
 CREATE TABLE IF NOT EXISTS player_similarity (
@@ -121,6 +119,8 @@ CREATE TABLE IF NOT EXISTS player_similarity (
     similarity DOUBLE PRECISION,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS player_similarity_a_season_idx ON player_similarity (player_a_season_id);
+CREATE INDEX IF NOT EXISTS player_similarity_b_season_idx ON player_similarity (player_b_season_id);
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
     id SERIAL PRIMARY KEY,

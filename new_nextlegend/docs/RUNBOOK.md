@@ -49,37 +49,147 @@ Use this repo path on VPS:
 Do not use:
 - `~/new_nextlegend`
 
-## 3) Steady-state operations (no manual CSV copy)
-Current production mode is steady-state:
-- no recurring manual CSV transfer,
-- no recurring historical backfill.
+## 3) Steady-state operations
+Current production mode is local-compute, PRD-load:
+- the full Wyscout current-season job runs locally on Yannis' machine,
+- heavy pipeline work runs locally (`TM`, scores, role scores, similarity),
+- final CSVs and Parquet artifacts are copied to the VPS/MinIO,
+- the VPS only loads artifacts into PRD Postgres and serves the app.
+
+Do not run the full current-season pipeline directly on the current VPS. The VPS
+has about 3.7 GiB RAM and no swap; full runs with `SIM_TOPK=30` were OOM-killed
+with exit code `137`.
 
 One-time historical backfill was completed during VPS initialization.
 Keep `scripts/backfill_vps_from_existing_csvs.sh` only for exceptional recovery scenarios.
 
-## 4) Weekly cron for current season (2025/2026 only)
-The current-season pipeline runs weekly on Monday at 07:00 server time.
+## 4) Weekly scheduling policy
+Do not install the weekly current-season cron on the VPS while the current VPS
+size is kept.
 
-Cron entry:
-```cron
-0 7 * * 1 cd /home/yannis/nextlegend/new_nextlegend/wyscout_current_season_job && /usr/bin/flock -n /tmp/nextlegend_current_season.lock DOCKER_COMPOSE_FILE=/home/yannis/nextlegend/new_nextlegend/infra/compose/docker-compose-prod.yml SKIP_EMAIL_ALERTS=1 PIPELINE_REPLACE_INPUT_SLICES=1 PIPELINE_REPLACE_SIMILARITY=1 ./run_current_season_e2e.sh >> logs/cron_current_season.log 2>&1
-```
+If automation is needed, schedule it on:
+- Yannis' local machine, or
+- a separate worker/VM with enough RAM.
 
-Install/update without duplicates:
-```bash
-(crontab -l 2>/dev/null | grep -v 'nextlegend_current_season.lock'; echo '0 7 * * 1 cd /home/yannis/nextlegend/new_nextlegend/wyscout_current_season_job && /usr/bin/flock -n /tmp/nextlegend_current_season.lock DOCKER_COMPOSE_FILE=/home/yannis/nextlegend/new_nextlegend/infra/compose/docker-compose-prod.yml SKIP_EMAIL_ALERTS=1 PIPELINE_REPLACE_INPUT_SLICES=1 PIPELINE_REPLACE_SIMILARITY=1 ./run_current_season_e2e.sh >> logs/cron_current_season.log 2>&1') | crontab -
-```
+That scheduled job must follow the local-compute, PRD-load flow below.
 
-Verify:
+Remove any old VPS cron entry that calls:
+- `run_current_season_e2e.sh`
+- `run_current_season_e2e_via_docker.sh`
+- `current-season-job`
+
+Check VPS cron:
 ```bash
 crontab -l
 ```
 
-Important:
-- Use `flock -n` (with a space).
-- `flock-n` is invalid and must be removed if present.
+## 5) Weekly refresh procedure
+1) Run the end-to-end job locally.
 
-## 5) Monitoring (no SMTP required)
+```bash
+cd /Users/yannis/ylfc/new_nextlegend
+DOCKER_COMPOSE_FILE=infra/compose/docker-compose.yml \
+DOCKER_ENV_FILE=.env \
+SKIP_EMAIL_ALERTS=1 \
+PIPELINE_REPLACE_INPUT_SLICES=1 \
+PIPELINE_REPLACE_SIMILARITY=1 \
+./wyscout_current_season_job/run_current_season_e2e_via_docker.sh
+```
+
+Expected local outputs:
+- `data/wyscout_players_final.csv`
+- local `pipeline_runs` row with `status=success`
+- local DB updated for the current-season slices
+
+2) Publish final CSVs to PRD MinIO.
+
+Required PRD object:
+- `s3://nextlegend/data/wyscout_players_final.csv`
+
+Recommended PRD object for traceability:
+- `s3://nextlegend/data/wyscout_players_enriched_tm_scores_2025_2026_current.csv`
+
+3) Export local pipeline artifacts as Parquet.
+
+Required artifact set:
+- `competitions.parquet`
+- `seasons.parquet`
+- `players.parquet`
+- `clubs.parquet`
+- `player_seasons.parquet`
+- `player_metrics.parquet`
+- `role_scores.parquet`
+- `player_similarity.parquet`
+
+Copy the completed artifact directory to the VPS:
+
+```text
+~/nextlegend/new_nextlegend/data/prd_upsert_artifacts_current/
+```
+
+4) Run the PRD loader from those artifacts.
+
+The PRD loader must:
+- keep `PIPELINE_REPLACE_TABLES=0`,
+- use `PIPELINE_REPLACE_INPUT_SLICES=1`,
+- use `PIPELINE_REPLACE_SIMILARITY=1`,
+- load artifacts into Postgres from the VPS container,
+- insert a `pipeline_runs` success row.
+
+This preserves historical seasons and replaces only the current-season slices
+plus the similarity table.
+
+5) Restart app services after `.env` or image changes.
+
+```bash
+cd ~/nextlegend/new_nextlegend
+docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --no-deps api frontend
+```
+
+6) Validate PRD.
+
+```bash
+cd ~/nextlegend/new_nextlegend
+set -a && . ./.env && set +a
+
+docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+    SELECT
+      (SELECT count(*) FROM player_seasons) AS player_seasons,
+      (SELECT count(*) FROM player_metrics) AS player_metrics,
+      (SELECT count(*) FROM role_scores) AS role_scores,
+      (SELECT count(*) FROM player_similarity) AS player_similarity;
+
+    SELECT id, run_id, status, rows_processed, source_uri, started_at
+    FROM pipeline_runs
+    ORDER BY id DESC
+    LIMIT 3;
+  "
+
+curl -sk https://api.nextlegend.fr/health
+curl -sk -o /tmp/front.out -w "%{http_code}\n" https://app.nextlegend.fr
+```
+
+Reference validation from the last successful PRD load:
+
+```text
+run_id=b4199ef4-b653-4618-b3fe-056451f77043
+rows_processed=43429
+source_uri=s3://nextlegend/data/wyscout_players_final.csv
+
+player_seasons     190546
+player_metrics     190239
+role_scores        6669110
+player_similarity  1302650
+```
+
+Future automation target:
+- `export_prd_artifacts_from_local.sh`
+- `upload_prd_minio_inputs.sh`
+- `load_prd_artifacts_on_vps.sh`
+- `validate_prd_refresh.sh`
+
+## 6) Monitoring (no SMTP required)
 Monitoring is done in Home page:
 - Frontend Home shows `Pipeline status`.
 - It also indicates whether current season (`2025/2026` or `2026`) is loaded.
@@ -88,13 +198,18 @@ Operational logs:
 - `wyscout_current_season_job/logs/current_season_e2e_*.log`
 - `wyscout_current_season_job/logs/cron_current_season.log`
 
-Manual run on VPS:
+Manual local run:
 ```bash
-cd ~/nextlegend/new_nextlegend/wyscout_current_season_job
-DOCKER_COMPOSE_FILE=/home/yannis/nextlegend/new_nextlegend/infra/compose/docker-compose-prod.yml SKIP_EMAIL_ALERTS=1 PIPELINE_REPLACE_INPUT_SLICES=1 PIPELINE_REPLACE_SIMILARITY=1 ./run_current_season_e2e.sh
+cd /Users/yannis/ylfc/new_nextlegend
+DOCKER_COMPOSE_FILE=infra/compose/docker-compose.yml \
+DOCKER_ENV_FILE=.env \
+SKIP_EMAIL_ALERTS=1 \
+PIPELINE_REPLACE_INPUT_SLICES=1 \
+PIPELINE_REPLACE_SIMILARITY=1 \
+./wyscout_current_season_job/run_current_season_e2e_via_docker.sh
 ```
 
-## 6) Maintenance
+## 7) Maintenance
 1) Update code + rebuild
 ```bash
 cd ~/nextlegend/new_nextlegend
@@ -131,15 +246,10 @@ cat backup.sql | sudo docker compose --env-file .env -f infra/compose/docker-com
 ```
 
 6) Rebuild similarity table
-```bash
-cd ~/nextlegend/new_nextlegend
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec db \
-  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TRUNCATE player_similarity;"
-
-sudo docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm \
-  -e PIPELINE_REPLACE_SIMILARITY=1 pipeline-refresh
-```
+- Do not rebuild similarity directly on the current VPS.
+- Rebuild it through the local-compute, PRD-load flow above.
 
 7) Pipeline OOM mitigation
-- Stop `api` and `frontend`, add swap, rerun pipeline.
-- Restart `api` and `frontend` after pipeline success.
+- Do not retry the full raw pipeline on the current VPS.
+- Use the local-compute, PRD-load flow above.
+- If the business decision changes, upgrade the VPS or add swap before enabling a VPS cron.
