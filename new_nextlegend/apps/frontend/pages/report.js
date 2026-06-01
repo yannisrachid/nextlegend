@@ -311,6 +311,12 @@ export default function ReportPage() {
   const [assignNeedId, setAssignNeedId] = useState("");
   const [assignMessage, setAssignMessage] = useState("");
   const [assignBusy, setAssignBusy] = useState(false);
+  const [mercatoRequests, setMercatoRequests] = useState([]);
+  const [mercatoNeedId, setMercatoNeedId] = useState("");
+  const [mercatoNote, setMercatoNote] = useState("");
+  const [mercatoMessage, setMercatoMessage] = useState("");
+  const [mercatoLoading, setMercatoLoading] = useState(false);
+  const [mercatoBusy, setMercatoBusy] = useState(false);
 
   const similarLimit = 10;
 
@@ -410,6 +416,26 @@ export default function ReportPage() {
 
   useEffect(() => {
     if (!selectedPlayerId) {
+      setMercatoRequests([]);
+      setMercatoNeedId("");
+      return;
+    }
+    const loadMercato = async () => {
+      setMercatoLoading(true);
+      try {
+        const res = await fetchJson("/mercato/requests");
+        setMercatoRequests(res?.items || []);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setMercatoLoading(false);
+      }
+    };
+    loadMercato();
+  }, [selectedPlayerId]);
+
+  useEffect(() => {
+    if (!selectedPlayerId) {
       return;
     }
     if (!report?.similarities_enabled) {
@@ -499,6 +525,27 @@ export default function ReportPage() {
       setAssignMessage("Unable to assign player.");
     } finally {
       setAssignBusy(false);
+    }
+  };
+
+  const handleAssignMercato = async () => {
+    if (!mercatoNeedId || !selectedPlayerId || mercatoBusy) return;
+    setMercatoBusy(true);
+    setMercatoMessage("");
+    try {
+      const res = await postJson(`/mercato/needs/${mercatoNeedId}/candidates`, {
+        player_id: Number(selectedPlayerId),
+        source: "report",
+        status: "suggested",
+        agent_note: mercatoNote || null,
+      });
+      setMercatoMessage(res?.added ? "Player assigned to Mercato need." : "Player already assigned to that Mercato need.");
+      setMercatoNote("");
+    } catch (err) {
+      console.error(err);
+      setMercatoMessage("Unable to assign player to Mercato.");
+    } finally {
+      setMercatoBusy(false);
     }
   };
 
@@ -981,6 +1028,50 @@ export default function ReportPage() {
                         ) : null}
                       </div>
                     ) : null}
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                        Assign to a Mercato need
+                      </p>
+                      <div className="flex flex-col gap-2">
+                        <select
+                          className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 text-sm"
+                          value={mercatoNeedId}
+                          onChange={(e) => setMercatoNeedId(e.target.value)}
+                          disabled={mercatoLoading}
+                        >
+                          <option value="">
+                            {mercatoLoading ? "Loading Mercato needs..." : "Select a Mercato need"}
+                          </option>
+                          {mercatoRequests.flatMap((requestItem) =>
+                            (requestItem.needs || []).map((need) => (
+                              <option key={need.id} value={need.id}>
+                                {requestItem.club_name || "Club"} • {need.position || "Position"} • {requestItem.priority}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                        <textarea
+                          className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 text-sm"
+                          rows={2}
+                          value={mercatoNote}
+                          onChange={(e) => setMercatoNote(e.target.value)}
+                          placeholder="Optional agent note"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="text-xs uppercase tracking-[0.2em] px-3 py-2 border border-primary text-primary rounded-full disabled:opacity-60"
+                            onClick={handleAssignMercato}
+                            disabled={!mercatoNeedId || mercatoBusy}
+                          >
+                            Assign Mercato
+                          </button>
+                        </div>
+                      </div>
+                      {mercatoMessage ? (
+                        <p className="text-xs text-slate-300">{mercatoMessage}</p>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
                 {availableSeasons.length > 0 ? (
@@ -1073,7 +1164,7 @@ export default function ReportPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <p className="text-xs uppercase text-slate-400">
-                      Global score
+                      Global score adjusted
                     </p>
                     <p className="text-2xl font-bold text-primary">
                       {report.player.global_score_adjusted?.toFixed(1) ?? "—"}
@@ -1081,7 +1172,7 @@ export default function ReportPage() {
                   </div>
                   <div>
                     <p className="text-xs uppercase text-slate-400">
-                      Role pct (L/G)
+                      Role pct (league / adjusted)
                     </p>
                     <p className="text-lg font-semibold">
                       {report.player.assigned_role_pct_league?.toFixed(0) ?? "—"} /
@@ -1167,7 +1258,8 @@ export default function ReportPage() {
                     </p>
                     <p className="text-sm text-slate-300 mt-2">
                       League: {role.pct_league?.toFixed(0) ?? "—"} • Global:{" "}
-                      {role.pct_global?.toFixed(1) ?? "—"}
+                      {role.pct_global?.toFixed(1) ?? "—"} • Adjusted:{" "}
+                      {role.pct_global_adjusted?.toFixed(1) ?? "—"}
                     </p>
                   </div>
                 ))}

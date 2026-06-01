@@ -77,6 +77,7 @@ services:
       - ../../.env
     environment:
       PROFILES_PATH: /profiles/player_profiles.json
+      MERCATO_LEAGUE_LEVELS_PATH: /config/mercato_league_levels.json
     depends_on:
       db:
         condition: service_started
@@ -86,6 +87,7 @@ services:
       - ../../jobs/pipeline:/app
       - ../../data:/data
       - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../apps/api/helpers/mercato_league_levels.json:/config/mercato_league_levels.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
 
@@ -101,6 +103,7 @@ services:
       PIPELINE_REPLACE_TABLES: 1
       S3_PREFIX: new_nextlegend
       ARCHIVE_RETAIN_RUNS: 8
+      MERCATO_LEAGUE_LEVELS_PATH: /config/mercato_league_levels.json
     depends_on:
       db:
         condition: service_started
@@ -110,6 +113,7 @@ services:
       - ../../jobs/pipeline:/app
       - ../../data:/data
       - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../apps/api/helpers/mercato_league_levels.json:/config/mercato_league_levels.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
 

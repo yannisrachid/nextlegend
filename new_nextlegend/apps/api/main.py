@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Any, Optional, List
 from pathlib import Path
 import os
 import secrets
@@ -49,12 +49,14 @@ from agentic import (
     run_player_agent,
     run_scout_agent,
 )
+from mercato_logic import calculate_calibrated_level, clamp as logic_clamp, safe_float as logic_safe_float
 from langchain.callbacks import get_openai_callback
 import toml
 import re
 import unicodedata
 import json
 import csv
+import threading
 from bisect import bisect_right
 
 app = FastAPI(title="NextLegend v2 API", version="0.1.0")
@@ -66,6 +68,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_MERCATO_SCHEMA_LOCK = threading.Lock()
+_MERCATO_SCHEMA_READY = False
 
 
 def _auth_json_response(request: Request, detail: str, status_code: int = 401) -> JSONResponse:
@@ -183,6 +188,80 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 CREATE INDEX IF NOT EXISTS auth_sessions_user_id_idx ON auth_sessions(user_id);
 CREATE INDEX IF NOT EXISTS auth_users_email_idx ON auth_users(email);
+"""
+
+MERCATO_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS mercato_requests (
+    id SERIAL PRIMARY KEY,
+    club_id INT REFERENCES clubs(id),
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    assigned_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    season TEXT NOT NULL DEFAULT '2026',
+    title TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    status TEXT NOT NULL DEFAULT 'new',
+    budget_min DOUBLE PRECISION,
+    budget_max DOUBLE PRECISION,
+    salary_max DOUBLE PRECISION,
+    deal_type TEXT NOT NULL DEFAULT 'any',
+    extra_info TEXT,
+    archived_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS mercato_needs (
+    id SERIAL PRIMARY KEY,
+    mercato_request_id INT NOT NULL REFERENCES mercato_requests(id) ON DELETE CASCADE,
+    position TEXT,
+    role TEXT,
+    age_min INT,
+    age_max INT,
+    preferred_foot TEXT,
+    height_min DOUBLE PRECISION,
+    target_league_level TEXT,
+    required_player_level DOUBLE PRECISION,
+    nationality_preferences TEXT,
+    contract_preferences TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS mercato_candidates (
+    id SERIAL PRIMARY KEY,
+    mercato_need_id INT NOT NULL REFERENCES mercato_needs(id) ON DELETE CASCADE,
+    player_id INT NOT NULL REFERENCES players(id),
+    player_season_id INT,
+    source TEXT NOT NULL DEFAULT 'manual',
+    status TEXT NOT NULL DEFAULT 'suggested',
+    match_score DOUBLE PRECISION,
+    calibrated_player_level DOUBLE PRECISION,
+    raw_player_level DOUBLE PRECISION,
+    league_coefficient DOUBLE PRECISION,
+    explanation_json JSONB,
+    agent_note TEXT,
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(mercato_need_id, player_id)
+);
+
+CREATE TABLE IF NOT EXISTS mercato_candidate_events (
+    id SERIAL PRIMARY KEY,
+    mercato_candidate_id INT NOT NULL REFERENCES mercato_candidates(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT,
+    note TEXT,
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS mercato_requests_club_status_idx ON mercato_requests(club_id, status);
+CREATE INDEX IF NOT EXISTS mercato_requests_agent_idx ON mercato_requests(assigned_agent_id);
+CREATE INDEX IF NOT EXISTS mercato_needs_request_idx ON mercato_needs(mercato_request_id);
+CREATE INDEX IF NOT EXISTS mercato_candidates_need_status_idx ON mercato_candidates(mercato_need_id, status);
 """
 
 AUTH_COOKIE_NAME = "nl_session"
@@ -367,6 +446,41 @@ def _ensure_auth_schema(session: Session) -> None:
         )
     session.commit()
     _seed_auth_users(session)
+
+
+def _ensure_mercato_schema(session: Session) -> None:
+    global _MERCATO_SCHEMA_READY
+    if _MERCATO_SCHEMA_READY:
+        return
+    with _MERCATO_SCHEMA_LOCK:
+        if _MERCATO_SCHEMA_READY:
+            return
+        _ensure_auth_schema(session)
+        for table_name in (
+            "mercato_requests",
+            "mercato_needs",
+            "mercato_candidates",
+            "mercato_candidate_events",
+        ):
+            if not _table_exists(session, table_name):
+                _drop_orphan_type(session, table_name)
+        statements = [chunk.strip() for chunk in MERCATO_SCHEMA_SQL.split(";") if chunk.strip()]
+        for statement in statements:
+            session.execute(text(statement))
+        session.execute(
+            text(
+                "ALTER TABLE mercato_candidates "
+                "ADD COLUMN IF NOT EXISTS player_season_id INT"
+            )
+        )
+        session.execute(
+            text(
+                "ALTER TABLE mercato_candidates "
+                "DROP CONSTRAINT IF EXISTS mercato_candidates_player_season_id_fkey"
+            )
+        )
+        session.commit()
+        _MERCATO_SCHEMA_READY = True
 
 
 def _hash_password(password: str, algo: str = "bcrypt") -> str:
@@ -721,6 +835,73 @@ class ClubNeedPlayerAdd(BaseModel):
 
 class ClubNeedPlayerOrder(BaseModel):
     player_ids: list[int]
+
+
+class MercatoNeedPayload(BaseModel):
+    id: Optional[int] = None
+    position: Optional[str] = None
+    role: Optional[str] = None
+    age_min: Optional[int] = None
+    age_max: Optional[int] = None
+    preferred_foot: Optional[str] = None
+    height_min: Optional[float] = None
+    target_league_level: Optional[str] = None
+    required_player_level: Optional[float] = None
+    nationality_preferences: Optional[str] = None
+    contract_preferences: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class MercatoRequestCreate(BaseModel):
+    club_id: Optional[int] = None
+    assigned_agent_id: Optional[str] = None
+    season: str = "2026"
+    title: Optional[str] = None
+    priority: str = "medium"
+    status: str = "new"
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    salary_max: Optional[float] = None
+    deal_type: str = "any"
+    extra_info: Optional[str] = None
+    need: MercatoNeedPayload
+
+
+class MercatoRequestUpdate(BaseModel):
+    club_id: Optional[int] = None
+    assigned_agent_id: Optional[str] = None
+    season: Optional[str] = None
+    title: Optional[str] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
+    budget_min: Optional[float] = None
+    budget_max: Optional[float] = None
+    salary_max: Optional[float] = None
+    deal_type: Optional[str] = None
+    extra_info: Optional[str] = None
+    need: Optional[MercatoNeedPayload] = None
+
+
+class MercatoCandidateCreate(BaseModel):
+    player_id: int
+    player_season_id: Optional[int] = None
+    source: str = "manual"
+    status: str = "suggested"
+    agent_note: Optional[str] = None
+
+
+class MercatoCandidateUpdate(BaseModel):
+    status: Optional[str] = None
+    agent_note: Optional[str] = None
+
+
+class MercatoCandidateStatus(BaseModel):
+    status: str
+    note: Optional[str] = None
+
+
+class MercatoShortlistGenerate(BaseModel):
+    competitions: list[str] = []
 
 
 class AuthLoginRequest(BaseModel):
@@ -2451,6 +2632,7 @@ AGGREGATES_PATH = Path(__file__).resolve().parent / "helpers" / "competition_agg
 ROLE_METRICS_PATH = Path(__file__).resolve().parent / "helpers" / "role_metrics.json"
 LEAGUE_TRANSLATION_PATH = Path(__file__).resolve().parent / "helpers" / "league_translation_matrix.csv"
 PLAYER_PROFILES_PATH = Path(__file__).resolve().parent / "helpers" / "player_profiles.json"
+MERCATO_LEAGUE_LEVELS_PATH = Path(__file__).resolve().parent / "helpers" / "mercato_league_levels.json"
 
 _COMPETITION_AGGREGATES: Optional[list[dict[str, list[str]]]] = None
 _COMPETITION_AGGREGATES_MTIME: Optional[float] = None
@@ -2476,6 +2658,8 @@ _LEAGUE_ALIAS_EXTRA_MTIME: Optional[float] = None
 _OPTA_CLUBS: Optional[dict[str, dict[str, float | int | str]]] = None
 _OPTA_CLUBS_MTIME: Optional[float] = None
 _OPTA_CLUBS_SORTED: Optional[list[tuple[str, dict[str, float | int | str]]]] = None
+_MERCATO_LEAGUE_LEVELS: Optional[dict[str, Any]] = None
+_MERCATO_LEAGUE_LEVELS_MTIME: Optional[float] = None
 
 
 def _get_tm_columns(session: Session) -> list[str]:
@@ -2821,6 +3005,1008 @@ def _role_pct_fallback_values(
         return None, None
     data = _row_to_dict(row)
     return data.get("league_pct"), data.get("global_pct")
+
+
+DEFAULT_MERCATO_LEAGUE_LEVELS = {
+    "bands": [
+        {"label": "Premier League", "coefficient": 1.0, "cap": 98, "difficulty_min": 8.9},
+        {"label": "Liga / Serie A / Bundesliga", "coefficient": 0.95, "cap": 96, "difficulty_min": 8.3},
+        {"label": "Ligue 1", "coefficient": 0.88, "cap": 92, "difficulty_min": 8.0},
+        {"label": "Championship / Eredivisie / Liga Portugal", "coefficient": 0.78, "cap": 86, "difficulty_min": 7.4},
+        {"label": "Ligue 2 / D2 top pays", "coefficient": 0.68, "cap": 80, "difficulty_min": 6.8},
+        {"label": "D1 faible / D2 moyenne", "coefficient": 0.55, "cap": 74, "difficulty_min": 5.7},
+        {"label": "D2 Bulgarie / championnat tres faible", "coefficient": 0.45, "cap": 70, "difficulty_min": 0.0},
+    ],
+    "exact_overrides": [],
+}
+
+MERCATO_RECOMMENDATION_SEASONS = ["2025/2026", "2025", "2026"]
+
+
+def _safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
+    return logic_safe_float(value, default)
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return logic_clamp(value, low, high)
+
+
+def _current_user_id(request: Request) -> Optional[str]:
+    user = getattr(request.state, "user", None) or {}
+    return user.get("username")
+
+
+def _clean_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _load_mercato_league_levels() -> dict[str, Any]:
+    global _MERCATO_LEAGUE_LEVELS, _MERCATO_LEAGUE_LEVELS_MTIME
+    try:
+        mtime = MERCATO_LEAGUE_LEVELS_PATH.stat().st_mtime if MERCATO_LEAGUE_LEVELS_PATH.exists() else None
+    except Exception:
+        mtime = None
+    if _MERCATO_LEAGUE_LEVELS is not None and mtime == _MERCATO_LEAGUE_LEVELS_MTIME:
+        return _MERCATO_LEAGUE_LEVELS
+    levels = DEFAULT_MERCATO_LEAGUE_LEVELS
+    if MERCATO_LEAGUE_LEVELS_PATH.exists():
+        try:
+            data = json.loads(MERCATO_LEAGUE_LEVELS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                levels = data
+            elif isinstance(data, list):
+                levels = {"bands": data, "exact_overrides": []}
+        except Exception:
+            levels = DEFAULT_MERCATO_LEAGUE_LEVELS
+    _MERCATO_LEAGUE_LEVELS = levels
+    _MERCATO_LEAGUE_LEVELS_MTIME = mtime
+    return levels
+
+
+def _mercato_league_adjustment(
+    competition_name: Optional[str],
+    existing_strength_factor: Optional[float] = None,
+) -> dict[str, Any]:
+    league_meta, _ = _load_league_translation_meta()
+    config = _load_mercato_league_levels()
+    bands = sorted(
+        config.get("bands", []) or [],
+        key=lambda item: float(item.get("difficulty_min", 0.0) or 0.0),
+        reverse=True,
+    )
+    overrides = config.get("exact_overrides", []) or []
+    difficulty = None
+    if competition_name and competition_name in league_meta:
+        difficulty = league_meta[competition_name].get("difficulty")
+    if difficulty is None and existing_strength_factor is not None and league_meta:
+        values = [
+            meta.get("difficulty")
+            for meta in league_meta.values()
+            if meta.get("difficulty") is not None
+        ]
+        mean_difficulty = sum(values) / len(values) if values else None
+        if mean_difficulty:
+            difficulty = float(existing_strength_factor) * mean_difficulty
+    for override in overrides:
+        if competition_name and str(override.get("competition") or "").strip() == competition_name:
+            return {
+                "label": override.get("label"),
+                "coefficient": float(override.get("coefficient", 0.65)),
+                "cap": float(override.get("cap", 80)),
+                "difficulty": difficulty,
+                "existing_strength_factor": existing_strength_factor,
+            }
+    if difficulty is not None:
+        for level in bands:
+            minimum = _safe_float(level.get("difficulty_min"), 0.0) or 0.0
+            if difficulty >= minimum:
+                return {
+                    "label": level.get("label"),
+                    "coefficient": float(level.get("coefficient", 0.65)),
+                    "cap": float(level.get("cap", 80)),
+                    "difficulty": difficulty,
+                    "existing_strength_factor": existing_strength_factor,
+                }
+    return {
+        "label": "D1 faible / D2 moyenne",
+        "coefficient": 0.55,
+        "cap": 74.0,
+        "difficulty": difficulty,
+        "existing_strength_factor": existing_strength_factor,
+    }
+
+
+def calculate_calibrated_player_level(player: dict[str, Any]) -> dict[str, Any]:
+    league_meta, _ = _load_league_translation_meta()
+    return calculate_calibrated_level(player, league_meta, _load_mercato_league_levels())
+
+
+def _token_overlap_score(*texts: Optional[str]) -> float:
+    source = _normalize_phrase(" ".join([text or "" for text in texts[:1]]))
+    target = _normalize_phrase(" ".join([text or "" for text in texts[1:]]))
+    if not source or not target:
+        return 0.0
+    source_tokens = {token for token in source.split() if len(token) >= 3}
+    target_tokens = {token for token in target.split() if len(token) >= 3}
+    if not source_tokens or not target_tokens:
+        return 0.0
+    return len(source_tokens & target_tokens) / len(source_tokens | target_tokens)
+
+
+def _position_fit(need: dict[str, Any], player: dict[str, Any]) -> float:
+    wanted_position = _normalize_phrase(need.get("position") or "")
+    wanted_role = _normalize_phrase(need.get("role") or "")
+    position = _normalize_phrase(player.get("position") or "")
+    second_position = _normalize_phrase(player.get("second_position") or "")
+    assigned_role = _normalize_phrase(player.get("assigned_role") or "")
+    score = 0.0
+    if wanted_position and (wanted_position in position or wanted_position in second_position):
+        score += 0.55 if wanted_position in position else 0.35
+    elif wanted_position and position and (position in wanted_position or second_position in wanted_position):
+        score += 0.35
+    if wanted_role and assigned_role:
+        if wanted_role == assigned_role or wanted_role in assigned_role or assigned_role in wanted_role:
+            score += 0.45
+        else:
+            score += 0.25 * _token_overlap_score(wanted_role, assigned_role)
+    elif not wanted_role and score > 0:
+        score += 0.45
+    return _clamp(score, 0.0, 1.0)
+
+
+def _mercato_match_candidate(need: dict[str, Any], request_row: dict[str, Any], player: dict[str, Any]) -> dict[str, Any]:
+    calibration = calculate_calibrated_player_level(player)
+    calibrated = float(calibration["calibrated_player_level"])
+    required = _safe_float(need.get("required_player_level"), 75.0) or 75.0
+    level_fit = _clamp(1.0 - abs(calibrated - required) / 35.0, 0.0, 1.0)
+    position_fit = _position_fit(need, player)
+    target_level = _normalize_phrase(need.get("target_league_level") or request_row.get("competition_name") or "")
+    current_league = _normalize_phrase(player.get("competition_name") or "")
+    league_fit = 0.65
+    if target_level and current_league:
+        league_fit = 1.0 if target_level in current_league or current_league in target_level else 0.65
+    league_fit = min(league_fit, _clamp((calibration["league_coefficient"] - 0.4) / 0.6, 0.25, 1.0))
+    age = _safe_float(player.get("age"))
+    age_fit = 0.75
+    if age is not None:
+        if need.get("age_min") is not None and age < need["age_min"]:
+            age_fit -= min(0.5, (need["age_min"] - age) * 0.12)
+        if need.get("age_max") is not None and age > need["age_max"]:
+            age_fit -= min(0.6, (age - need["age_max"]) * 0.12)
+        if age <= 23:
+            age_fit += 0.15
+    foot_fit = 1.0
+    preferred_foot = _normalize_phrase(need.get("preferred_foot") or "")
+    player_foot = _normalize_phrase(player.get("foot") or player.get("tm_foot") or "")
+    if preferred_foot and preferred_foot not in {"any", "indifferent"}:
+        foot_fit = 1.0 if preferred_foot in player_foot else 0.55
+    height_fit = 1.0
+    height_min = _safe_float(need.get("height_min"))
+    height = _safe_float(player.get("height_cm") or player.get("tm_height"))
+    if height_min is not None and height is not None and height < height_min:
+        height_fit = 0.65
+    availability_fit = 0.75
+    market_value = _safe_float(player.get("tm_market_value_numeric"))
+    budget_max = _safe_float(request_row.get("budget_max"))
+    if budget_max is not None and market_value is not None:
+        availability_fit = 1.0 if market_value <= budget_max else max(0.35, 1.0 - (market_value - budget_max) / max(budget_max, 1.0))
+    semantic_fit = _token_overlap_score(
+        " ".join([str(need.get("notes") or ""), str(request_row.get("extra_info") or "")]),
+        " ".join([str(player.get("assigned_role") or ""), str(player.get("position") or ""), str(player.get("competition_name") or "")]),
+    )
+    minutes = _safe_float(player.get("minutes_played"), 0.0) or 0.0
+    reliability = _clamp(minutes / 1800.0, 0.25, 1.0)
+    scout_signal = 0.5
+    if player.get("tm_profile_url") or player.get("tm_id"):
+        scout_signal += 0.15
+    breakdown = {
+        "position_role_fit": round(position_fit * 25, 2),
+        "calibrated_level_fit": round(level_fit * 20, 2),
+        "league_fit": round(league_fit * 15, 2),
+        "age_potential_fit": round(_clamp(age_fit, 0.0, 1.0) * 10, 2),
+        "budget_availability_fit": round(_clamp((availability_fit + foot_fit + height_fit) / 3, 0.0, 1.0) * 10, 2),
+        "semantic_fit": round(semantic_fit * 10, 2),
+        "data_reliability": round(reliability * 5, 2),
+        "scout_signal": round(_clamp(scout_signal, 0.0, 1.0) * 5, 2),
+    }
+    match_score = round(sum(breakdown.values()), 2)
+    strengths = []
+    risks = []
+    if position_fit >= 0.75:
+        strengths.append("Position and role are aligned with the need.")
+    if calibrated >= required - 5:
+        strengths.append("Calibrated level is close to the requested level.")
+    if age is not None and age <= 23:
+        strengths.append("Age profile leaves room for progression.")
+    if calibration["league_coefficient"] < 0.68:
+        risks.append("Strong league-level penalty applied because current competition is below the target context.")
+    if reliability < 0.55:
+        risks.append("Minutes sample is limited, so confidence is lower.")
+    if foot_fit < 1.0:
+        risks.append("Preferred-foot criterion is not fully matched.")
+    if not strengths:
+        strengths.append("Profile remains relevant on aggregate matching score.")
+    reason = (
+        f"Profile fits the need: {player.get('position') or 'position'} / "
+        f"{player.get('assigned_role') or 'undefined role'}, adjusted level {calibrated:.0f} "
+        f"for a requested level around {required:.0f}."
+    )
+    return {
+        "match_score": match_score,
+        **calibration,
+        "explanation_json": {
+            "strengths": strengths,
+            "risks": risks,
+            "score_breakdown": breakdown,
+            "league_adjustment": calibration,
+            "recommendation_reason": reason,
+        },
+    }
+
+
+def _parse_money_value(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip().lower().replace("€", "").replace(",", ".")
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw)
+    if not match:
+        return None
+    numeric = float(match.group(1))
+    if "bn" in raw or "b" in raw:
+        numeric *= 1_000_000_000
+    elif "m" in raw:
+        numeric *= 1_000_000
+    elif "k" in raw:
+        numeric *= 1_000
+    return numeric
+
+
+def _mercato_player_context(
+    session: Session,
+    player_id: int,
+    player_season_id: Optional[int] = None,
+) -> Optional[dict[str, Any]]:
+    tm_clause = _tm_select_clause(session)
+    season_filter = "AND ps.id = :player_season_id" if player_season_id else ""
+    row = session.execute(
+        text(
+            """
+            SELECT
+              p.id AS player_id,
+              p.name,
+              p.country,
+              p.foot,
+              p.height_cm,
+              p.tm_id,
+              p.tm_profile_url,
+              ps.id AS player_season_id,
+              ps.calendar,
+              ps.team_in_selected_period AS team,
+              ps.position,
+              ps.second_position,
+              ps.assigned_role,
+              ps.minutes_played,
+              ps.league_strength_factor,
+              ps.global_score_adjusted AS raw_player_level,
+              ps.assigned_role_pct_league,
+              ps.assigned_role_pct_global,
+              c.name AS competition_name,
+              pm.age AS age""" + tm_clause + """
+            FROM players p
+            JOIN player_seasons ps ON ps.player_id = p.id
+            JOIN competitions c ON c.id = ps.competition_id
+            LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+            WHERE p.id = :player_id
+            """ + season_filter + """
+            ORDER BY ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+            LIMIT 1
+            """
+        ),
+        {"player_id": player_id, "player_season_id": player_season_id},
+    ).fetchone()
+    if not row:
+        return None
+    payload = _row_to_dict(row)
+    payload["tm_market_value_numeric"] = _parse_money_value(payload.get("tm_market_value"))
+    return payload
+
+
+def _mercato_need_context(session: Session, need_id: int) -> Optional[dict[str, Any]]:
+    row = session.execute(
+        text(
+            """
+            SELECT
+              mn.*,
+              mr.club_id,
+              mr.created_by_agent_id,
+              mr.assigned_agent_id,
+              mr.season,
+              mr.title,
+              mr.priority,
+              mr.status AS request_status,
+              mr.budget_min,
+              mr.budget_max,
+              mr.salary_max,
+              mr.deal_type,
+              mr.extra_info,
+              cl.name AS club_name,
+              comp.name AS competition_name
+            FROM mercato_needs mn
+            JOIN mercato_requests mr ON mr.id = mn.mercato_request_id
+            LEFT JOIN clubs cl ON cl.id = mr.club_id
+            LEFT JOIN competitions comp ON comp.id = cl.competition_id
+            WHERE mn.id = :need_id AND mr.archived_at IS NULL
+            """
+        ),
+        {"need_id": need_id},
+    ).fetchone()
+    return _row_to_dict(row) if row else None
+
+
+def _insert_mercato_candidate(
+    session: Session,
+    *,
+    need_id: int,
+    player: dict[str, Any],
+    source: str,
+    status: str,
+    agent_note: Optional[str],
+    created_by: Optional[str],
+    scoring: Optional[dict[str, Any]] = None,
+) -> tuple[bool, Optional[int]]:
+    need = _mercato_need_context(session, need_id)
+    if not need:
+        raise HTTPException(status_code=404, detail="Mercato need not found")
+    scoring = scoring or _mercato_match_candidate(need, need, player)
+    row = session.execute(
+        text(
+            """
+            INSERT INTO mercato_candidates (
+	              mercato_need_id,
+	              player_id,
+	              player_season_id,
+	              source,
+              status,
+              match_score,
+              calibrated_player_level,
+              raw_player_level,
+              league_coefficient,
+              explanation_json,
+              agent_note,
+              created_by_agent_id,
+              created_at,
+              updated_at
+            ) VALUES (
+	              :need_id,
+	              :player_id,
+	              :player_season_id,
+	              :source,
+              :status,
+              :match_score,
+              :calibrated_player_level,
+              :raw_player_level,
+              :league_coefficient,
+              CAST(:explanation_json AS JSONB),
+              :agent_note,
+              :created_by,
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT (mercato_need_id, player_id) DO NOTHING
+            RETURNING id
+            """
+        ),
+        {
+            "need_id": need_id,
+            "player_id": player["player_id"],
+            "player_season_id": player.get("player_season_id"),
+            "source": source,
+            "status": status,
+            "match_score": scoring.get("match_score"),
+            "calibrated_player_level": scoring.get("calibrated_player_level"),
+            "raw_player_level": scoring.get("raw_player_level"),
+            "league_coefficient": scoring.get("league_coefficient"),
+            "explanation_json": json.dumps(scoring.get("explanation_json") or {}),
+            "agent_note": agent_note,
+            "created_by": created_by,
+        },
+    ).fetchone()
+    return (row is not None), (int(row.id) if row else None)
+
+
+def _mercato_candidates_for_need(session: Session, need_id: int) -> list[dict[str, Any]]:
+    tm_clause = _tm_select_clause(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT
+              mc.*,
+              p.name,
+              p.country,
+              p.foot,
+              p.height_cm,
+              p.tm_id,
+              p.tm_profile_url,
+	              ps.team_in_selected_period AS team,
+	              ps.position,
+	              ps.second_position,
+	              ps.assigned_role,
+              ps.global_score_adjusted,
+              ps.calendar,
+              comp.name AS competition_name,
+              pm.age""" + tm_clause + """
+            FROM mercato_candidates mc
+            JOIN players p ON p.id = mc.player_id
+	            LEFT JOIN LATERAL (
+	              SELECT ps.*
+	              FROM player_seasons ps
+	              WHERE ps.id = mc.player_season_id
+	                 OR (mc.player_season_id IS NULL AND ps.player_id = p.id)
+	              ORDER BY
+	                CASE WHEN ps.id = mc.player_season_id THEN 0 ELSE 1 END,
+	                ps.calendar DESC NULLS LAST,
+	                ps.minutes_played DESC NULLS LAST
+	              LIMIT 1
+	            ) ps ON true
+            LEFT JOIN competitions comp ON comp.id = ps.competition_id
+            LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+            WHERE mc.mercato_need_id = :need_id
+            ORDER BY mc.match_score DESC NULLS LAST, mc.created_at DESC
+            """
+        ),
+        {"need_id": need_id},
+    ).fetchall()
+    items = []
+    for row in rows:
+        payload = _row_to_dict(row)
+        payload["tm_fields"] = _extract_tm_fields(payload)
+        items.append(payload)
+    return items
+
+
+def _mercato_request_payload(session: Session, request_id: int) -> Optional[dict[str, Any]]:
+    row = session.execute(
+        text(
+            """
+            SELECT
+              mr.*,
+              cl.name AS club_name,
+              comp.name AS competition_name,
+              creator.display_name AS created_by_agent_name,
+              assignee.display_name AS assigned_agent_name
+            FROM mercato_requests mr
+            LEFT JOIN clubs cl ON cl.id = mr.club_id
+            LEFT JOIN competitions comp ON comp.id = cl.competition_id
+            LEFT JOIN auth_users creator ON creator.username = mr.created_by_agent_id
+            LEFT JOIN auth_users assignee ON assignee.username = mr.assigned_agent_id
+            WHERE mr.id = :request_id AND mr.archived_at IS NULL
+            """
+        ),
+        {"request_id": request_id},
+    ).fetchone()
+    if not row:
+        return None
+    request_payload = _row_to_dict(row)
+    need_rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM mercato_needs
+            WHERE mercato_request_id = :request_id
+            ORDER BY id
+            """
+        ),
+        {"request_id": request_id},
+    ).fetchall()
+    needs = []
+    for need_row in need_rows:
+        need = _row_to_dict(need_row)
+        need["candidates"] = _mercato_candidates_for_need(session, need["id"])
+        needs.append(need)
+    request_payload["needs"] = needs
+    return request_payload
+
+
+@app.get("/mercato/requests")
+def mercato_requests(
+    club: Optional[str] = Query(None),
+    agent: Optional[str] = Query(None),
+    position: Optional[str] = Query(None),
+    priority: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    competition: Optional[str] = Query(None),
+    deal_type: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
+    _ensure_mercato_schema(session)
+    sql = """
+    SELECT DISTINCT mr.id
+    FROM mercato_requests mr
+    LEFT JOIN clubs cl ON cl.id = mr.club_id
+    LEFT JOIN competitions comp ON comp.id = cl.competition_id
+    LEFT JOIN mercato_needs mn ON mn.mercato_request_id = mr.id
+    WHERE mr.archived_at IS NULL
+    """
+    params: dict[str, Any] = {}
+    if club:
+        sql += " AND cl.name ILIKE :club"
+        params["club"] = f"%{club}%"
+    if agent:
+        sql += " AND (mr.assigned_agent_id ILIKE :agent OR mr.created_by_agent_id ILIKE :agent)"
+        params["agent"] = f"%{agent}%"
+    if position:
+        sql += " AND mn.position ILIKE :position"
+        params["position"] = f"%{position}%"
+    if priority:
+        sql += " AND mr.priority = :priority"
+        params["priority"] = priority
+    if status:
+        sql += " AND mr.status = :status"
+        params["status"] = status
+    if competition:
+        sql += " AND comp.name ILIKE :competition"
+        params["competition"] = f"%{competition}%"
+    if deal_type:
+        sql += " AND mr.deal_type = :deal_type"
+        params["deal_type"] = deal_type
+    sql += " ORDER BY mr.id DESC"
+    ids = [row.id for row in session.execute(text(sql), params).fetchall()]
+    items = []
+    for request_id in ids:
+        payload = _mercato_request_payload(session, request_id)
+        if payload:
+            items.append(payload)
+    active = [item for item in items if item.get("status") != "closed"]
+    club_ids = {item.get("club_id") for item in active if item.get("club_id")}
+    candidates_count = sum(len(need.get("candidates") or []) for item in items for need in item.get("needs") or [])
+    urgent_count = sum(1 for item in active if item.get("priority") == "urgent")
+    return {
+        "items": items,
+        "kpis": {
+            "active_requests": len(active),
+            "clubs_count": len(club_ids),
+            "shortlisted_players": candidates_count,
+            "urgent_requests": urgent_count,
+        },
+    }
+
+
+@app.post("/mercato/requests")
+def create_mercato_request(payload: MercatoRequestCreate, request: Request, session: Session = Depends(get_session)):
+    _ensure_mercato_schema(session)
+    if not payload.club_id:
+        raise HTTPException(status_code=400, detail="Club is required")
+    if not _clean_text(payload.need.position):
+        raise HTTPException(status_code=400, detail="Position is required")
+    created_by = _current_user_id(request)
+    title = _clean_text(payload.title)
+    if not title:
+        title = payload.need.position or "Mercato need"
+    row = session.execute(
+        text(
+            """
+            INSERT INTO mercato_requests (
+              club_id,
+              created_by_agent_id,
+              assigned_agent_id,
+              season,
+              title,
+              priority,
+              status,
+              budget_min,
+              budget_max,
+              salary_max,
+              deal_type,
+              extra_info,
+              created_at,
+              updated_at
+            ) VALUES (
+              :club_id,
+              :created_by,
+              :assigned_agent_id,
+              :season,
+              :title,
+              :priority,
+              :status,
+              :budget_min,
+              :budget_max,
+              :salary_max,
+              :deal_type,
+              :extra_info,
+              NOW(),
+              NOW()
+            )
+            RETURNING id
+            """
+        ),
+        {
+            "club_id": payload.club_id,
+            "created_by": created_by,
+            "assigned_agent_id": payload.assigned_agent_id or created_by,
+            "season": payload.season or "2026",
+            "title": title,
+            "priority": payload.priority or "medium",
+            "status": payload.status or "new",
+            "budget_min": payload.budget_min,
+            "budget_max": payload.budget_max,
+            "salary_max": payload.salary_max,
+            "deal_type": payload.deal_type or "any",
+            "extra_info": _clean_text(payload.extra_info),
+        },
+    ).fetchone()
+    request_id = int(row.id)
+    session.execute(
+        text(
+            """
+            INSERT INTO mercato_needs (
+              mercato_request_id,
+              position,
+              role,
+              age_min,
+              age_max,
+              preferred_foot,
+              height_min,
+              target_league_level,
+              required_player_level,
+              nationality_preferences,
+              contract_preferences,
+              notes,
+              created_at,
+              updated_at
+            ) VALUES (
+              :request_id,
+              :position,
+              :role,
+              :age_min,
+              :age_max,
+              :preferred_foot,
+              :height_min,
+              :target_league_level,
+              :required_player_level,
+              :nationality_preferences,
+              :contract_preferences,
+              :notes,
+              NOW(),
+              NOW()
+            )
+            """
+        ),
+        {
+            "request_id": request_id,
+            "position": _clean_text(payload.need.position),
+            "role": None,
+            "age_min": payload.need.age_min,
+            "age_max": payload.need.age_max,
+            "preferred_foot": _clean_text(payload.need.preferred_foot),
+            "height_min": payload.need.height_min,
+            "target_league_level": _clean_text(payload.need.target_league_level),
+            "required_player_level": payload.need.required_player_level,
+            "nationality_preferences": _clean_text(payload.need.nationality_preferences),
+            "contract_preferences": None,
+            "notes": _clean_text(payload.need.notes),
+        },
+    )
+    session.commit()
+    return _mercato_request_payload(session, request_id)
+
+
+@app.get("/mercato/requests/{request_id}")
+def get_mercato_request(request_id: int, session: Session = Depends(get_session)):
+    _ensure_mercato_schema(session)
+    payload = _mercato_request_payload(session, request_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Mercato request not found")
+    return payload
+
+
+@app.patch("/mercato/requests/{request_id}")
+def update_mercato_request(
+    request_id: int,
+    payload: MercatoRequestUpdate,
+    session: Session = Depends(get_session),
+):
+    _ensure_mercato_schema(session)
+    existing = _mercato_request_payload(session, request_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Mercato request not found")
+    data = payload.model_dump(exclude_unset=True)
+    if "club_id" in data and not data.get("club_id"):
+        raise HTTPException(status_code=400, detail="Club is required")
+    request_fields = {
+        "club_id",
+        "assigned_agent_id",
+        "season",
+        "title",
+        "priority",
+        "status",
+        "budget_min",
+        "budget_max",
+        "salary_max",
+        "deal_type",
+        "extra_info",
+    }
+    updates = {key: data[key] for key in request_fields if key in data}
+    if updates:
+        set_clause = ", ".join([f"{key} = :{key}" for key in updates.keys()])
+        session.execute(
+            text(f"UPDATE mercato_requests SET {set_clause}, updated_at = NOW() WHERE id = :request_id"),
+            {**updates, "request_id": request_id},
+        )
+    need_payload = data.get("need")
+    if need_payload:
+        if "position" in need_payload and not _clean_text(need_payload.get("position")):
+            raise HTTPException(status_code=400, detail="Position is required")
+        need_id = need_payload.get("id") or (existing.get("needs") or [{}])[0].get("id")
+        if need_id:
+            need_fields = {
+                "position",
+                "role",
+                "age_min",
+                "age_max",
+                "preferred_foot",
+                "height_min",
+                "target_league_level",
+                "required_player_level",
+                "nationality_preferences",
+                "contract_preferences",
+                "notes",
+            }
+            need_updates = {key: need_payload[key] for key in need_fields if key in need_payload}
+            if need_updates:
+                set_clause = ", ".join([f"{key} = :{key}" for key in need_updates.keys()])
+                session.execute(
+                    text(f"UPDATE mercato_needs SET {set_clause}, updated_at = NOW() WHERE id = :need_id"),
+                    {**need_updates, "need_id": need_id},
+                )
+    session.commit()
+    return _mercato_request_payload(session, request_id)
+
+
+@app.delete("/mercato/requests/{request_id}")
+def archive_mercato_request(request_id: int, session: Session = Depends(get_session)):
+    _ensure_mercato_schema(session)
+    result = session.execute(
+        text(
+            """
+            UPDATE mercato_requests
+            SET status = 'closed',
+                archived_at = NOW(),
+                updated_at = NOW()
+            WHERE id = :request_id AND archived_at IS NULL
+            """
+        ),
+        {"request_id": request_id},
+    )
+    session.commit()
+    return {"archived": result.rowcount > 0}
+
+
+@app.post("/mercato/needs/{need_id}/candidates")
+def add_mercato_candidate(
+    need_id: int,
+    payload: MercatoCandidateCreate,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_mercato_schema(session)
+    player = _mercato_player_context(session, payload.player_id, payload.player_season_id)
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+    added, candidate_id = _insert_mercato_candidate(
+        session,
+        need_id=need_id,
+        player=player,
+        source=payload.source or "manual",
+        status=payload.status or "suggested",
+        agent_note=_clean_text(payload.agent_note),
+        created_by=_current_user_id(request),
+    )
+    session.commit()
+    return {"added": added, "candidate_id": candidate_id}
+
+
+@app.post("/mercato/needs/{need_id}/generate-shortlist")
+def generate_mercato_shortlist(
+    need_id: int,
+    payload: Optional[MercatoShortlistGenerate] = None,
+    request: Request = None,
+    session: Session = Depends(get_session),
+):
+    _ensure_mercato_schema(session)
+    need = _mercato_need_context(session, need_id)
+    if not need:
+        raise HTTPException(status_code=404, detail="Mercato need not found")
+    if need.get("request_status") == "closed":
+        raise HTTPException(status_code=400, detail="Cannot generate shortlist for a closed need")
+    session.execute(
+        text(
+            """
+            DELETE FROM mercato_candidates
+            WHERE mercato_need_id = :need_id
+              AND source = 'algorithm'
+              AND status = 'suggested'
+            """
+        ),
+        {"need_id": need_id},
+    )
+    tm_clause = _tm_select_clause(session)
+    sql = """
+    SELECT DISTINCT ON (p.id)
+      p.id AS player_id,
+      p.name,
+      p.country,
+      p.foot,
+      p.height_cm,
+      p.tm_id,
+      p.tm_profile_url,
+      ps.id AS player_season_id,
+      ps.calendar,
+      ps.team_in_selected_period AS team,
+      ps.position,
+      ps.second_position,
+      ps.assigned_role,
+      ps.minutes_played,
+      ps.league_strength_factor,
+      ps.global_score_adjusted AS raw_player_level,
+      ps.assigned_role_pct_league,
+      ps.assigned_role_pct_global,
+      c.name AS competition_name,
+      pm.age AS age""" + tm_clause + """
+    FROM players p
+    JOIN player_seasons ps ON ps.player_id = p.id
+    JOIN competitions c ON c.id = ps.competition_id
+    LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+    WHERE ps.global_score_adjusted IS NOT NULL
+      AND ps.minutes_played >= 270
+      AND ps.calendar = ANY(:recommendation_seasons)
+      AND NOT EXISTS (
+        SELECT 1 FROM mercato_candidates mc
+        WHERE mc.mercato_need_id = :need_id AND mc.player_id = p.id
+      )
+    """
+    selected_competitions = []
+    if payload and payload.competitions:
+        selected_competitions = [str(item).strip() for item in payload.competitions if str(item).strip()]
+    params: dict[str, Any] = {
+        "need_id": need_id,
+        "limit": 1200,
+        "recommendation_seasons": MERCATO_RECOMMENDATION_SEASONS,
+    }
+    if selected_competitions:
+        sql += " AND c.name = ANY(:search_competitions)"
+        params["search_competitions"] = selected_competitions
+    if need.get("age_min") is not None:
+        sql += " AND pm.age >= :age_min"
+        params["age_min"] = need["age_min"]
+    if need.get("age_max") is not None:
+        sql += " AND pm.age <= :age_max"
+        params["age_max"] = need["age_max"]
+    if need.get("height_min") is not None:
+        sql += " AND (p.height_cm IS NULL OR p.height_cm >= :height_min)"
+        params["height_min"] = need["height_min"]
+    if need.get("preferred_foot"):
+        sql += " AND (p.foot IS NULL OR p.foot ILIKE :preferred_foot)"
+        params["preferred_foot"] = f"%{need['preferred_foot']}%"
+    if need.get("position"):
+        sql += """
+        AND (
+          ps.position ILIKE :position_like
+          OR ps.second_position ILIKE :position_like
+          OR ps.assigned_role ILIKE :position_like
+        )
+        """
+        params["position_like"] = f"%{need['position']}%"
+    sql += """
+    ORDER BY p.id, ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+    LIMIT :limit
+    """
+    rows = session.execute(text(sql), params).fetchall()
+    scored = []
+    for row in rows:
+        player = _row_to_dict(row)
+        player["tm_market_value_numeric"] = _parse_money_value(player.get("tm_market_value"))
+        score = _mercato_match_candidate(need, need, player)
+        scored.append((score["match_score"], player, score))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    inserted = []
+    for _, player, score in scored[:5]:
+        added, candidate_id = _insert_mercato_candidate(
+            session,
+            need_id=need_id,
+            player=player,
+            source="algorithm",
+            status="suggested",
+            agent_note=None,
+            created_by=_current_user_id(request) if request is not None else None,
+            scoring=score,
+        )
+        if added:
+            inserted.append({"candidate_id": candidate_id, "player_id": player["player_id"], "match_score": score["match_score"]})
+    if inserted:
+        session.execute(
+            text("UPDATE mercato_requests SET status = 'shortlist_ready', updated_at = NOW() WHERE id = :request_id"),
+            {"request_id": need["mercato_request_id"]},
+        )
+    session.commit()
+    return {"generated": len(inserted), "candidates": _mercato_candidates_for_need(session, need_id)}
+
+
+@app.patch("/mercato/candidates/{candidate_id}")
+def update_mercato_candidate(
+    candidate_id: int,
+    payload: MercatoCandidateUpdate,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_mercato_schema(session)
+    existing = session.execute(
+        text("SELECT id, status FROM mercato_candidates WHERE id = :candidate_id"),
+        {"candidate_id": candidate_id},
+    ).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Mercato candidate not found")
+    data = payload.model_dump(exclude_unset=True)
+    updates = {key: data[key] for key in ("status", "agent_note") if key in data}
+    if not updates:
+        return {"updated": False}
+    set_clause = ", ".join([f"{key} = :{key}" for key in updates])
+    session.execute(
+        text(f"UPDATE mercato_candidates SET {set_clause}, updated_at = NOW() WHERE id = :candidate_id"),
+        {**updates, "candidate_id": candidate_id},
+    )
+    if "status" in updates and updates["status"] != existing.status:
+        session.execute(
+            text(
+                """
+                INSERT INTO mercato_candidate_events (
+                  mercato_candidate_id,
+                  event_type,
+                  old_status,
+                  new_status,
+                  note,
+                  created_by_agent_id,
+                  created_at
+                ) VALUES (
+                  :candidate_id,
+                  'status_changed',
+                  :old_status,
+                  :new_status,
+                  :note,
+                  :created_by,
+                  NOW()
+                )
+                """
+            ),
+            {
+                "candidate_id": candidate_id,
+                "old_status": existing.status,
+                "new_status": updates["status"],
+                "note": data.get("agent_note"),
+                "created_by": _current_user_id(request),
+            },
+        )
+    session.commit()
+    return {"updated": True}
+
+
+@app.post("/mercato/candidates/{candidate_id}/status")
+def update_mercato_candidate_status(
+    candidate_id: int,
+    payload: MercatoCandidateStatus,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    return update_mercato_candidate(
+        candidate_id,
+        MercatoCandidateUpdate(status=payload.status, agent_note=payload.note),
+        request,
+        session,
+    )
 
 
 @app.get("/ranking", response_model=List[RankingRow])

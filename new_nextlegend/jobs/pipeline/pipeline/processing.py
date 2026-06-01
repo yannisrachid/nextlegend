@@ -341,6 +341,66 @@ def _resolve_league_strength_factors(df: pd.DataFrame) -> pd.Series:
     return _coerce_numeric(merged).fillna(1.0).clip(lower=0.8, upper=1.2)
 
 
+_LEAGUE_SCORE_OVERRIDES_CACHE: Optional[dict[str, tuple[float, float]]] = None
+
+
+def _league_score_overrides() -> dict[str, tuple[float, float]]:
+    global _LEAGUE_SCORE_OVERRIDES_CACHE
+    if _LEAGUE_SCORE_OVERRIDES_CACHE is not None:
+        return _LEAGUE_SCORE_OVERRIDES_CACHE
+
+    env_path = os.getenv("MERCATO_LEAGUE_LEVELS_PATH")
+    candidate_paths = []
+    if env_path:
+        candidate_paths.append(Path(env_path))
+    resolved = Path(__file__).resolve()
+    candidate_paths.extend(
+        [
+            Path("/config/mercato_league_levels.json"),
+            resolved.parents[1] / "apps" / "api" / "helpers" / "mercato_league_levels.json",
+            resolved.parents[0] / "helpers" / "mercato_league_levels.json",
+        ]
+    )
+    overrides: dict[str, tuple[float, float]] = {}
+    try:
+        config_path = next((path for path in candidate_paths if path.exists()), None)
+        if config_path is None:
+            raise FileNotFoundError("mercato_league_levels.json")
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        for item in data.get("exact_overrides", []) or []:
+            competition = str(item.get("competition") or "").strip()
+            if not competition:
+                continue
+            coefficient = float(item.get("coefficient", 1.0) or 1.0)
+            cap = float(item.get("cap", SCORE_BAND_MAX) or SCORE_BAND_MAX)
+            overrides[competition] = (coefficient, cap)
+    except Exception:
+        overrides = {}
+    _LEAGUE_SCORE_OVERRIDES_CACHE = overrides
+    return overrides
+
+
+def _apply_league_score_caps(score: pd.Series, df: pd.DataFrame) -> pd.Series:
+    if "competition_name" not in df.columns:
+        return score
+
+    overrides = _league_score_overrides()
+    if not overrides:
+        return score
+
+    result = _coerce_numeric(score).copy()
+    competitions = df["competition_name"].astype(str)
+    for competition, (coefficient, cap) in overrides.items():
+        mask = competitions == competition
+        if not mask.any():
+            continue
+        values = result.loc[mask]
+        # Keep the floor stable and calibrate only the upside above the floor.
+        calibrated = SCORE_BAND_MIN + (values - SCORE_BAND_MIN).clip(lower=0) * coefficient
+        result.loc[mask] = calibrated.clip(upper=cap)
+    return result
+
+
 def roles_league_percentiles(
     df: pd.DataFrame,
     raw_scores: pd.DataFrame,
@@ -1428,36 +1488,29 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     strength_non_default = int((factor_series != 1.0).sum())
     print(f"[PIPELINE] league strength factors non-default={strength_non_default}/{len(factor_series)}")
 
-    baseline_strength = factor_series.mean(skipna=True)
-    if not np.isfinite(baseline_strength) or baseline_strength == 0:
-        baseline_strength = 1.0
-    ratio = (factor_series / baseline_strength).clip(lower=0.8, upper=1.2)
-    blended_multiplier = np.power(ratio, 0.5)
-
     global_score_adjusted_series = pd.Series(np.nan, index=df.index, dtype=float)
     for profile_name in profiles.keys():
-        mask = (assigned_role == profile_name) & elig_global
+        global_col = f"{profile_name}_pct_global"
+        if global_col not in scores_global_pct.columns:
+            global_col = profile_name if profile_name in scores_global_pct.columns else None
+        if global_col is None:
+            continue
+        mask = assigned_role == profile_name
         if not mask.any():
             continue
-        adj_raw = raw_scores.loc[mask, profile_name] * blended_multiplier.loc[mask]
-        valid_count = adj_raw.notna().sum()
-        if valid_count == 0:
-            continue
-        if valid_count == 1:
-            pct_vals = pd.Series(100.0, index=adj_raw.index)
-        else:
-            ranks = adj_raw.rank(method="first", ascending=False, na_option="keep")
-            pct_vals = (valid_count - ranks) / (valid_count - 1) * 100
-        global_score_adjusted_series.loc[mask] = pct_vals.clip(lower=0, upper=100)
-    global_score_adjusted_series = _scale_score_series(global_score_adjusted_series)
+        global_score_adjusted_series.loc[mask] = scores_global_pct.loc[mask, global_col]
+    global_score_adjusted_series = _apply_league_score_caps(global_score_adjusted_series, df)
 
     role_league_pct = pd.Series(np.nan, index=df.index, dtype=float)
     role_global_pct = pd.Series(np.nan, index=df.index, dtype=float)
     for profile_name in profiles.keys():
         mask = assigned_role == profile_name
         if mask.any():
-            if profile_name in roles_scores_league:
-                role_league_pct.loc[mask] = roles_scores_league.loc[mask, profile_name]
+            league_col = f"{profile_name}_pct_league"
+            if league_col not in scores_league_pct.columns:
+                league_col = profile_name if profile_name in scores_league_pct.columns else None
+            if league_col is not None:
+                role_league_pct.loc[mask] = scores_league_pct.loc[mask, league_col]
             # Keep a single source of truth: assigned role global pct mirrors adjusted global score.
             role_global_pct.loc[mask] = global_score_adjusted_series.loc[mask]
 

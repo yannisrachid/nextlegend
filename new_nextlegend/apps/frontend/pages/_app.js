@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: "/stats-research", label: "Stats Research" },
   { href: "/vizualisation", label: "Vizualisation" },
   { href: "/prospect", label: "Prospect" },
+  { href: "/mercato-2026", label: "MERCATO 2026" },
   { href: "/ai", label: "AI" },
 ];
 

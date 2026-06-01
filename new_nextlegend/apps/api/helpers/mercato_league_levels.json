@@ -1,0 +1,873 @@
+{
+  "source": "player_seasons.league_strength_factor",
+  "description": "Mercato recalibration uses real competition names from the database. league_strength_factor and adjusted_score_multiplier document the existing adjusted-score basis; coefficient and cap are stricter Mercato scouting weights so weak or medium leagues cannot produce unrealistic 90+ calibrated levels.",
+  "baseline_league_strength_factor": 0.999053,
+  "bands": [
+    {
+      "label": "Fallback elite league",
+      "difficulty_min": 8.8,
+      "coefficient": 0.9,
+      "cap": 92
+    },
+    {
+      "label": "Fallback strong league",
+      "difficulty_min": 7.6,
+      "coefficient": 0.78,
+      "cap": 84
+    },
+    {
+      "label": "Fallback medium league",
+      "difficulty_min": 6.5,
+      "coefficient": 0.62,
+      "cap": 78
+    },
+    {
+      "label": "Fallback low league",
+      "difficulty_min": 0,
+      "coefficient": 0.45,
+      "cap": 70
+    }
+  ],
+  "exact_overrides": [
+    {
+      "competition": "Argentina. Liga Profesional de Fútbol",
+      "league_strength_factor": 1.123552,
+      "adjusted_score_multiplier": 1.06048,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Argentina. Liga Profesional de Fútbol"
+    },
+    {
+      "competition": "Australia. A-League",
+      "league_strength_factor": 0.993586,
+      "adjusted_score_multiplier": 0.99726,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Australia. A-League"
+    },
+    {
+      "competition": "Austria. 2. Liga",
+      "league_strength_factor": 0.907981,
+      "adjusted_score_multiplier": 0.953332,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Austria. 2. Liga"
+    },
+    {
+      "competition": "Austria. Bundesliga",
+      "league_strength_factor": 1.05219,
+      "adjusted_score_multiplier": 1.026249,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Austria. Bundesliga"
+    },
+    {
+      "competition": "Azerbaijan. Birinci Dasta",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Azerbaijan. Birinci Dasta"
+    },
+    {
+      "competition": "Azerbaijan. Premyer Liqa",
+      "league_strength_factor": 0.978008,
+      "adjusted_score_multiplier": 0.989412,
+      "coefficient": 0.52,
+      "cap": 72,
+      "label": "Low first division - Azerbaijan. Premyer Liqa"
+    },
+    {
+      "competition": "Belgium. Challenger Pro League",
+      "league_strength_factor": 0.948633,
+      "adjusted_score_multiplier": 0.974439,
+      "coefficient": 0.64,
+      "cap": 78,
+      "label": "Top lower division - Belgium. Challenger Pro League"
+    },
+    {
+      "competition": "Belgium. Pro League",
+      "league_strength_factor": 1.157676,
+      "adjusted_score_multiplier": 1.076463,
+      "coefficient": 0.8,
+      "cap": 86,
+      "label": "Strong first division - Belgium. Pro League"
+    },
+    {
+      "competition": "Bolivia. LFPB",
+      "league_strength_factor": 1.037354,
+      "adjusted_score_multiplier": 1.018988,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Bolivia. LFPB"
+    },
+    {
+      "competition": "Bosnia and Herzegovina. Premijer Liga",
+      "league_strength_factor": 0.985575,
+      "adjusted_score_multiplier": 0.993232,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Bosnia and Herzegovina. Premijer Liga"
+    },
+    {
+      "competition": "Brazil. Serie A",
+      "league_strength_factor": 1.155154,
+      "adjusted_score_multiplier": 1.07529,
+      "coefficient": 0.76,
+      "cap": 84,
+      "label": "Strong first division - Brazil. Serie A"
+    },
+    {
+      "competition": "Brazil. Serie B",
+      "league_strength_factor": 1.037947,
+      "adjusted_score_multiplier": 1.019279,
+      "coefficient": 0.62,
+      "cap": 76,
+      "label": "Lower division - Brazil. Serie B"
+    },
+    {
+      "competition": "Brazil. Serie C",
+      "league_strength_factor": 0.960502,
+      "adjusted_score_multiplier": 0.980516,
+      "coefficient": 0.5,
+      "cap": 70,
+      "label": "Third/lower division - Brazil. Serie C"
+    },
+    {
+      "competition": "Bulgaria. First League",
+      "league_strength_factor": 0.931126,
+      "adjusted_score_multiplier": 0.965406,
+      "coefficient": 0.48,
+      "cap": 70,
+      "label": "Low first division - Bulgaria. First League"
+    },
+    {
+      "competition": "Canada. Canadian Premier League",
+      "league_strength_factor": 1.0,
+      "adjusted_score_multiplier": 1.000474,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Canada. Canadian Premier League"
+    },
+    {
+      "competition": "Chile. Primera B",
+      "league_strength_factor": 0.969107,
+      "adjusted_score_multiplier": 0.984898,
+      "coefficient": 0.52,
+      "cap": 72,
+      "label": "Lower division - Chile. Primera B"
+    },
+    {
+      "competition": "Chile. Primera División",
+      "league_strength_factor": 1.0,
+      "adjusted_score_multiplier": 1.000474,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Chile. Primera División"
+    },
+    {
+      "competition": "China PR. China League One",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - China PR. China League One"
+    },
+    {
+      "competition": "China. CSL",
+      "league_strength_factor": 1.0,
+      "adjusted_score_multiplier": 1.000474,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - China. CSL"
+    },
+    {
+      "competition": "Colombia. Liga BetPlay",
+      "league_strength_factor": 1.077263,
+      "adjusted_score_multiplier": 1.038405,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Colombia. Liga BetPlay"
+    },
+    {
+      "competition": "Costa Rica. Primera División",
+      "league_strength_factor": 0.988394,
+      "adjusted_score_multiplier": 0.994651,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Costa Rica. Primera División"
+    },
+    {
+      "competition": "Croatia. Superleague",
+      "league_strength_factor": 1.086758,
+      "adjusted_score_multiplier": 1.042971,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Croatia. Superleague"
+    },
+    {
+      "competition": "Cyprus. 1. Division",
+      "league_strength_factor": 1.048036,
+      "adjusted_score_multiplier": 1.024221,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Cyprus. 1. Division"
+    },
+    {
+      "competition": "Czech Republic. Chance Liga",
+      "league_strength_factor": 1.08839,
+      "adjusted_score_multiplier": 1.043754,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Czech Republic. Chance Liga"
+    },
+    {
+      "competition": "Denmark. Superliga",
+      "league_strength_factor": 1.129635,
+      "adjusted_score_multiplier": 1.063347,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Denmark. Superliga"
+    },
+    {
+      "competition": "Ecuador. Liga Pro",
+      "league_strength_factor": 1.106491,
+      "adjusted_score_multiplier": 1.052397,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Ecuador. Liga Pro"
+    },
+    {
+      "competition": "Ecuador. Liga Pro Serie B",
+      "league_strength_factor": 0.947001,
+      "adjusted_score_multiplier": 0.973601,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Ecuador. Liga Pro Serie B"
+    },
+    {
+      "competition": "Egypt. Premier League",
+      "league_strength_factor": 1.0513,
+      "adjusted_score_multiplier": 1.025815,
+      "coefficient": 0.58,
+      "cap": 74,
+      "label": "Medium/low first division - Egypt. Premier League"
+    },
+    {
+      "competition": "England. Championship",
+      "league_strength_factor": 1.162127,
+      "adjusted_score_multiplier": 1.078531,
+      "coefficient": 0.72,
+      "cap": 82,
+      "label": "Top lower division - England. Championship"
+    },
+    {
+      "competition": "England. League One",
+      "league_strength_factor": 1.062575,
+      "adjusted_score_multiplier": 1.031301,
+      "coefficient": 0.56,
+      "cap": 74,
+      "label": "Third/lower division - England. League One"
+    },
+    {
+      "competition": "England. League Two",
+      "league_strength_factor": 0.977267,
+      "adjusted_score_multiplier": 0.989036,
+      "coefficient": 0.5,
+      "cap": 70,
+      "label": "Third/lower division - England. League Two"
+    },
+    {
+      "competition": "England. Premier League",
+      "league_strength_factor": 1.2,
+      "adjusted_score_multiplier": 1.095964,
+      "coefficient": 1.0,
+      "cap": 98,
+      "label": "Elite - England. Premier League"
+    },
+    {
+      "competition": "Estonia. Esiliiga A",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Estonia. Esiliiga A"
+    },
+    {
+      "competition": "Finland. Veikkausliiga",
+      "league_strength_factor": 0.951897,
+      "adjusted_score_multiplier": 0.976114,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Finland. Veikkausliiga"
+    },
+    {
+      "competition": "France. Ligue 1",
+      "league_strength_factor": 1.2,
+      "adjusted_score_multiplier": 1.095964,
+      "coefficient": 0.9,
+      "cap": 92,
+      "label": "Elite - France. Ligue 1"
+    },
+    {
+      "competition": "France. Ligue 2",
+      "league_strength_factor": 1.055899,
+      "adjusted_score_multiplier": 1.028056,
+      "coefficient": 0.66,
+      "cap": 78,
+      "label": "Top lower division - France. Ligue 2"
+    },
+    {
+      "competition": "France. National 1",
+      "league_strength_factor": 0.967623,
+      "adjusted_score_multiplier": 0.984144,
+      "coefficient": 0.52,
+      "cap": 72,
+      "label": "Third/lower division - France. National 1"
+    },
+    {
+      "competition": "Georgia. Erovnuli Liga",
+      "league_strength_factor": 0.953677,
+      "adjusted_score_multiplier": 0.977026,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Georgia. Erovnuli Liga"
+    },
+    {
+      "competition": "Germany. 2. Bundesliga",
+      "league_strength_factor": 1.107974,
+      "adjusted_score_multiplier": 1.053102,
+      "coefficient": 0.7,
+      "cap": 80,
+      "label": "Top lower division - Germany. 2. Bundesliga"
+    },
+    {
+      "competition": "Germany. 3. Liga",
+      "league_strength_factor": 1.033051,
+      "adjusted_score_multiplier": 1.016873,
+      "coefficient": 0.56,
+      "cap": 74,
+      "label": "Third/lower division - Germany. 3. Liga"
+    },
+    {
+      "competition": "Germany. Bundesliga",
+      "league_strength_factor": 1.2,
+      "adjusted_score_multiplier": 1.095964,
+      "coefficient": 0.96,
+      "cap": 96,
+      "label": "Elite - Germany. Bundesliga"
+    },
+    {
+      "competition": "Greece. Stoiximan Super League",
+      "league_strength_factor": 1.079044,
+      "adjusted_score_multiplier": 1.039262,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Greece. Stoiximan Super League"
+    },
+    {
+      "competition": "Greece. Super League 2",
+      "league_strength_factor": 0.853829,
+      "adjusted_score_multiplier": 0.924466,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Greece. Super League 2"
+    },
+    {
+      "competition": "Guatemala. Liga Nacional",
+      "league_strength_factor": 1.007384,
+      "adjusted_score_multiplier": 1.004161,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Guatemala. Liga Nacional"
+    },
+    {
+      "competition": "Honduras. Liga Nacional",
+      "league_strength_factor": 1.022072,
+      "adjusted_score_multiplier": 1.011455,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Honduras. Liga Nacional"
+    },
+    {
+      "competition": "Iceland. Besta-deild karla",
+      "league_strength_factor": 0.942105,
+      "adjusted_score_multiplier": 0.971081,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Iceland. Besta-deild karla"
+    },
+    {
+      "competition": "Italy. Serie A",
+      "league_strength_factor": 1.2,
+      "adjusted_score_multiplier": 1.095964,
+      "coefficient": 0.96,
+      "cap": 96,
+      "label": "Elite - Italy. Serie A"
+    },
+    {
+      "competition": "Italy. Serie B",
+      "league_strength_factor": 1.074444,
+      "adjusted_score_multiplier": 1.037045,
+      "coefficient": 0.66,
+      "cap": 78,
+      "label": "Top lower division - Italy. Serie B"
+    },
+    {
+      "competition": "Italy. Serie C",
+      "league_strength_factor": 0.927713,
+      "adjusted_score_multiplier": 0.963635,
+      "coefficient": 0.5,
+      "cap": 70,
+      "label": "Third/lower division - Italy. Serie C"
+    },
+    {
+      "competition": "Japan. J1 League",
+      "league_strength_factor": 1.106194,
+      "adjusted_score_multiplier": 1.052256,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Japan. J1 League"
+    },
+    {
+      "competition": "Japan. J2 League",
+      "league_strength_factor": 0.979344,
+      "adjusted_score_multiplier": 0.990087,
+      "coefficient": 0.52,
+      "cap": 72,
+      "label": "Lower division - Japan. J2 League"
+    },
+    {
+      "competition": "Jordan. Pro League",
+      "league_strength_factor": 0.97964,
+      "adjusted_score_multiplier": 0.990237,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Jordan. Pro League"
+    },
+    {
+      "competition": "Kazakhstan. Premier League",
+      "league_strength_factor": 0.932164,
+      "adjusted_score_multiplier": 0.965944,
+      "coefficient": 0.48,
+      "cap": 70,
+      "label": "Low first division - Kazakhstan. Premier League"
+    },
+    {
+      "competition": "Korea Republic. K League 1",
+      "league_strength_factor": 1.067916,
+      "adjusted_score_multiplier": 1.03389,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Korea Republic. K League 1"
+    },
+    {
+      "competition": "Mexico. Liga MX",
+      "league_strength_factor": 1.066433,
+      "adjusted_score_multiplier": 1.033171,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Mexico. Liga MX"
+    },
+    {
+      "competition": "Moldova. Super Liga",
+      "league_strength_factor": 0.888249,
+      "adjusted_score_multiplier": 0.942916,
+      "coefficient": 0.48,
+      "cap": 70,
+      "label": "Low first division - Moldova. Super Liga"
+    },
+    {
+      "competition": "Morocco. Botola Pro",
+      "league_strength_factor": 1.07207,
+      "adjusted_score_multiplier": 1.035899,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Morocco. Botola Pro"
+    },
+    {
+      "competition": "Netherlands. Derde Divisie",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Third/lower division - Netherlands. Derde Divisie"
+    },
+    {
+      "competition": "Netherlands. Eerste Divisie",
+      "league_strength_factor": 0.98602,
+      "adjusted_score_multiplier": 0.993456,
+      "coefficient": 0.62,
+      "cap": 76,
+      "label": "Lower division - Netherlands. Eerste Divisie"
+    },
+    {
+      "competition": "Netherlands. Eredivisie",
+      "league_strength_factor": 1.115096,
+      "adjusted_score_multiplier": 1.056481,
+      "coefficient": 0.8,
+      "cap": 86,
+      "label": "Strong first division - Netherlands. Eredivisie"
+    },
+    {
+      "competition": "Nicaragua. Primera Division",
+      "league_strength_factor": 0.901898,
+      "adjusted_score_multiplier": 0.950133,
+      "coefficient": 0.48,
+      "cap": 70,
+      "label": "Low first division - Nicaragua. Primera Division"
+    },
+    {
+      "competition": "Nigeria. Creative Championship",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Third/lower division - Nigeria. Creative Championship"
+    },
+    {
+      "competition": "Northern Ireland. Premiership",
+      "league_strength_factor": 0.82831,
+      "adjusted_score_multiplier": 0.910547,
+      "coefficient": 0.48,
+      "cap": 70,
+      "label": "Low first division - Northern Ireland. Premiership"
+    },
+    {
+      "competition": "Norway. Eliteserien",
+      "league_strength_factor": 1.097441,
+      "adjusted_score_multiplier": 1.048084,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Norway. Eliteserien"
+    },
+    {
+      "competition": "Panama. LPF",
+      "league_strength_factor": 0.990026,
+      "adjusted_score_multiplier": 0.995472,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Panama. LPF"
+    },
+    {
+      "competition": "Paraguay. Division Profesional",
+      "league_strength_factor": 1.059608,
+      "adjusted_score_multiplier": 1.02986,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Paraguay. Division Profesional"
+    },
+    {
+      "competition": "Peru. Primera División",
+      "league_strength_factor": 1.015099,
+      "adjusted_score_multiplier": 1.007999,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Peru. Primera División"
+    },
+    {
+      "competition": "Poland. Ekstraklasa",
+      "league_strength_factor": 1.0,
+      "adjusted_score_multiplier": 1.000474,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Poland. Ekstraklasa"
+    },
+    {
+      "competition": "Poland. I Liga",
+      "league_strength_factor": 0.933648,
+      "adjusted_score_multiplier": 0.966712,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Poland. I Liga"
+    },
+    {
+      "competition": "Portugal. Liga 3",
+      "league_strength_factor": 0.915993,
+      "adjusted_score_multiplier": 0.957528,
+      "coefficient": 0.5,
+      "cap": 70,
+      "label": "Third/lower division - Portugal. Liga 3"
+    },
+    {
+      "competition": "Portugal. Primeira Liga",
+      "league_strength_factor": 1.149664,
+      "adjusted_score_multiplier": 1.072732,
+      "coefficient": 0.8,
+      "cap": 86,
+      "label": "Strong first division - Portugal. Primeira Liga"
+    },
+    {
+      "competition": "Portugal. Segunda Liga",
+      "league_strength_factor": 1.048481,
+      "adjusted_score_multiplier": 1.024439,
+      "coefficient": 0.64,
+      "cap": 78,
+      "label": "Top lower division - Portugal. Segunda Liga"
+    },
+    {
+      "competition": "Republic of Ireland. First Division",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Republic of Ireland. First Division"
+    },
+    {
+      "competition": "Republic of Ireland. Premier Division",
+      "league_strength_factor": 0.976376,
+      "adjusted_score_multiplier": 0.988586,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Republic of Ireland. Premier Division"
+    },
+    {
+      "competition": "Romania. Liga II",
+      "league_strength_factor": 0.872967,
+      "adjusted_score_multiplier": 0.93477,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Romania. Liga II"
+    },
+    {
+      "competition": "Romania. Superliga",
+      "league_strength_factor": 1.043288,
+      "adjusted_score_multiplier": 1.021899,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Romania. Superliga"
+    },
+    {
+      "competition": "Russia. Premier League",
+      "league_strength_factor": 1.090616,
+      "adjusted_score_multiplier": 1.04482,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Russia. Premier League"
+    },
+    {
+      "competition": "Saudi Arabia. Division 1",
+      "league_strength_factor": 0.893442,
+      "adjusted_score_multiplier": 0.945668,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Saudi Arabia. Division 1"
+    },
+    {
+      "competition": "Saudi Arabia. Pro League",
+      "league_strength_factor": 1.065542,
+      "adjusted_score_multiplier": 1.03274,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Saudi Arabia. Pro League"
+    },
+    {
+      "competition": "Scotland. Championship",
+      "league_strength_factor": 0.884836,
+      "adjusted_score_multiplier": 0.941103,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Scotland. Championship"
+    },
+    {
+      "competition": "Scotland. Premiership",
+      "league_strength_factor": 1.06124,
+      "adjusted_score_multiplier": 1.030653,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Scotland. Premiership"
+    },
+    {
+      "competition": "Serbia. Prva Liga",
+      "league_strength_factor": 0.841811,
+      "adjusted_score_multiplier": 0.917937,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Serbia. Prva Liga"
+    },
+    {
+      "competition": "Serbia. Super Liga",
+      "league_strength_factor": 0.969107,
+      "adjusted_score_multiplier": 0.984898,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Serbia. Super Liga"
+    },
+    {
+      "competition": "Slovakia. 2. liga",
+      "league_strength_factor": 0.850416,
+      "adjusted_score_multiplier": 0.922617,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Slovakia. 2. liga"
+    },
+    {
+      "competition": "Slovakia. Niké Liga",
+      "league_strength_factor": 0.982608,
+      "adjusted_score_multiplier": 0.991735,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Slovakia. Niké Liga"
+    },
+    {
+      "competition": "Slovenia. 1. SNL",
+      "league_strength_factor": 1.0286,
+      "adjusted_score_multiplier": 1.01468,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Slovenia. 1. SNL"
+    },
+    {
+      "competition": "Slovenia. 2. SNL",
+      "league_strength_factor": 0.81926,
+      "adjusted_score_multiplier": 0.905559,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Slovenia. 2. SNL"
+    },
+    {
+      "competition": "South Africa. PSL",
+      "league_strength_factor": 1.020143,
+      "adjusted_score_multiplier": 1.0105,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - South Africa. PSL"
+    },
+    {
+      "competition": "Spain. La Liga",
+      "league_strength_factor": 1.2,
+      "adjusted_score_multiplier": 1.095964,
+      "coefficient": 0.96,
+      "cap": 96,
+      "label": "Elite - Spain. La Liga"
+    },
+    {
+      "competition": "Spain. Segunda División",
+      "league_strength_factor": 1.082308,
+      "adjusted_score_multiplier": 1.040833,
+      "coefficient": 0.66,
+      "cap": 78,
+      "label": "Top lower division - Spain. Segunda División"
+    },
+    {
+      "competition": "Sweden. Allsvenskan",
+      "league_strength_factor": 1.09477,
+      "adjusted_score_multiplier": 1.046808,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Sweden. Allsvenskan"
+    },
+    {
+      "competition": "Sweden. Superettan",
+      "league_strength_factor": 0.919405,
+      "adjusted_score_multiplier": 0.95931,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Sweden. Superettan"
+    },
+    {
+      "competition": "Switzerland. Challenge League",
+      "league_strength_factor": 0.944923,
+      "adjusted_score_multiplier": 0.972532,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Switzerland. Challenge League"
+    },
+    {
+      "competition": "Switzerland. Super League",
+      "league_strength_factor": 1.082456,
+      "adjusted_score_multiplier": 1.040904,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Switzerland. Super League"
+    },
+    {
+      "competition": "Tunisia. Ligue 1",
+      "league_strength_factor": 0.964062,
+      "adjusted_score_multiplier": 0.982332,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Tunisia. Ligue 1"
+    },
+    {
+      "competition": "Türkiye. 1. Lig",
+      "league_strength_factor": 0.913619,
+      "adjusted_score_multiplier": 0.956287,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Türkiye. 1. Lig"
+    },
+    {
+      "competition": "Türkiye. Süper Lig",
+      "league_strength_factor": 1.115244,
+      "adjusted_score_multiplier": 1.056551,
+      "coefficient": 0.7,
+      "cap": 82,
+      "label": "Solid first division - Türkiye. Süper Lig"
+    },
+    {
+      "competition": "Ukraine. Druha Liga",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Third/lower division - Ukraine. Druha Liga"
+    },
+    {
+      "competition": "Ukraine. Persha Liga",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.45,
+      "cap": 70,
+      "label": "Lower division - Ukraine. Persha Liga"
+    },
+    {
+      "competition": "Ukraine. VBET League",
+      "league_strength_factor": 1.00412,
+      "adjusted_score_multiplier": 1.002533,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Ukraine. VBET League"
+    },
+    {
+      "competition": "United States. MLS",
+      "league_strength_factor": 1.135421,
+      "adjusted_score_multiplier": 1.066066,
+      "coefficient": 0.76,
+      "cap": 84,
+      "label": "Strong first division - United States. MLS"
+    },
+    {
+      "competition": "Uruguay. Primera División",
+      "league_strength_factor": 1.060498,
+      "adjusted_score_multiplier": 1.030293,
+      "coefficient": 0.62,
+      "cap": 78,
+      "label": "Medium first division - Uruguay. Primera División"
+    },
+    {
+      "competition": "Uzbekistan. Super League",
+      "league_strength_factor": 0.943143,
+      "adjusted_score_multiplier": 0.971616,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Uzbekistan. Super League"
+    },
+    {
+      "competition": "Venezuela. Primera División",
+      "league_strength_factor": 0.966733,
+      "adjusted_score_multiplier": 0.983691,
+      "coefficient": 0.55,
+      "cap": 74,
+      "label": "Medium/low first division - Venezuela. Primera División"
+    },
+    {
+      "competition": "Wales. Premier League",
+      "league_strength_factor": 0.8,
+      "adjusted_score_multiplier": 0.894851,
+      "coefficient": 0.48,
+      "cap": 70,
+      "label": "Low first division - Wales. Premier League"
+    }
+  ]
+}
