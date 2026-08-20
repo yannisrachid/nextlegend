@@ -59,16 +59,18 @@ After reconciliation, all work must follow this branch model:
 
 Required flow:
 1. Create `feature/*`, `bugfix/*`, or `hotfix/*` from the appropriate base.
-2. Merge the branch into `dev`.
+2. Merge the branch into `dev` with `git merge --no-ff`.
 3. Validate `dev`.
-4. Merge `dev` into `prod` only when ready for production.
+4. Merge `dev` into `prod` with `git merge --no-ff` only when ready for production.
 5. Deploy `prod` to the VPS.
+
+All branch integrations must keep an explicit merge commit. Do not use fast-forward merges for `feature/*`, `bugfix/*`, `hotfix/*`, `dev`, or `prod` promotion merges.
 
 Hotfix rule:
 - create `hotfix/*` from `prod`;
-- validate and merge into `prod`;
+- validate and merge into `prod` with `git merge --no-ff`;
 - deploy immediately;
-- merge `prod` back into `dev` after deploy so branches do not diverge.
+- merge `prod` back into `dev` with `git merge --no-ff` after deploy so branches do not diverge.
 
 Do not commit directly on the VPS after reconciliation. Emergency VPS edits must be captured immediately into `hotfix/*`, merged back through `prod` and `dev`, then redeployed.
 
@@ -112,13 +114,13 @@ Safe reconciliation plan:
    git switch -c prod origin/reconcile/prod-state-YYYYMMDD
    git push -u origin prod
    ```
-   If `prod` already exists, merge the reconciliation branch into `prod` with review.
+   If `prod` already exists, merge the reconciliation branch into `prod` with review and `git merge --no-ff`.
 10. Create or update `dev` from `prod`:
     ```bash
     git switch -c dev prod
     git push -u origin dev
     ```
-    If `dev` already exists, merge `prod` into `dev` after resolving conflicts.
+    If `dev` already exists, merge `prod` into `dev` with `git merge --no-ff` after resolving conflicts.
 11. On the VPS, switch to the clean production branch only after the pushed `prod` branch matches the working production state:
     ```bash
     cd ~/nextlegend
@@ -151,6 +153,8 @@ git switch prod
 git pull --ff-only origin prod
 docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build db minio api frontend caddy
 ```
+
+`git pull --ff-only` is only for synchronizing the VPS checkout with the already-reviewed `prod` branch. It is not used for branch integration.
 
 Batch services (`pipeline`, `pipeline-refresh`, `current-season-job`) are behind the `jobs` profile and must never be started by a generic production deploy command.
 
