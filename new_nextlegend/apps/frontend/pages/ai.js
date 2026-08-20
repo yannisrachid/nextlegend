@@ -492,17 +492,17 @@ export default function AIPage() {
   };
 
   return (
-    <main className="min-h-screen bg-hero-pattern text-slate-100 py-10 px-4">
+    <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
             AI Assistant
           </p>
           <h1 className="text-4xl font-bold text-white tracking-tight">
-            Agentic Scouting Workspace
+            Scouting brief assistant
           </h1>
           <p className="text-slate-300 max-w-3xl">
-            Minimalist chat experience powered by the Postgres scouting database.
+            Ask structured football questions and turn the Next Legend database into clear HD Sports scouting briefs.
           </p>
         </header>
 
@@ -551,7 +551,7 @@ export default function AIPage() {
             <div className="space-y-2">
               {conversations.length === 0 ? (
                 <Card className="text-xs text-slate-400">
-                  No conversations yet.
+                  No scouting brief has been started yet.
                 </Card>
               ) : (
                 conversations.map((conv) => {
@@ -690,7 +690,7 @@ export default function AIPage() {
                       <div
                         className={`max-w-[85%] rounded-2xl px-4 py-3 border ${
                           isUser
-                            ? "bg-primary/15 border-primary/40 text-slate-100"
+                            ? "bg-primary/20 border-primary/40 text-slate-100"
                             : "bg-slate-900/70 border-slate-800 text-slate-200"
                         }`}
                       >

@@ -22,3 +22,17 @@ __pycache__
 wyscout_current_season_job/logs/
 wyscout_current_season_job/final_data/
 wyscout_current_season_job/data/seasons/
+
+# Project docs kept intentionally versioned.
+!docs/
+!docs/README.md
+!docs/skill.MD
+!docs/DATA_MODEL.md
+!docs/VPS_CICD.md
+!docs/PROJECT_HISTORY.md
+
+# Local secrets and production backups
+.env.*
+!.env.example
+backups/
+new_nextlegend/data/prd_upsert_artifacts_backup_*/

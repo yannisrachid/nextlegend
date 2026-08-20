@@ -526,17 +526,17 @@ export default function ComparisonPage() {
     radarContext === "league" ? "League percentile" : "Global percentile";
 
   return (
-    <main className="min-h-screen bg-hero-pattern text-slate-100 py-10 px-4">
+    <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
             Comparison
           </p>
           <h1 className="text-4xl font-bold text-white tracking-tight">
-            Player Comparison
+            Player comparison board
           </h1>
           <p className="text-slate-300 max-w-3xl">
-            Compare two or three players on a shared radar and full metric table.
+            Compare two or three profiles with shared radars, role context and a complete metric table for recruitment discussions.
           </p>
         </header>
 
@@ -649,7 +649,7 @@ export default function ComparisonPage() {
         {comparison.length === 0 ? (
           <Card>
             <p className="text-slate-400">
-              No comparison yet. Pick two or three players and click Compare.
+              Select two or three players to build a side-by-side recruitment view.
             </p>
           </Card>
         ) : (
@@ -711,7 +711,7 @@ export default function ComparisonPage() {
                         onClick={() => setRadarContext(option.key)}
                         className={`px-3 py-1 rounded-md text-xs uppercase tracking-[0.2em] border ${
                           radarContext === option.key
-                            ? "border-emerald-400/70 bg-emerald-400/15 text-emerald-200"
+                            ? "border-emerald-400/70 bg-emerald-400/20 text-emerald-200"
                             : "border-slate-700 bg-slate-900/60 text-slate-300"
                         }`}
                       >

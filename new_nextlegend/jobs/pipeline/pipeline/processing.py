@@ -354,13 +354,12 @@ def _league_score_overrides() -> dict[str, tuple[float, float]]:
     if env_path:
         candidate_paths.append(Path(env_path))
     resolved = Path(__file__).resolve()
+    candidate_paths.append(Path("/config/mercato_league_levels.json"))
     candidate_paths.extend(
-        [
-            Path("/config/mercato_league_levels.json"),
-            resolved.parents[1] / "apps" / "api" / "helpers" / "mercato_league_levels.json",
-            resolved.parents[0] / "helpers" / "mercato_league_levels.json",
-        ]
+        parent / "apps" / "api" / "helpers" / "mercato_league_levels.json"
+        for parent in resolved.parents
     )
+    candidate_paths.append(resolved.parent / "helpers" / "mercato_league_levels.json")
     overrides: dict[str, tuple[float, float]] = {}
     try:
         config_path = next((path for path in candidate_paths if path.exists()), None)

@@ -1,0 +1,11 @@
+nextlegend.fr {
+  redir https://app.nextlegend.fr{uri}
+}
+
+app.nextlegend.fr {
+  reverse_proxy frontend:3000
+}
+
+api.nextlegend.fr {
+  reverse_proxy api:8000
+}

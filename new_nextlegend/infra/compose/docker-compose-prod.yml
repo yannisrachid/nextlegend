@@ -65,7 +65,6 @@ services:
       minio:
         condition: service_started
     volumes:
-      - ../../apps/api:/app
       - ../../helpers/csv:/helpers/csv:ro
       - ../../config:/config:ro
 
@@ -80,9 +79,6 @@ services:
     depends_on:
       api:
         condition: service_started
-    volumes:
-      - ../../apps/frontend:/app
-      - /app/node_modules
 
   pipeline:
     build:
@@ -92,6 +88,7 @@ services:
       - ../../.env
     environment:
       PROFILES_PATH: /profiles/player_profiles.json
+      MERCATO_LEAGUE_LEVELS_PATH: /config/mercato_league_levels.json
     depends_on:
       db:
         condition: service_started
@@ -101,6 +98,7 @@ services:
       - ../../jobs/pipeline:/app
       - ../../data:/data
       - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../apps/api/helpers/mercato_league_levels.json:/config/mercato_league_levels.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
 
@@ -116,6 +114,7 @@ services:
       PIPELINE_REPLACE_TABLES: 1
       S3_PREFIX: new_nextlegend
       ARCHIVE_RETAIN_RUNS: 8
+      MERCATO_LEAGUE_LEVELS_PATH: /config/mercato_league_levels.json
     depends_on:
       db:
         condition: service_started
@@ -125,6 +124,7 @@ services:
       - ../../jobs/pipeline:/app
       - ../../data:/data
       - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../apps/api/helpers/mercato_league_levels.json:/config/mercato_league_levels.json:ro
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
 
@@ -137,6 +137,7 @@ services:
       - ../../wyscout_current_season_job/.env
     environment:
       PROFILES_PATH: /profiles/player_profiles.json
+      MERCATO_LEAGUE_LEVELS_PATH: /config/mercato_league_levels.json
       PIPELINE_RUNNER: python
       PIPELINE_INPUT_URI: /workspace/data/wyscout_players_final.csv
       PIPELINE_INPUT_KIND: raw
@@ -149,6 +150,7 @@ services:
     volumes:
       - ../../:/workspace
       - ../../apps/api/helpers/player_profiles.json:/profiles/player_profiles.json:ro
+      - ../../apps/api/helpers/mercato_league_levels.json:/config/mercato_league_levels.json:ro
       - ../../helpers/csv:/helpers/csv:ro
 
 volumes:

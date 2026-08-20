@@ -640,12 +640,12 @@ export default function ProspectPage() {
   }, [addProspectResults]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
+    <main className="nl-page">
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
         <div>
-          <h1 className="text-3xl font-semibold text-white">Prospect Hub</h1>
+          <h1 className="text-3xl font-semibold text-white">Prospect pipeline</h1>
           <p className="text-slate-400 mt-2">
-            Track shortlisted players and organise club needs.
+            Track watched players, active club needs and the next recruitment conversations to pursue.
           </p>
         </div>
 
@@ -936,8 +936,8 @@ export default function ProspectPage() {
                               <div>
                                 <div className="text-lg font-semibold text-white flex items-center gap-2">
                                   {row.name}
-                                  <span className="text-yellow-400" aria-label="Prospect">
-                                    ★
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" aria-label="Prospect">
+                                    Prospect
                                   </span>
                                 </div>
                                 <div className="text-slate-400 text-sm">
@@ -1241,7 +1241,7 @@ export default function ProspectPage() {
                               >
                                 {(need.players || []).length === 0 ? (
                                   <p className="text-xs text-slate-500">
-                                    No players added yet.
+                                    No players have been added to this pipeline yet.
                                   </p>
                                 ) : (
                                   need.players.map((player) => (

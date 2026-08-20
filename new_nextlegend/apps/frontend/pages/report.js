@@ -14,8 +14,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchJson, fetchJsonCached, postJson, deleteJson } from "@/lib/api";
+import { apiUrl, fetchJson, fetchJsonCached, postJson, deleteJson } from "@/lib/api";
+import ClubLogo from "@/components/ClubLogo";
+import PercentileBar from "@/components/PercentileBar";
+import { loadClubLogoData, resolveClubLogoUrl } from "@/lib/clubLogos";
 import { METRIC_LABELS } from "@/lib/metricLabels";
+import { englishRole, normalizeRoleForUse } from "@/lib/roles";
 
 const DEFAULT_RADAR_METRICS = [
   "goals_per_90",
@@ -52,14 +56,17 @@ const Card = ({ children, className = "" }) => (
   </div>
 );
 
-const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+const Label = ({ children, htmlFor }) => (
+  <label htmlFor={htmlFor} className="text-xs uppercase tracking-[0.2em] text-slate-400">
     {children}
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
     className="w-full min-w-0 max-w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 pr-8 text-slate-100 overflow-hidden text-ellipsis whitespace-nowrap"
     value={value}
     onChange={onChange}
@@ -102,6 +109,20 @@ const toAbsoluteUrl = (value) => {
     return `${TM_BASE_URL}${url}`;
   }
   return url;
+};
+
+const toCanvasSafeImageUrl = (value) => {
+  const url = toAbsoluteUrl(value);
+  if (!url || url.startsWith("data:")) return url;
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (parsed.origin === window.location.origin) {
+      return url;
+    }
+    return apiUrl("/image-proxy", { url });
+  } catch {
+    return "";
+  }
 };
 
 const extractUrls = (value) => {
@@ -271,12 +292,485 @@ const formatCompactNumber = (value) => {
   return `${Math.round(abs)}`;
 };
 
+const formatTransferDate = (input) => {
+  if (!input) return "Date to confirm";
+  const parsed = new Date(input);
+  if (Number.isNaN(parsed.getTime())) return String(input);
+  return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(parsed);
+};
+
+const transferFeeLabel = (input) => {
+  const clean = String(input || "").trim();
+  if (!clean) return "Undisclosed";
+  const numeric = Number(clean.replace(/[^\d.-]/g, ""));
+  if (Number.isFinite(numeric) && numeric > 0 && /^[\d\s.,€£$-]+$/.test(clean)) {
+    return formatCompactNumber(numeric);
+  }
+  return clean;
+};
+
 const getInitials = (value) => {
   if (!value) return "—";
   const parts = String(value).trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "—";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const clampPercentile = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.max(0, Math.min(100, numeric));
+};
+
+const topPercentLabel = (percentile) => {
+  const value = clampPercentile(percentile);
+  if (value === null) return "N/A";
+  const top = Math.max(1, 100 - Math.round(value));
+  return `Top ${top}%`;
+};
+
+const formatEvidenceValue = (value) => {
+  if (value === null || value === undefined || value === "") return "N/A";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+  if (Math.abs(numeric) >= 1000) return formatCompactNumber(numeric);
+  return numeric % 1 === 0 ? numeric.toFixed(0) : numeric.toFixed(1);
+};
+
+const simplifyMetricLabel = (label) =>
+  String(label || "")
+    .replace(/\s+per\s+90/gi, " / 90")
+    .replace(/\s+percent$/i, " %")
+    .replace(/^Summary\s+/i, "")
+    .trim();
+
+const ALWAYS_EXCLUDED_EVIDENCE = [
+  "height",
+  "height_cm",
+  "weight",
+  "birth",
+  "market_value",
+  "contract",
+  "yellow_card",
+  "red_card",
+  "foul",
+  "goals_conceded",
+  "xg_against",
+];
+const WIDE_EVIDENCE = ["cross", "deep_cross", "goal_area_cross", "passes_to_penalty_area", "xa"];
+const BALL_CARRY_EVIDENCE = ["dribble", "progressive_run", "acceleration"];
+
+const isRelevantEvidenceMetric = (key, player = {}) => {
+  const normalizedKey = String(key || "").toLowerCase();
+  if (ALWAYS_EXCLUDED_EVIDENCE.some((item) => normalizedKey.includes(item))) return false;
+  const position = String(player.position || "").toUpperCase();
+  const role = normalizeRoleForUse(player.assigned_role || "");
+  const isWide =
+    ["LB", "RB", "LWB", "RWB", "LW", "RW", "LM", "RM"].some((item) => position.includes(item)) ||
+    role.includes("wing") ||
+    role.includes("wide") ||
+    role.includes("left back") ||
+    role.includes("right back");
+  const isCentreBack =
+    ["CB", "LCB", "RCB"].some((item) => position === item || position.includes(item)) ||
+    role.includes("centre back") ||
+    role.includes("center back");
+  if (isCentreBack && WIDE_EVIDENCE.some((item) => normalizedKey.includes(item))) return false;
+  if (isCentreBack && !role.includes("wide") && BALL_CARRY_EVIDENCE.some((item) => normalizedKey.includes(item))) return false;
+  if (!isWide && normalizedKey.includes("accurate_crosses_percent")) return false;
+  return true;
+};
+
+const getProductionStat = (metrics = {}) => {
+  const choices = [
+    { key: "goals", label: "Goals" },
+    { key: "assists", label: "Assists" },
+  ];
+  const found = choices.find((item) => {
+    const value = metrics[item.key];
+    const numeric = Number(value);
+    return value !== null && value !== undefined && value !== "" && Number.isFinite(numeric) && numeric > 0;
+  });
+  if (!found) return null;
+  return { label: found.label, value: Number(metrics[found.key]).toFixed(0) };
+};
+
+const buildDirectorInsights = ({ report, allMetricsData, topRoles }) => {
+  if (!report) {
+    return { headline: "", roleBadge: "Profile", proofPoints: [], reasons: [] };
+  }
+  const primaryRole = topRoles?.[0] || {};
+  const rolePct = clampPercentile(primaryRole.pct_global_adjusted ?? primaryRole.pct_global ?? primaryRole.pct_league);
+  const roleName = englishRole(primaryRole.profile || report.player?.assigned_role) || report.player?.position || "Football profile";
+  const roleBadge = rolePct === null ? roleName : `${topPercentLabel(rolePct)} ${roleName}`;
+
+  const rows = (allMetricsData || [])
+    .map((row) => {
+      const percentile = clampPercentile(row.global ?? row.league);
+      return percentile === null
+        ? null
+        : {
+            metricKey: row.metricKey,
+            label: simplifyMetricLabel(row.metric),
+            raw: row.raw,
+            percentile,
+            context: row.global != null ? "global database" : "league",
+          };
+    })
+    .filter(Boolean)
+    .filter((row) => isRelevantEvidenceMetric(row.metricKey || row.label, report.player))
+    .filter((row) => row.percentile >= 70)
+    .sort((a, b) => b.percentile - a.percentile)
+    .slice(0, 5);
+
+  const fallbackRows = (allMetricsData || [])
+    .map((row) => {
+      const percentile = clampPercentile(row.global ?? row.league);
+      return percentile === null
+        ? null
+        : {
+            metricKey: row.metricKey,
+            label: simplifyMetricLabel(row.metric),
+            raw: row.raw,
+            percentile,
+            context: row.global != null ? "global database" : "league",
+          };
+    })
+    .filter(Boolean)
+    .filter((row) => isRelevantEvidenceMetric(row.metricKey || row.label, report.player))
+    .sort((a, b) => b.percentile - a.percentile)
+    .slice(0, 5);
+
+  const proofPoints = rows.length ? rows : fallbackRows;
+  const topLabel = proofPoints[0]?.label || roleName;
+  const headline = `${report.player?.name || "Player"} profiles as ${roleBadge}, led by ${topLabel}.`;
+  const reasons = proofPoints.slice(0, 3).map((point) => ({
+    title: `${topPercentLabel(point.percentile)} for ${point.label}`,
+    body: `He ranks ahead of ${Math.round(point.percentile)}% of comparable players in the ${point.context}.`,
+  }));
+
+  return { headline, roleBadge, proofPoints, reasons };
+};
+
+const wrapCanvasText = (ctx, text, x, y, maxWidth, lineHeight, maxLines = 4) => {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const testLine = line ? `${line} ${word}` : word;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  });
+  if (line) lines.push(line);
+  lines.slice(0, maxLines).forEach((item, index) => {
+    const output = index === maxLines - 1 && lines.length > maxLines ? `${item.replace(/\s+\S+$/, "")}...` : item;
+    ctx.fillText(output, x, y + index * lineHeight);
+  });
+  return y + Math.min(lines.length, maxLines) * lineHeight;
+};
+
+const drawRoundedRect = (ctx, x, y, width, height, radius) => {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+};
+
+const drawCoverImage = (ctx, image, x, y, width, height) => {
+  const imageRatio = image.width / image.height;
+  const targetRatio = width / height;
+  let sourceWidth = image.width;
+  let sourceHeight = image.height;
+  let sourceX = 0;
+  let sourceY = 0;
+  if (imageRatio > targetRatio) {
+    sourceWidth = image.height * targetRatio;
+    sourceX = (image.width - sourceWidth) / 2;
+  } else {
+    sourceHeight = image.width / targetRatio;
+    sourceY = (image.height - sourceHeight) / 2;
+  }
+  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+};
+
+const drawContainImage = (ctx, image, x, y, width, height) => {
+  const scale = Math.min(width / image.width, height / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  ctx.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+};
+
+const percentileCanvasTone = (percentile) => {
+  const value = clampPercentile(percentile);
+  if (value === null) {
+    return { fill: "#475569", track: "#1e293b", text: "#94a3b8", label: "N/A" };
+  }
+  if (value <= 30) return { fill: "#ef4444", track: "#fee2e2", text: "#b91c1c", label: "Low" };
+  if (value <= 60) return { fill: "#fbbf24", track: "#fef3c7", text: "#b45309", label: "Medium" };
+  if (value <= 80) return { fill: "#a3e635", track: "#ecfccb", text: "#4d7c0f", label: "Good" };
+  return { fill: "#2dd4bf", track: "#ccfbf1", text: "#0f766e", label: "Excellent" };
+};
+
+const drawPercentileCanvasBar = (ctx, x, y, width, height, percentile) => {
+  const value = clampPercentile(percentile) ?? 0;
+  const tone = percentileCanvasTone(value);
+  ctx.fillStyle = tone.track;
+  drawRoundedRect(ctx, x, y, width, height, height / 2);
+  ctx.fill();
+  ctx.fillStyle = tone.fill;
+  drawRoundedRect(ctx, x, y, (value / 100) * width, height, height / 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(15, 23, 42, 0.35)";
+  for (let marker = 10; marker < 100; marker += 10) {
+    const markerX = x + (marker / 100) * width;
+    ctx.fillRect(markerX, y, 2, height);
+  }
+};
+
+const loadCanvasImage = (url) =>
+  new Promise((resolve) => {
+    if (!url) {
+      resolve(null);
+      return;
+    }
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = url;
+  });
+
+const buildDirectorReportCanvas = async ({ report, tmPhotoUrl, clubLogoUrl, directorInsights }) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1400;
+  canvas.height = 1900;
+  const ctx = canvas.getContext("2d");
+  const player = report.player || {};
+  const proofPoints = directorInsights.proofPoints || [];
+  const photo = await loadCanvasImage(tmPhotoUrl);
+  const clubLogo = await loadCanvasImage(clubLogoUrl);
+
+  ctx.fillStyle = "#f8fafc";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, 0, canvas.width, 420);
+
+  ctx.fillStyle = "#14b8a6";
+  ctx.font = "700 30px Arial";
+  ctx.fillText("NEXTLEGEND SCOUTING REPORT", 80, 92);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 76px Arial";
+  wrapCanvasText(ctx, player.name || "Player", 80, 185, 820, 82, 2);
+
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = "500 30px Arial";
+  const subtitle = [player.team, player.competition_name, player.calendar].filter(Boolean).join(" - ");
+  if (clubLogo) {
+    ctx.save();
+    drawRoundedRect(ctx, 80, 282, 56, 56, 12);
+    ctx.clip();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(80, 282, 56, 56);
+    drawContainImage(ctx, clubLogo, 88, 290, 40, 40);
+    ctx.restore();
+    ctx.fillText(subtitle || "Season context", 154, 320);
+  } else {
+    ctx.fillText(subtitle || "Season context", 80, 320);
+  }
+  ctx.fillStyle = "#99f6e4";
+  ctx.font = "900 34px Arial";
+  ctx.fillText(directorInsights.roleBadge || player.assigned_role || "Profile", 80, 372);
+
+  if (photo) {
+    ctx.save();
+    drawRoundedRect(ctx, 1035, 55, 260, 285, 24);
+    ctx.clip();
+    drawCoverImage(ctx, photo, 1035, 55, 260, 285);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#1e293b";
+    drawRoundedRect(ctx, 1035, 55, 260, 285, 24);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 72px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(getInitials(player.name), 1165, 215);
+    ctx.textAlign = "left";
+  }
+
+  const productionStat = getProductionStat(report.raw_metrics || report.metrics || {});
+  const kpis = [
+    ["League score", player.assigned_role_pct_league == null ? "N/A" : Number(player.assigned_role_pct_league).toFixed(0)],
+    ["Adjusted score", player.global_score_adjusted == null ? "N/A" : Number(player.global_score_adjusted).toFixed(1)],
+    ["Minutes", player.minutes_played == null ? "N/A" : Number(player.minutes_played).toFixed(0)],
+    ...(productionStat ? [[productionStat.label, productionStat.value]] : []),
+  ];
+  const kpiGap = 24;
+  const kpiWidth = (1240 - kpiGap * (kpis.length - 1)) / kpis.length;
+  kpis.forEach((item, index) => {
+    const x = 80 + index * (kpiWidth + kpiGap);
+    ctx.fillStyle = "#ffffff";
+    drawRoundedRect(ctx, x, 480, kpiWidth, 140, 18);
+    ctx.fill();
+    ctx.fillStyle = "#64748b";
+    ctx.font = "800 22px Arial";
+    ctx.fillText(item[0].toUpperCase(), x + 24, 528);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "900 48px Arial";
+    ctx.fillText(item[1], x + 24, 590);
+  });
+
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "900 44px Arial";
+  ctx.fillText("Executive read", 80, 720);
+  ctx.fillStyle = "#334155";
+  ctx.font = "500 30px Arial";
+  wrapCanvasText(ctx, directorInsights.headline, 80, 775, 1220, 42, 3);
+
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "900 40px Arial";
+  ctx.fillText("Why he stands out", 80, 955);
+
+  proofPoints.slice(0, 5).forEach((point, index) => {
+    const y = 1010 + index * 135;
+    const tone = percentileCanvasTone(point.percentile);
+    ctx.fillStyle = "#ffffff";
+    drawRoundedRect(ctx, 80, y, 1240, 104, 18);
+    ctx.fill();
+    ctx.fillStyle = tone.text;
+    ctx.font = "900 28px Arial";
+    ctx.fillText(`${topPercentLabel(point.percentile)} ${point.label}`, 110, y + 40);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "600 22px Arial";
+    ctx.fillText(`Value: ${formatEvidenceValue(point.raw)} - better than ${Math.round(point.percentile)}% (${point.context})`, 110, y + 75);
+    ctx.fillStyle = tone.text;
+    ctx.font = "900 26px Arial";
+    ctx.textAlign = "right";
+    ctx.fillText(String(Math.round(clampPercentile(point.percentile) ?? 0)), 1290, y + 28);
+    ctx.textAlign = "left";
+    drawPercentileCanvasBar(ctx, 590, y + 42, 700, 18, point.percentile);
+    ctx.fillStyle = "#64748b";
+    ctx.font = "800 16px Arial";
+    ctx.fillText(tone.label.toUpperCase(), 590, y + 82);
+  });
+
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "900 40px Arial";
+  ctx.fillText("Simple translation", 80, 1720);
+  ctx.fillStyle = "#334155";
+  ctx.font = "500 26px Arial";
+  wrapCanvasText(
+    ctx,
+    "Percentiles compare the player with similar professional players. Top 5% means only 5 players out of 100 perform better on that indicator.",
+    80,
+    1770,
+    1220,
+    36,
+    3
+  );
+
+  ctx.fillStyle = "#64748b";
+  ctx.font = "700 22px Arial";
+  ctx.fillText("Generated by Next Legend - HD Sports", 80, 1855);
+  return canvas;
+};
+
+const downloadCanvas = (canvas, filename) => {
+  const link = document.createElement("a");
+  link.href = canvas.toDataURL("image/png");
+  link.download = filename;
+  link.click();
+};
+
+const buildDirectorReportHtml = ({ report, tmPhotoUrl, clubLogoUrl, directorInsights }) => {
+  const player = report.player || {};
+  const proof = (directorInsights.proofPoints || []).slice(0, 5);
+  const productionStat = getProductionStat(report.raw_metrics || report.metrics || {});
+  const image = tmPhotoUrl
+    ? `<img src="${tmPhotoUrl}" alt="" class="photo" />`
+    : `<div class="photo initials">${getInitials(player.name)}</div>`;
+  const clubLogo = clubLogoUrl ? `<img src="${clubLogoUrl}" alt="" class="club-logo" />` : "";
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${player.name || "Player"} report</title>
+<style>
+  @page { size: A4 portrait; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f8fafc; color: #0f172a; font-family: Arial, sans-serif; }
+  .sheet { width: 190mm; min-height: 277mm; margin: 0 auto; background: #f8fafc; }
+  .hero { background: #0f172a; color: white; border-radius: 10px; padding: 28px; display: grid; grid-template-columns: 1fr 120px; gap: 20px; }
+  .kicker { color: #5eead4; font-size: 11px; font-weight: 900; letter-spacing: .18em; text-transform: uppercase; }
+  h1 { margin: 18px 0 8px; font-size: 42px; line-height: 1; }
+  .sub { color: #cbd5e1; font-size: 15px; margin: 0 0 16px; }
+  .badge { display: inline-block; background: #134e4a; color: #ccfbf1; border-radius: 999px; padding: 8px 12px; font-weight: 900; }
+  .photo { width: 120px; height: 120px; border-radius: 10px; object-fit: cover; background: #1e293b; display: flex; align-items: center; justify-content: center; color: white; font-size: 30px; font-weight: 900; }
+  .club-line { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; }
+  .club-logo { width: 34px; height: 34px; object-fit: contain; border-radius: 8px; background: white; border: 1px solid #e2e8f0; padding: 4px; }
+  .kpis { display: grid; grid-template-columns: repeat(${productionStat ? 4 : 3}, 1fr); gap: 10px; margin: 14px 0; }
+  .kpi, .card { background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+  .kpi span { display: block; color: #64748b; font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+  .kpi strong { display: block; margin-top: 8px; font-size: 26px; }
+  h2 { font-size: 24px; margin: 22px 0 10px; }
+  .lead { font-size: 18px; line-height: 1.45; color: #334155; }
+  .proof { display: grid; gap: 9px; }
+  .proof-title { display: flex; justify-content: space-between; gap: 14px; font-weight: 900; color: #0f766e; }
+  .proof p { margin: 6px 0 0; color: #475569; font-size: 13px; }
+  .bar { height: 8px; background: #e2e8f0; border-radius: 99px; overflow: hidden; margin-top: 10px; }
+  .fill { height: 100%; background: #0f766e; border-radius: 99px; }
+  .note { color: #64748b; font-size: 12px; line-height: 1.45; }
+</style>
+</head>
+<body>
+  <main class="sheet">
+    <section class="hero">
+      <div>
+        <div class="kicker">Next Legend scouting report</div>
+        <h1>${player.name || "Player"}</h1>
+        <div class="club-line">${clubLogo}<p class="sub">${[player.team, player.competition_name, player.calendar].filter(Boolean).join(" - ")}</p></div>
+        <span class="badge">${directorInsights.roleBadge}</span>
+      </div>
+      ${image}
+    </section>
+    <section class="kpis">
+      <div class="kpi"><span>League score</span><strong>${player.assigned_role_pct_league == null ? "N/A" : Number(player.assigned_role_pct_league).toFixed(0)}</strong></div>
+      <div class="kpi"><span>Adjusted score</span><strong>${player.global_score_adjusted == null ? "N/A" : Number(player.global_score_adjusted).toFixed(1)}</strong></div>
+      <div class="kpi"><span>Minutes</span><strong>${player.minutes_played == null ? "N/A" : Number(player.minutes_played).toFixed(0)}</strong></div>
+      ${productionStat ? `<div class="kpi"><span>${productionStat.label}</span><strong>${productionStat.value}</strong></div>` : ""}
+    </section>
+    <h2>Executive read</h2>
+    <p class="lead">${directorInsights.headline}</p>
+    <h2>Why he stands out</h2>
+    <section class="proof">
+      ${proof
+        .map(
+          (point) => `<article class="card">
+            <div class="proof-title"><span>${topPercentLabel(point.percentile)} ${point.label}</span><span>${Math.round(point.percentile)}%</span></div>
+            <p>Value: ${formatEvidenceValue(point.raw)} - ahead of ${Math.round(point.percentile)}% of comparable players in the ${point.context}.</p>
+            <div class="bar"><div class="fill" style="width:${Math.round(point.percentile)}%"></div></div>
+          </article>`
+        )
+        .join("")}
+    </section>
+    <h2>Simple translation</h2>
+    <p class="note">Percentiles compare the player with similar professional players. Top 5% means only 5 players out of 100 perform better on that indicator.</p>
+  </main>
+  <script>window.onload = () => setTimeout(() => window.print(), 250);</script>
+</body>
+</html>`;
 };
 
 export default function ReportPage() {
@@ -317,14 +811,31 @@ export default function ReportPage() {
   const [mercatoMessage, setMercatoMessage] = useState("");
   const [mercatoLoading, setMercatoLoading] = useState(false);
   const [mercatoBusy, setMercatoBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [clubLogoUrl, setClubLogoUrl] = useState("");
 
   const similarLimit = 10;
 
   useEffect(() => {
+    let active = true;
+    const team = report?.player?.team;
+    if (!team) {
+      setClubLogoUrl("");
+      return () => {
+        active = false;
+      };
+    }
+    loadClubLogoData().then((data) => {
+      if (active) setClubLogoUrl(resolveClubLogoUrl(team, data));
+    });
+    return () => {
+      active = false;
+    };
+  }, [report?.player?.team]);
+
+  useEffect(() => {
     if (!playerQuery || playerQuery.trim().length < 2) {
       setPlayerResults([]);
-      setSelectedPlayerId("");
-      setSelectedPlayerSeasonId("");
       return;
     }
     const handle = setTimeout(async () => {
@@ -573,7 +1084,7 @@ export default function ReportPage() {
   const tmFields = report?.tm_fields || {};
   const tmProfileUrl = toAbsoluteUrl(tmFields.tm_profile_url);
   const tmAgentUrl = toAbsoluteUrl(tmFields.tm_agent_url);
-  const tmPhotoUrl = toAbsoluteUrl(tmFields.tm_profile_image_url || tmFields.profile_image_url);
+  const tmPhotoUrl = toAbsoluteUrl(tmFields.app_photo_url || tmFields.tm_profile_image_url || tmFields.profile_image_url);
   const socialRaw =
     tmFields.tm_social_media ||
     tmFields.tm_socials ||
@@ -744,19 +1255,6 @@ export default function ReportPage() {
     return sortConfig.dir === "asc" ? "▲" : "▼";
   };
 
-  const percentileStyle = (value) => {
-    const num = Number(value);
-    if (!Number.isFinite(num)) {
-      return { className: "text-slate-400", style: {} };
-    }
-    const pct = Math.max(0, Math.min(100, num));
-    const hue = Math.round((pct / 100) * 120);
-    return {
-      className: "text-slate-100",
-      style: { color: `hsl(${hue}, 70%, 55%)` },
-    };
-  };
-
   const handleSimilarSort = (key) => {
     setSimilarSort((prev) => {
       if (prev.key === key) {
@@ -853,27 +1351,62 @@ export default function ReportPage() {
     }));
   }, [report]);
 
+  const directorInsights = useMemo(
+    () => buildDirectorInsights({ report, allMetricsData, topRoles }),
+    [allMetricsData, report, topRoles]
+  );
+
+  const handleDownloadPng = async () => {
+    if (!report || exportBusy) return;
+    setExportBusy(true);
+    try {
+      const canvas = await buildDirectorReportCanvas({
+        report,
+        tmPhotoUrl: toCanvasSafeImageUrl(tmPhotoUrl),
+        clubLogoUrl: toCanvasSafeImageUrl(clubLogoUrl),
+        directorInsights,
+      });
+      const filename = `${report.player?.name || "player"}-director-report.png`
+        .replace(/[^\w.-]+/g, "_")
+        .toLowerCase();
+      downloadCanvas(canvas, filename);
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const handleExportPdf = () => {
+    if (!report || typeof window === "undefined") return;
+    const popup = window.open("", "_blank", "width=980,height=1200");
+    if (!popup) return;
+    popup.document.open();
+    popup.document.write(buildDirectorReportHtml({ report, tmPhotoUrl, clubLogoUrl, directorInsights }));
+    popup.document.close();
+  };
+
   return (
-    <main className="min-h-screen bg-hero-pattern text-slate-100 py-10 px-4">
+    <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
             Report
           </p>
           <h1 className="text-4xl font-bold text-white tracking-tight">
-            Player Report
+            Director-ready player report
           </h1>
           <p className="text-slate-300 max-w-3xl">
-            League → Team → Player. Synthetic view with radar, role fit and
-            similar players from the v2 pipeline.
+            Search a player, review the role evidence and export a clear scouting summary for club decision-makers.
           </p>
         </header>
 
         <Card className="relative z-30">
           <div className="relative">
             <div className="flex flex-col gap-2">
-              <Label>Player</Label>
+              <Label htmlFor="report-player-search">Player</Label>
               <input
+                id="report-player-search"
+                name="player_search"
+                aria-label="Player search"
                 className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
                 placeholder="Start typing a player name..."
                 value={playerQuery}
@@ -930,7 +1463,7 @@ export default function ReportPage() {
           </div>
         </Card>
 
-        {error && (
+        {error && !report && (
           <Card>
             <p className="text-danger">Error: {error}</p>
           </Card>
@@ -942,6 +1475,83 @@ export default function ReportPage() {
           </Card>
         ) : report ? (
           <>
+            <Card className="overflow-hidden border-emerald-300/20 bg-slate-950/80">
+              <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.24em] text-emerald-300">
+                    Director-ready export
+                  </p>
+                  <h2 className="mt-3 text-2xl font-black text-white">
+                    {directorInsights.roleBadge}
+                  </h2>
+                  <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+                    {directorInsights.headline}
+                  </p>
+                  <div className="mt-4 grid gap-2 md:grid-cols-3">
+                    {directorInsights.reasons.map((reason) => (
+                      <div key={reason.title} className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                        <p className="text-sm font-black text-emerald-200">{reason.title}</p>
+                        <p className="mt-2 text-xs leading-5 text-slate-400">{reason.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-white p-4 text-slate-950">
+                  <div className="flex items-start gap-3">
+                    {tmPhotoUrl ? (
+                      <img src={tmPhotoUrl} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                    ) : (
+                      <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-slate-900 text-lg font-black text-white">
+                        {getInitials(report.player.name)}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-lg font-black">{report.player.name}</p>
+                      <div className="mt-2 flex items-center gap-2 text-xs font-bold text-slate-500">
+                        <ClubLogo name={report.player.team} className="h-6 w-6 rounded" />
+                        <span className="min-w-0 truncate">
+                          {[report.player.team, report.player.competition_name, report.player.calendar].filter(Boolean).join(" - ")}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {directorInsights.proofPoints.slice(0, 3).map((point) => (
+                      <div key={point.label}>
+                        <div className="flex items-center justify-between gap-3 text-xs font-black">
+                          <span className="truncate">{topPercentLabel(point.percentile)} {point.label}</span>
+                          <span>{Math.round(point.percentile)}%</span>
+                        </div>
+                        <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-200">
+                          <div
+                            className="h-full rounded-full bg-teal-700"
+                            style={{ width: `${Math.round(point.percentile)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className="rounded-md bg-slate-950 px-3 py-2 text-sm font-black text-white transition hover:bg-slate-800 disabled:opacity-60"
+                      onClick={handleDownloadPng}
+                      disabled={exportBusy}
+                    >
+                      {exportBusy ? "Preparing..." : "Download PNG"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-black text-slate-950 transition hover:bg-slate-50"
+                      onClick={handleExportPdf}
+                    >
+                      Export PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-1 space-y-4">
                 <div className="flex items-start gap-3">
@@ -961,14 +1571,15 @@ export default function ReportPage() {
                     <h2 className="text-2xl font-semibold text-white flex items-center gap-2">
                       {report.player.name}
                       {isProspect ? (
-                        <span className="text-yellow-400" aria-label="Prospect">
-                          ★
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" aria-label="Prospect">
+                          Prospect
                         </span>
                       ) : null}
                     </h2>
-                    <p className="text-slate-400">
-                      {report.player.team} • {report.player.competition_name}
-                    </p>
+                    <div className="mt-2 flex items-center gap-2 text-slate-400">
+                      <ClubLogo name={report.player.team} className="h-8 w-8 rounded" />
+                      <span className="min-w-0 truncate">{report.player.team} • {report.player.competition_name}</span>
+                    </div>
                     {tmProfileUrl ? (
                       <a
                         href={tmProfileUrl}
@@ -998,6 +1609,9 @@ export default function ReportPage() {
                         </p>
                         <div className="flex flex-col gap-2">
                           <select
+                            id="report-club-need"
+                            name="club_need_id"
+                            aria-label="Assign to club need"
                             className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 text-sm"
                             value={assignNeedId}
                             onChange={(e) => setAssignNeedId(e.target.value)}
@@ -1034,6 +1648,9 @@ export default function ReportPage() {
                       </p>
                       <div className="flex flex-col gap-2">
                         <select
+                          id="report-mercato-need"
+                          name="mercato_need_id"
+                          aria-label="Assign to a Mercato need"
                           className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 text-sm"
                           value={mercatoNeedId}
                           onChange={(e) => setMercatoNeedId(e.target.value)}
@@ -1051,6 +1668,9 @@ export default function ReportPage() {
                           )}
                         </select>
                         <textarea
+                          id="report-mercato-note"
+                          name="mercato_note"
+                          aria-label="Optional agent note"
                           className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 text-sm"
                           rows={2}
                           value={mercatoNote}
@@ -1076,8 +1696,10 @@ export default function ReportPage() {
                 </div>
                 {availableSeasons.length > 0 ? (
                   <div className="space-y-2 min-w-0">
-                    <Label>Season</Label>
+                    <Label htmlFor="report-season">Season</Label>
                     <Select
+                      id="report-season"
+                      ariaLabel="Report season"
                       value={seasonSelectValue}
                       onChange={(e) => {
                         setSelectedPlayerSeasonId(e.target.value);
@@ -1094,7 +1716,7 @@ export default function ReportPage() {
                 ) : null}
                 <div className="flex flex-wrap gap-2">
                   {report.player.assigned_role && (
-                    <Badge>{report.player.assigned_role}</Badge>
+                    <Badge>{englishRole(report.player.assigned_role)}</Badge>
                   )}
                   {report.player.position && (
                     <Badge>{report.player.position}</Badge>
@@ -1174,10 +1796,18 @@ export default function ReportPage() {
                     <p className="text-xs uppercase text-slate-400">
                       Role pct (league / adjusted)
                     </p>
-                    <p className="text-lg font-semibold">
-                      {report.player.assigned_role_pct_league?.toFixed(0) ?? "—"} /
-                      {report.player.assigned_role_pct_global?.toFixed(1) ?? "—"}
-                    </p>
+                    <div className="mt-2 space-y-2">
+                      <PercentileBar
+                        label="League"
+                        value={report.player.assigned_role_pct_league}
+                        compact
+                      />
+                      <PercentileBar
+                        label="Adjusted"
+                        value={report.player.assigned_role_pct_global}
+                        compact
+                      />
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -1198,7 +1828,7 @@ export default function ReportPage() {
                         onClick={() => setRadarContext(option.key)}
                         className={`px-3 py-1 rounded-md text-xs uppercase tracking-[0.2em] border ${
                           radarContext === option.key
-                            ? "border-emerald-400/70 bg-emerald-400/15 text-emerald-200"
+                            ? "border-emerald-400/70 bg-emerald-400/20 text-emerald-200"
                             : "border-slate-700 bg-slate-900/60 text-slate-300"
                         }`}
                       >
@@ -1254,13 +1884,13 @@ export default function ReportPage() {
                   >
                     <p className="text-sm text-slate-400">Profile</p>
                     <p className="text-base font-semibold text-white">
-                      {role.profile}
+                      {englishRole(role.profile)}
                     </p>
-                    <p className="text-sm text-slate-300 mt-2">
-                      League: {role.pct_league?.toFixed(0) ?? "—"} • Global:{" "}
-                      {role.pct_global?.toFixed(1) ?? "—"} • Adjusted:{" "}
-                      {role.pct_global_adjusted?.toFixed(1) ?? "—"}
-                    </p>
+                    <div className="mt-3 space-y-2">
+                      <PercentileBar label="League" value={role.pct_league} compact />
+                      <PercentileBar label="Global" value={role.pct_global} compact />
+                      <PercentileBar label="Adjusted" value={role.pct_global_adjusted} compact />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1287,13 +1917,13 @@ export default function ReportPage() {
                         Value {sortIndicator("raw")}
                       </th>
                       <th
-                        className="text-right py-2 cursor-pointer select-none"
+                        className="text-left py-2 pl-4 cursor-pointer select-none"
                         onClick={() => handleSort("league")}
                       >
                         League percentile {sortIndicator("league")}
                       </th>
                       <th
-                        className="text-right py-2 cursor-pointer select-none"
+                        className="text-left py-2 pl-4 cursor-pointer select-none"
                         onClick={() => handleSort("global")}
                       >
                         Global percentile {sortIndicator("global")}
@@ -1307,22 +1937,12 @@ export default function ReportPage() {
                         <td className="py-2 text-right text-slate-100">
                           {row.raw != null ? Number(row.raw).toFixed(2) : "—"}
                         </td>
-                        {(() => {
-                          const style = percentileStyle(row.league);
-                          return (
-                            <td className={`py-2 text-right ${style.className}`} style={style.style}>
-                              {row.league != null ? Number(row.league).toFixed(0) : "—"}
-                            </td>
-                          );
-                        })()}
-                        {(() => {
-                          const style = percentileStyle(row.global);
-                          return (
-                            <td className={`py-2 text-right ${style.className}`} style={style.style}>
-                              {row.global != null ? Number(row.global).toFixed(0) : "—"}
-                            </td>
-                          );
-                        })()}
+                        <td className="py-2 pl-4">
+                          <PercentileBar label={`${row.metric} league percentile`} value={row.league} compact showLabel={false} />
+                        </td>
+                        <td className="py-2 pl-4">
+                          <PercentileBar label={`${row.metric} global percentile`} value={row.global} compact showLabel={false} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1362,13 +1982,13 @@ export default function ReportPage() {
                             Value {sortIndicator("raw")}
                           </th>
                           <th
-                            className="text-right py-2 cursor-pointer select-none"
+                            className="text-left py-2 pl-4 cursor-pointer select-none"
                             onClick={() => handleSort("league")}
                           >
                             League percentile {sortIndicator("league")}
                           </th>
                           <th
-                            className="text-right py-2 cursor-pointer select-none"
+                            className="text-left py-2 pl-4 cursor-pointer select-none"
                             onClick={() => handleSort("global")}
                           >
                             Global percentile {sortIndicator("global")}
@@ -1389,22 +2009,12 @@ export default function ReportPage() {
                               <td className="py-2 text-right text-slate-100">
                                 {row.raw != null ? Number(row.raw).toFixed(2) : "—"}
                               </td>
-                              {(() => {
-                                const style = percentileStyle(row.league);
-                                return (
-                                  <td className={`py-2 text-right ${style.className}`} style={style.style}>
-                                    {row.league != null ? Number(row.league).toFixed(0) : "—"}
-                                  </td>
-                                );
-                              })()}
-                              {(() => {
-                                const style = percentileStyle(row.global);
-                                return (
-                                  <td className={`py-2 text-right ${style.className}`} style={style.style}>
-                                    {row.global != null ? Number(row.global).toFixed(0) : "—"}
-                                  </td>
-                                );
-                              })()}
+                              <td className="py-2 pl-4">
+                                <PercentileBar label={`${row.metric} league percentile`} value={row.league} compact showLabel={false} />
+                              </td>
+                              <td className="py-2 pl-4">
+                                <PercentileBar label={`${row.metric} global percentile`} value={row.global} compact showLabel={false} />
+                              </td>
                             </tr>
                           ))
                         )}
@@ -1431,8 +2041,11 @@ export default function ReportPage() {
                 <>
                   <div className="flex flex-wrap items-end gap-4 mb-4">
                     <div className="flex flex-col gap-2">
-                      <Label>Age min</Label>
+                      <Label htmlFor="similar-age-min">Age min</Label>
                       <input
+                        id="similar-age-min"
+                        name="similar_age_min"
+                        aria-label="Similar players minimum age"
                         type="number"
                         min={0}
                         className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-28"
@@ -1444,8 +2057,11 @@ export default function ReportPage() {
                       />
                     </div>
                     <div className="flex flex-col gap-2">
-                      <Label>Age max</Label>
+                      <Label htmlFor="similar-age-max">Age max</Label>
                       <input
+                        id="similar-age-max"
+                        name="similar_age_max"
+                        aria-label="Similar players maximum age"
                         type="number"
                         min={0}
                         className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-28"
@@ -1458,6 +2074,9 @@ export default function ReportPage() {
                     </div>
                     <label className="flex items-center gap-2 text-sm text-slate-300">
                       <input
+                        id="similar-big5-only"
+                        name="similar_big5_only"
+                        aria-label="5 Big Leagues Only"
                         type="checkbox"
                         className="accent-emerald-400"
                         checked={similarFilters.big5Only}
@@ -1470,6 +2089,9 @@ export default function ReportPage() {
                     </label>
                     <label className="flex items-center gap-2 text-sm text-slate-300">
                       <input
+                        id="similar-current-season-only"
+                        name="similar_current_season_only"
+                        aria-label={`Current season only ${report?.current_season_label || "2025/2026"}`}
                         type="checkbox"
                         className="accent-emerald-400"
                         checked={similarFilters.currentSeasonOnly}
@@ -1542,8 +2164,6 @@ export default function ReportPage() {
                             tmFields.tm_profile_url || sim.tm_profile_url
                           );
                           const reportUrl = `/report?player_id=${sim.player_b_id}`;
-                          const leagueStyle = percentileStyle(sim.assigned_role_pct_league);
-                          const globalStyle = percentileStyle(sim.assigned_role_pct_global);
                           return (
                             <div
                               key={`${sim.player_b_id}-${sim.profile}`}
@@ -1607,15 +2227,21 @@ export default function ReportPage() {
                                   ? Number(sim.global_score_adjusted).toFixed(1)
                                   : "—"}
                               </div>
-                              <div className={`text-right text-sm ${leagueStyle.className}`} style={leagueStyle.style}>
-                                {sim.assigned_role_pct_league != null
-                                  ? Number(sim.assigned_role_pct_league).toFixed(0)
-                                  : "—"}
+                              <div>
+                                <PercentileBar
+                                  label="League"
+                                  value={sim.assigned_role_pct_league}
+                                  compact
+                                  showLabel={false}
+                                />
                               </div>
-                              <div className={`text-right text-sm ${globalStyle.className}`} style={globalStyle.style}>
-                                {sim.assigned_role_pct_global != null
-                                  ? Number(sim.assigned_role_pct_global).toFixed(0)
-                                  : "—"}
+                              <div>
+                                <PercentileBar
+                                  label="Global"
+                                  value={sim.assigned_role_pct_global}
+                                  compact
+                                  showLabel={false}
+                                />
                               </div>
                             </div>
                           );
@@ -1685,6 +2311,83 @@ export default function ReportPage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+            </Card>
+
+            <Card>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Transfers</p>
+                  <h3 className="mt-2 text-lg font-semibold text-white">
+                    Career movement timeline
+                  </h3>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
+                    Review verified club movements with source context before using this report in market conversations.
+                  </p>
+                </div>
+                <span className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-300">
+                  {(report.transfer_history || []).length} moves
+                </span>
+              </div>
+
+              {(report.transfer_history || []).length ? (
+                <div className="mt-5 space-y-3">
+                  {(report.transfer_history || []).map((transfer) => (
+                    <div
+                      key={`${transfer.id}-${transfer.transfer_date || "date"}-${transfer.team_in_name || "in"}-${transfer.team_out_name || "out"}`}
+                      className="rounded-xl border border-white/10 bg-slate-950/60 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-slate-950">
+                              {formatTransferDate(transfer.transfer_date)}
+                            </span>
+                            <span className="rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-emerald-200">
+                              {transfer.transfer_type || "Transfer"}
+                            </span>
+                            {transfer.match_type === "name_club" ? (
+                              <span className="rounded-full border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-amber-200">
+                                Name + club match
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] md:items-center">
+                            <div className="flex min-w-0 items-center gap-3 rounded-lg border border-white/10 bg-slate-900/70 p-3">
+                              <ClubLogo name={transfer.team_out_name} className="h-10 w-10 rounded" />
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">From</p>
+                                <p className="truncate text-sm font-extrabold text-white">{transfer.team_out_name || "Free agent"}</p>
+                              </div>
+                            </div>
+                            <div className="hidden h-10 items-center justify-center rounded-full border border-white/10 bg-slate-900/70 text-lg font-black text-slate-400 md:flex">
+                              →
+                            </div>
+                            <div className="flex min-w-0 items-center gap-3 rounded-lg border border-emerald-300/20 bg-emerald-400/10 p-3">
+                              <ClubLogo name={transfer.team_in_name} className="h-10 w-10 rounded" />
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-emerald-200">To</p>
+                                <p className="truncate text-sm font-extrabold text-white">{transfer.team_in_name || "Free agent"}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="min-w-[150px] rounded-lg border border-white/10 bg-slate-900/70 p-3 text-right">
+                          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Fee</p>
+                          <p className="mt-1 text-lg font-extrabold text-white">{transferFeeLabel(transfer.transfer_fee)}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-400">{transfer.league_name || transfer.team_name_context || "League to confirm"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-5 rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-5">
+                  <p className="text-sm font-extrabold text-white">No verified transfer history yet.</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-400">
+                    Import the Wyscout transfer file and confirm player-club mapping to enrich this report with career movements.
+                  </p>
                 </div>
               )}
             </Card>

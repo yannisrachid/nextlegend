@@ -1,22 +1,32 @@
 # Ignore all CSV files
 *.csv
-!nextlegend/prospects_data.csv
 
 # Allow specific CSVs if needed by negating
-#!nextlegend/data/wyscout_players_cleaned.csv
 
 docs/
 !new_nextlegend/docs/
 new_nextlegend/docs/*
 !new_nextlegend/docs/README.md
-!new_nextlegend/docs/RUNBOOK.md
-!new_nextlegend/docs/HANDOFF_2026-03-11.md
+!new_nextlegend/docs/skill.MD
+!new_nextlegend/docs/DATA_MODEL.md
+!new_nextlegend/docs/VPS_CICD.md
+!new_nextlegend/docs/PROJECT_HISTORY.md
 
 venv/
 .env
-nextlegend/config/credentials.toml
-nextlegend/__pycache__/
 toml_file.toml
 old_work/
 competitions.txt
 notebook.ipynb
+
+# Production/runtime artifacts
+backups/
+*.dump
+.env.*
+!.env.example
+new_nextlegend/data/prd_upsert_artifacts_backup_*/
+new_nextlegend/apps/frontend/node_modules/
+new_nextlegend/apps/frontend/.next/
+new_nextlegend/wyscout_current_season_job/logs/
+new_nextlegend/wyscout_current_season_job/final_data/
+new_nextlegend/wyscout_current_season_job/data/seasons/

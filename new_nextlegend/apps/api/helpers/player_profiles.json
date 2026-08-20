@@ -1,5 +1,5 @@
 {
-  "GK - Shot-stopper (mains)": {
+  "Shot-Stopping Goalkeeper": {
     "position_groups": ["GK"],
     "description": "Gardien très fort sur sa ligne, réflexes et % arrêts.",
     "min_minutes": 360,
@@ -13,7 +13,7 @@
       "clean_sheets": 0.10
     }
   },
-  "GK - Relanceur (ball-playing)": {
+  "Ball-Playing Goalkeeper": {
     "position_groups": ["GK"],
     "description": "Gardien relanceur : jeu au pied, volume de passes, longueur, précision.",
     "min_minutes": 360,
@@ -29,7 +29,7 @@
       "aerial_duels_gk_per_90": 0.08
     }
   },
-  "GK - Complet (sweeper-keeper)": {
+  "Sweeper Keeper": {
     "position_groups": ["GK"],
     "description": "Gardien complet : shot-stopping + sorties + relances.",
     "min_minutes": 360,
@@ -47,7 +47,7 @@
       "xg_against_per_90": 0.04
     }
   },
-  "DC - Stoppeur (agressif)": {
+  "Aggressive Centre Back": {
     "position_groups": ["LCB","RCB","CB"],
     "description": "Stoppeur agressif : duels, tacles, interceptions, activité défensive.",
     "min_minutes": 450,
@@ -62,7 +62,7 @@
       "aerial_duels_won_percent": 0.10
     }
   },
-  "DC - Relanceur (ball-playing CB)": {
+  "Ball-Playing Centre Back": {
     "position_groups": ["LCB","RCB","CB"],
     "description": "Premier relanceur : volume et réussite de passes vers l'avant & progressives.",
     "min_minutes": 450,
@@ -79,7 +79,7 @@
       "passes_to_final_third_per_90": 0.06
     }
   },
-  "DC - Dominant aérien": {
+  "Aerial-Dominant Centre Back": {
     "position_groups": ["LCB","RCB","CB"],
     "description": "Contrôle des airs : volume et réussite des duels aériens.",
     "min_minutes": 450,
@@ -91,7 +91,7 @@
       "interceptions_per_90": 0.08
     }
   },
-  "DC - Large gauche (wide LCB)": {
+  "Wide Left Centre Back": {
     "position_groups": ["LCB"],
     "description": "CB excentré gauche : couverture large et sorties ballon-pied côté gauche.",
     "min_minutes": 450,
@@ -105,7 +105,7 @@
       "def_duels_won_percent": 0.18
     }
   },
-  "DC - Large droit (wide RCB)": {
+  "Wide Right Centre Back": {
     "position_groups": ["RCB"],
     "description": "CB excentré droit : couverture large et sorties ballon-pied côté droit.",
     "min_minutes": 450,
@@ -119,7 +119,7 @@
       "def_duels_won_percent": 0.18
     }
   },
-  "Latéral gauche - Offensif complet": {
+  "Offensive Left Back": {
     "position_groups": ["LB","LWB"],
     "description": "Latéral/piston gauche très porté vers l'avant.",
     "min_minutes": 450,
@@ -136,7 +136,7 @@
       "xa_per_90": 0.10
     }
   },
-  "Latéral droit - Offensif complet": {
+  "Offensive Right Back": {
     "position_groups": ["RB","RWB"],
     "description": "Latéral/piston droit très porté vers l'avant.",
     "min_minutes": 450,
@@ -153,7 +153,7 @@
       "xa_per_90": 0.10
     }
   },
-  "Latéral gauche - Solide défensivement": {
+  "Defensive Left Back": {
     "position_groups": ["LB"],
     "description": "Latéral gauche priorisant la défense.",
     "min_minutes": 450,
@@ -167,7 +167,7 @@
       "fouls_per_90": 0.06
     }
   },
-  "Latéral droit - Solide défensivement": {
+  "Defensive Right Back": {
     "position_groups": ["RB"],
     "description": "Latéral droit priorisant la défense.",
     "min_minutes": 450,
@@ -181,7 +181,7 @@
       "fouls_per_90": 0.06
     }
   },
-  "Latéral gauche - Hybride (inversé)": {
+  "Inverted Left Back": {
     "position_groups": ["LB"],
     "description": "Latéral gauche intérieur/axial (jeu à l'intérieur, rôle d'appui en possession).",
     "min_minutes": 450,
@@ -198,7 +198,7 @@
       "deep_completions_per_90": 0.12
     }
   },
-  "Latéral droit - Hybride (inversé)": {
+  "Inverted Right Back": {
     "position_groups": ["RB"],
     "description": "Latéral droit intérieur/axial (jeu à l'intérieur, rôle d'appui en possession).",
     "min_minutes": 450,
@@ -215,7 +215,7 @@
       "deep_completions_per_90": 0.12
     }
   },
-  "Piston gauche - Ligne haute": {
+  "High Left Wing Back": {
     "position_groups": ["LWB"],
     "description": "Piston gauche très offensif (ligne haute, largeur).",
     "min_minutes": 450,
@@ -230,7 +230,7 @@
       "xa_per_90": 0.12
     }
   },
-  "Piston droit - Ligne haute": {
+  "High Right Wing Back": {
     "position_groups": ["RWB"],
     "description": "Piston droit très offensif (ligne haute, largeur).",
     "min_minutes": 450,
@@ -245,7 +245,7 @@
       "xa_per_90": 0.12
     }
   },
-  "6 - Destructeur (ball-winner)": {
+  "Ball-Winning Defensive Midfielder": {
     "position_groups": ["DMF","LDMF","RDMF"],
     "description": "Récupérateur : tacles, duels, interceptions.",
     "min_minutes": 600,
@@ -259,7 +259,7 @@
       "aerial_duels_won_percent": 0.12
     }
   },
-  "6 - Regista (deep-lying playmaker)": {
+  "Deep-Lying Playmaker": {
     "position_groups": ["DMF","LDMF","RDMF"],
     "description": "Chef d'orchestre bas : progression par la passe, vision.",
     "min_minutes": 600,
@@ -276,7 +276,7 @@
       "passes_to_final_third_per_90": 0.06
     }
   },
-  "8 gauche - Box-to-box": {
+  "Left Box-to-Box Midfielder": {
     "position_groups": ["LCMF"],
     "description": "LCMF énergique, projection, efforts bi-directionnels.",
     "min_minutes": 600,
@@ -293,7 +293,7 @@
       "assists_per_90": 0.12
     }
   },
-  "8 droit - Box-to-box": {
+  "Right Box-to-Box Midfielder": {
     "position_groups": ["RCMF"],
     "description": "RCMF énergique, projection, efforts bi-directionnels.",
     "min_minutes": 600,
@@ -310,7 +310,7 @@
       "assists_per_90": 0.12
     }
   },
-  "Mezzala gauche": {
+  "Left Mezzala": {
     "position_groups": ["LCMF","LAMF"],
     "description": "LCMF/LAMF orienté largeur/profondeur à gauche.",
     "min_minutes": 600,
@@ -326,7 +326,7 @@
       "xa_per_90": 0.16
     }
   },
-  "Mezzala droit": {
+  "Right Mezzala": {
     "position_groups": ["RCMF","RAMF"],
     "description": "RCMF/RAMF orienté largeur/profondeur à droite.",
     "min_minutes": 600,
@@ -342,7 +342,7 @@
       "xa_per_90": 0.16
     }
   },
-  "10 - Créateur (enganche/playmaker)": {
+  "Creative Number 10": {
     "position_groups": ["AMF","LAMF","RAMF"],
     "description": "Créateur pur : passes clés, XA, passes dans l'intervalle.",
     "min_minutes": 450,
@@ -357,7 +357,7 @@
       "progressive_passes_per_90": 0.08
     }
   },
-  "10 - Second attaquant (shadow striker)": {
+  "Shadow Striker": {
     "position_groups": ["AMF","LAMF","RAMF"],
     "description": "Projection et finition secondaire depuis la zone du 10.",
     "min_minutes": 450,
@@ -372,7 +372,7 @@
       "xa_per_90": 0.10
     }
   },
-  "Ailier gauche - Débordement": {
+  "Touchline Left Winger": {
     "position_groups": ["LW","LWF"],
     "description": "Prise de couloir gauche, 1v1, centres.",
     "min_minutes": 450,
@@ -387,7 +387,7 @@
       "progressive_runs_per_90": 0.16
     }
   },
-  "Ailier droit - Débordement": {
+  "Touchline Right Winger": {
     "position_groups": ["RW","RWF"],
     "description": "Prise de couloir droit, 1v1, centres.",
     "min_minutes": 450,
@@ -402,7 +402,7 @@
       "progressive_runs_per_90": 0.16
     }
   },
-  "Ailier gauche - Inversé": {
+  "Inside Left Winger": {
     "position_groups": ["LW","LWF","LAMF"],
     "description": "Rentrer intérieur depuis la gauche pour finir/combiner.",
     "min_minutes": 450,
@@ -417,7 +417,7 @@
       "progressive_runs_per_90": 0.12
     }
   },
-  "Ailier droit - Inversé": {
+  "Inside Right Winger": {
     "position_groups": ["RW","RWF","RAMF"],
     "description": "Rentrer intérieur depuis la droite pour finir/combiner.",
     "min_minutes": 450,
@@ -432,7 +432,7 @@
       "progressive_runs_per_90": 0.12
     }
   },
-  "Ailier gauche - Deux voies": {
+  "Two-Way Left Winger": {
     "position_groups": ["LW","LWF"],
     "description": "Apports offensifs + repli/duels à gauche.",
     "min_minutes": 450,
@@ -448,7 +448,7 @@
       "goals_per_90": 0.12
     }
   },
-  "Ailier droit - Deux voies": {
+  "Two-Way Right Winger": {
     "position_groups": ["RW","RWF"],
     "description": "Apports offensifs + repli/duels à droite.",
     "min_minutes": 450,
@@ -464,7 +464,7 @@
       "goals_per_90": 0.12
     }
   },
-  "9 - Pivot (target man)": {
+  "Target Striker": {
     "position_groups": ["CF"],
     "description": "Jeu en remise et domination aérienne.",
     "min_minutes": 450,
@@ -478,7 +478,7 @@
       "goals_per_90": 0.14
     }
   },
-  "9 - Renard (poacher)": {
+  "Poacher": {
     "position_groups": ["CF"],
     "description": "Finition dans la surface, attaque des zones chaudes.",
     "min_minutes": 450,
@@ -492,7 +492,7 @@
       "goal_conversion_rate": 0.08
     }
   },
-  "9 - Complet (complete forward)": {
+  "Complete Forward": {
     "position_groups": ["CF"],
     "description": "Capable de terminer, combiner et attaquer la profondeur.",
     "min_minutes": 450,
@@ -507,7 +507,7 @@
       "shots_per_90": 0.12
     }
   },
-  "9 - Pressing (defensive forward)": {
+  "Pressing Forward": {
     "position_groups": ["CF"],
     "description": "Pressing et volume défensif d'un 9.",
     "min_minutes": 450,
@@ -522,7 +522,7 @@
       "xa_per_90": 0.14
     }
   },
-  "9 - Décrocheur (DLF)": {
+  "Deep-Lying Forward": {
     "position_groups": ["CF"],
     "description": "Attaquant qui décroche pour créer et connecter.",
     "min_minutes": 450,

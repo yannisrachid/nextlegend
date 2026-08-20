@@ -706,13 +706,13 @@ export default function VizualisationPage() {
   };
 
   return (
-    <main className="min-h-screen bg-hero-pattern text-slate-100 py-10 px-4">
+    <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Vizualisation</p>
-          <h1 className="text-4xl font-bold text-white tracking-tight">Vizualisation</h1>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Visuals</p>
+          <h1 className="text-4xl font-bold text-white tracking-tight">Scouting visual studio</h1>
           <p className="text-slate-300 max-w-3xl">
-            Recompute percentiles within a custom cohort and explore pizza charts by theme.
+            Build clear percentile visuals for reports, decks and club conversations.
           </p>
         </header>
 

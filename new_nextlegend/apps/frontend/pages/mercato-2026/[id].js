@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
+import ClubLogo from "@/components/ClubLogo";
 import { deleteJson, fetchJson, fetchJsonCached, patchJson, postJson } from "@/lib/api";
 
 const TM_BASE_URL = "https://www.transfermarkt.com";
@@ -142,7 +143,7 @@ const MatchingCinematic = ({ selectedCount }) => (
           <span className="mercato-node node-c" />
         </div>
         <div className="relative z-10">
-          <p className="text-xs uppercase tracking-[0.3em] text-primary">Mercato matching</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-primary">Mercato 2026</p>
           <h2 className="mt-2 text-2xl font-semibold text-white">Building the shortlist</h2>
           <p className="mt-2 max-w-lg text-sm text-slate-300">
             Scanning profiles, recalibrating league context and checking squad-fit constraints.
@@ -684,7 +685,7 @@ export default function MercatoNeedDetailPage() {
   }, [requestItem, need, candidates.length]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
+    <main className="nl-page">
       {generating ? <MatchingCinematic selectedCount={searchCompetitions.length} /> : null}
 
       <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
@@ -703,18 +704,21 @@ export default function MercatoNeedDetailPage() {
           <>
             <section className="rounded-xl border border-white/5 bg-slate-900/50 p-5">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                <div className="min-w-0">
+                <div className="flex min-w-0 items-start gap-4">
+                  <ClubLogo name={requestItem.club_name} className="h-16 w-16 rounded-lg border-slate-700 bg-slate-950" />
+                  <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={priorityTone(requestItem.priority)}>{requestItem.priority}</Badge>
                     <Badge tone={statusTone(requestItem.status)}>{requestItem.status}</Badge>
                     <Badge>{requestItem.season}</Badge>
                   </div>
                   <h1 className="mt-3 text-4xl font-semibold text-white">
-                    {requestItem.club_name || "Undefined club"} - {need.position || "Need"}
+                    {requestItem.club_name || "Club to confirm"} - {need.position || "Open requirement"}
                   </h1>
                   <p className="mt-2 text-sm text-slate-400">
-                    {requestItem.competition_name || "League not set"} - {requestItem.title}
+                    {requestItem.competition_name || "League to confirm"} - {requestItem.title || "Recruitment need"}
                   </p>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -760,7 +764,10 @@ export default function MercatoNeedDetailPage() {
                 <Card>
                   <h2 className="text-lg font-semibold text-white">Need brief</h2>
                   <div className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
-                    <p><span className="text-slate-500">Club:</span> {requestItem.club_name || "-"}</p>
+                    <p className="flex items-center gap-2">
+                      <ClubLogo name={requestItem.club_name} className="h-7 w-7" />
+                      <span><span className="text-slate-500">Club:</span> {requestItem.club_name || "-"}</span>
+                    </p>
                     <p><span className="text-slate-500">League:</span> {requestItem.competition_name || "-"}</p>
                     <p><span className="text-slate-500">Agent:</span> {requestItem.assigned_agent_name || requestItem.assigned_agent_id || "-"}</p>
                     <p><span className="text-slate-500">Created:</span> {requestItem.created_at ? new Date(requestItem.created_at).toLocaleDateString() : "-"}</p>
@@ -791,7 +798,7 @@ export default function MercatoNeedDetailPage() {
                   </div>
                   {candidates.length === 0 ? (
                     <Card>
-                      <p className="font-semibold text-white">No player assigned yet.</p>
+                      <p className="font-semibold text-white">No player has been assigned to this requirement yet.</p>
                       <p className="mt-1 text-sm text-slate-400">Run matching or add a player manually.</p>
                     </Card>
                   ) : null}
@@ -863,8 +870,9 @@ export default function MercatoNeedDetailPage() {
                               )}
                               <span className="min-w-0">
                                 <span className="block truncate font-medium text-white">{player.name}</span>
-                                <span className="block truncate text-xs text-slate-400">
-                                  {player.team || "-"} - {player.competition_name || "-"} - {player.calendar || "-"}
+                                <span className="mt-1 flex items-center gap-2 truncate text-xs text-slate-400">
+                                  <ClubLogo name={player.team} className="h-5 w-5 rounded" />
+                                  <span className="min-w-0 truncate">{player.team || "-"} - {player.competition_name || "-"} - {player.calendar || "-"}</span>
                                 </span>
                               </span>
                             </button>

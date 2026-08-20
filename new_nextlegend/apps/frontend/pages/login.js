@@ -38,25 +38,47 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen bg-hero-pattern text-slate-100 flex items-center justify-center px-4">
-      <div className="w-full max-w-md glass-panel rounded-2xl p-8 border border-white/5">
-        <div className="text-center space-y-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-            NextLegend by Your Legend
-          </p>
-          <h1 className="text-3xl font-semibold text-white">Welcome back</h1>
-          <p className="text-slate-300 text-sm">
-            Sign in to access the scouting workspace.
-          </p>
-        </div>
+    <main className="nl-page flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white/90 shadow-[0_28px_90px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="hidden min-h-[560px] flex-col justify-between !bg-slate-950 p-8 !text-white lg:flex">
+          <div>
+            <img src="/logo_nl.png" alt="Next Legend" className="h-12 w-12 rounded-md bg-white p-1" />
+            <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-teal-200">
+              Next Legend by HD Sports
+            </p>
+            <h1 className="mt-4 max-w-sm text-4xl font-extrabold leading-tight !text-white">
+              Intelligence for football decisions that move markets.
+            </h1>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {["Player reports", "Market ranking", "Mercato plans", "Scouting briefs"].map((item) => (
+              <div key={item} className="rounded-md border border-white/10 bg-white/10 px-3 py-3 text-sm font-semibold !text-white">
+                {item}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="p-6 md:p-10">
+          <div className="space-y-2">
+            <p className="nl-kicker">HD Sports workspace</p>
+            <h1 className="text-3xl font-extrabold text-slate-950">
+              Sign in to Next Legend
+            </h1>
+            <p className="text-sm leading-6 text-slate-600">
+              Access the reports, player rooms and market workflows used by the HD Sports team.
+            </p>
+          </div>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
-            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+            <label htmlFor="login-username" className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
               Username
             </label>
             <input
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+              id="login-username"
+              name="username"
+              className="nl-field"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               placeholder="Enter username"
@@ -64,12 +86,14 @@ export default function LoginPage() {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+            <label htmlFor="login-password" className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
               Password
             </label>
             <input
+              id="login-password"
+              name="password"
               type="password"
-              className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+              className="nl-field"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="Enter password"
@@ -80,11 +104,12 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 rounded-md bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition"
+            className="nl-button-primary w-full"
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+        </section>
       </div>
     </main>
   );

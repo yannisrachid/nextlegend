@@ -19,7 +19,7 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ["Inter", ...fontFamily.sans],
+        sans: ["DM Sans", "Inter", ...fontFamily.sans],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -30,7 +30,7 @@ module.exports = {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
-          glow: "rgba(123, 211, 137, 0.4)",
+          glow: "rgba(13, 148, 136, 0.24)",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -56,9 +56,9 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        success: "#7bd389",
-        warning: "#f59e0b",
-        danger: "#ef4444",
+        success: "#0f9f6e",
+        warning: "#d97706",
+        danger: "#dc2626",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -68,7 +68,7 @@ module.exports = {
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "hero-pattern":
-          "radial-gradient(circle at 20% -10%, rgba(123, 211, 137, 0.15), transparent 45%), radial-gradient(circle at 80% 0%, rgba(255, 122, 89, 0.1), transparent 40%)",
+          "linear-gradient(135deg, rgba(255,255,255,0.96), rgba(241,245,249,0.92) 42%, rgba(236,253,245,0.72)), radial-gradient(circle at 18% 0%, rgba(20,184,166,0.18), transparent 32%), radial-gradient(circle at 88% 8%, rgba(14,165,233,0.14), transparent 34%)",
       },
       keyframes: {
         "accordion-down": {

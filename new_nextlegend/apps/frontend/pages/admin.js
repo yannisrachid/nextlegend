@@ -151,7 +151,7 @@ export default function AdminPage() {
 
   if (!me) {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 px-4 py-12">
+      <main className="nl-page px-4 py-12">
         <div className="max-w-4xl mx-auto">
           <Card>Loading profile…</Card>
         </div>
@@ -161,10 +161,10 @@ export default function AdminPage() {
 
   if (!isAdmin) {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 px-4 py-12">
+      <main className="nl-page px-4 py-12">
         <div className="max-w-4xl mx-auto">
           <Card>
-            <h1 className="text-xl font-semibold text-white">Admin portal</h1>
+            <h1 className="text-xl font-semibold text-white">HD Sports access control</h1>
             <p className="text-sm text-slate-300 mt-2">Access denied.</p>
           </Card>
         </div>
@@ -173,10 +173,10 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 px-4 py-12">
+    <main className="nl-page px-4 py-12">
       <div className="max-w-6xl mx-auto space-y-8">
         <header className="space-y-2">
-          <h1 className="text-2xl font-semibold text-white">Admin portal</h1>
+          <h1 className="text-2xl font-semibold text-white">Team access control</h1>
           <p className="text-sm text-slate-400">
             Manage users and keep credentials in sync.
           </p>

@@ -72,7 +72,7 @@ et pas de swap, et le run complet avec `SIM_TOPK=30` a déjà été tué en OOM
 (`exit 137`).
 
 Le mode PRD courant est documenté ici:
-- `docs/RUNBOOK.md`
+- `docs/VPS_CICD.md`
 
 Build + run du job complet en container:
 

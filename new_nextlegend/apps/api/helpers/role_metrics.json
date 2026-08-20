@@ -1,5 +1,5 @@
 {
-  "GK - Shot-stopper (mains)": [
+  "Shot-Stopping Goalkeeper": [
     "save_percent",
     "goals_prevented_per_90",
     "shots_against_per_90",
@@ -7,7 +7,7 @@
     "xg_against_per_90",
     "clean_sheets"
   ],
-  "GK - Relanceur (ball-playing)": [
+  "Ball-Playing Goalkeeper": [
     "passes_per_90",
     "accurate_passes_percent",
     "long_passes_per_90",
@@ -17,7 +17,7 @@
     "exits_per_90",
     "aerial_duels_gk_per_90"
   ],
-  "GK - Complet (sweeper-keeper)": [
+  "Sweeper Keeper": [
     "save_percent",
     "goals_prevented_per_90",
     "exits_per_90",
@@ -29,7 +29,7 @@
     "goals_conceded_per_90",
     "xg_against_per_90"
   ],
-  "DC - Stoppeur (agressif)": [
+  "Aggressive Centre Back": [
     "def_duels_per_90",
     "def_duels_won_percent",
     "successful_def_actions_per_90",
@@ -38,7 +38,7 @@
     "aerial_duels_per_90",
     "aerial_duels_won_percent"
   ],
-  "DC - Relanceur (ball-playing CB)": [
+  "Ball-Playing Centre Back": [
     "passes_per_90",
     "accurate_passes_percent",
     "forward_passes_per_90",
@@ -49,13 +49,13 @@
     "accurate_long_passes_percent",
     "passes_to_final_third_per_90"
   ],
-  "DC - Dominant aérien": [
+  "Aerial-Dominant Centre Back": [
     "aerial_duels_per_90",
     "aerial_duels_won_percent",
     "def_duels_won_percent",
     "interceptions_per_90"
   ],
-  "DC - Large gauche (wide LCB)": [
+  "Wide Left Centre Back": [
     "progressive_runs_per_90",
     "accelerations_per_90",
     "dribbles_per_90",
@@ -63,7 +63,7 @@
     "successful_def_actions_per_90",
     "def_duels_won_percent"
   ],
-  "DC - Large droit (wide RCB)": [
+  "Wide Right Centre Back": [
     "progressive_runs_per_90",
     "accelerations_per_90",
     "dribbles_per_90",
@@ -71,7 +71,7 @@
     "successful_def_actions_per_90",
     "def_duels_won_percent"
   ],
-  "Latéral gauche - Offensif complet": [
+  "Offensive Left Back": [
     "crosses_per_90",
     "accurate_crosses_percent",
     "dribbles_per_90",
@@ -82,7 +82,7 @@
     "deep_crosses_per_90",
     "xa_per_90"
   ],
-  "Latéral droit - Offensif complet": [
+  "Offensive Right Back": [
     "crosses_per_90",
     "accurate_crosses_percent",
     "dribbles_per_90",
@@ -93,7 +93,7 @@
     "deep_crosses_per_90",
     "xa_per_90"
   ],
-  "Latéral gauche - Solide défensivement": [
+  "Defensive Left Back": [
     "def_duels_per_90",
     "def_duels_won_percent",
     "successful_def_actions_per_90",
@@ -101,7 +101,7 @@
     "aerial_duels_won_percent",
     "fouls_per_90"
   ],
-  "Latéral droit - Solide défensivement": [
+  "Defensive Right Back": [
     "def_duels_per_90",
     "def_duels_won_percent",
     "successful_def_actions_per_90",
@@ -109,7 +109,7 @@
     "aerial_duels_won_percent",
     "fouls_per_90"
   ],
-  "Latéral gauche - Hybride (inversé)": [
+  "Inverted Left Back": [
     "passes_per_90",
     "accurate_passes_percent",
     "lateral_passes_per_90",
@@ -120,7 +120,7 @@
     "passes_to_final_third_per_90",
     "deep_completions_per_90"
   ],
-  "Latéral droit - Hybride (inversé)": [
+  "Inverted Right Back": [
     "passes_per_90",
     "accurate_passes_percent",
     "lateral_passes_per_90",
@@ -131,7 +131,7 @@
     "passes_to_final_third_per_90",
     "deep_completions_per_90"
   ],
-  "Piston gauche - Ligne haute": [
+  "High Left Wing Back": [
     "crosses_per_90",
     "deep_crosses_per_90",
     "progressive_runs_per_90",
@@ -140,7 +140,7 @@
     "passes_to_penalty_area_per_90",
     "xa_per_90"
   ],
-  "Piston droit - Ligne haute": [
+  "High Right Wing Back": [
     "crosses_per_90",
     "deep_crosses_per_90",
     "progressive_runs_per_90",
@@ -149,7 +149,7 @@
     "passes_to_penalty_area_per_90",
     "xa_per_90"
   ],
-  "6 - Destructeur (ball-winner)": [
+  "Ball-Winning Defensive Midfielder": [
     "successful_def_actions_per_90",
     "def_duels_per_90",
     "def_duels_won_percent",
@@ -157,7 +157,7 @@
     "interceptions_per_90",
     "aerial_duels_won_percent"
   ],
-  "6 - Regista (deep-lying playmaker)": [
+  "Deep-Lying Playmaker": [
     "passes_per_90",
     "forward_passes_per_90",
     "accurate_forward_passes_percent",
@@ -168,7 +168,7 @@
     "smart_passes_per_90",
     "passes_to_final_third_per_90"
   ],
-  "8 gauche - Box-to-box": [
+  "Left Box-to-Box Midfielder": [
     "progressive_runs_per_90",
     "accelerations_per_90",
     "offensive_duels_per_90",
@@ -179,7 +179,7 @@
     "goals_per_90",
     "assists_per_90"
   ],
-  "8 droit - Box-to-box": [
+  "Right Box-to-Box Midfielder": [
     "progressive_runs_per_90",
     "accelerations_per_90",
     "offensive_duels_per_90",
@@ -190,7 +190,7 @@
     "goals_per_90",
     "assists_per_90"
   ],
-  "Mezzala gauche": [
+  "Left Mezzala": [
     "progressive_runs_per_90",
     "dribbles_per_90",
     "successful_dribbles_percent",
@@ -200,7 +200,7 @@
     "passes_to_penalty_area_per_90",
     "xa_per_90"
   ],
-  "Mezzala droit": [
+  "Right Mezzala": [
     "progressive_runs_per_90",
     "dribbles_per_90",
     "successful_dribbles_percent",
@@ -210,7 +210,7 @@
     "passes_to_penalty_area_per_90",
     "xa_per_90"
   ],
-  "10 - Créateur (enganche/playmaker)": [
+  "Creative Number 10": [
     "xa_per_90",
     "shot_assists_per_90",
     "key_passes_per_90",
@@ -219,7 +219,7 @@
     "deep_completions_per_90",
     "progressive_passes_per_90"
   ],
-  "10 - Second attaquant (shadow striker)": [
+  "Shadow Striker": [
     "touches_in_penalty_area_per_90",
     "goals_per_90",
     "xg_per_90",
@@ -228,7 +228,7 @@
     "progressive_runs_per_90",
     "xa_per_90"
   ],
-  "Ailier gauche - Débordement": [
+  "Touchline Left Winger": [
     "dribbles_per_90",
     "successful_dribbles_percent",
     "offensive_duels_per_90",
@@ -237,7 +237,7 @@
     "deep_crosses_per_90",
     "progressive_runs_per_90"
   ],
-  "Ailier droit - Débordement": [
+  "Touchline Right Winger": [
     "dribbles_per_90",
     "successful_dribbles_percent",
     "offensive_duels_per_90",
@@ -246,7 +246,7 @@
     "deep_crosses_per_90",
     "progressive_runs_per_90"
   ],
-  "Ailier gauche - Inversé": [
+  "Inside Left Winger": [
     "touches_in_penalty_area_per_90",
     "goals_per_90",
     "xg_per_90",
@@ -255,7 +255,7 @@
     "key_passes_per_90",
     "progressive_runs_per_90"
   ],
-  "Ailier droit - Inversé": [
+  "Inside Right Winger": [
     "touches_in_penalty_area_per_90",
     "goals_per_90",
     "xg_per_90",
@@ -264,7 +264,7 @@
     "key_passes_per_90",
     "progressive_runs_per_90"
   ],
-  "Ailier gauche - Deux voies": [
+  "Two-Way Left Winger": [
     "dribbles_per_90",
     "successful_dribbles_percent",
     "offensive_duels_per_90",
@@ -274,7 +274,7 @@
     "xa_per_90",
     "goals_per_90"
   ],
-  "Ailier droit - Deux voies": [
+  "Two-Way Right Winger": [
     "dribbles_per_90",
     "successful_dribbles_percent",
     "offensive_duels_per_90",
@@ -284,7 +284,7 @@
     "xa_per_90",
     "goals_per_90"
   ],
-  "9 - Pivot (target man)": [
+  "Target Striker": [
     "aerial_duels_per_90",
     "aerial_duels_won_percent",
     "passes_received_per_90",
@@ -292,7 +292,7 @@
     "xg_per_90",
     "goals_per_90"
   ],
-  "9 - Renard (poacher)": [
+  "Poacher": [
     "touches_in_penalty_area_per_90",
     "xg_per_90",
     "goals_per_90",
@@ -300,7 +300,7 @@
     "shots_on_target_percent",
     "goal_conversion_rate"
   ],
-  "9 - Complet (complete forward)": [
+  "Complete Forward": [
     "goals_per_90",
     "xg_per_90",
     "xa_per_90",
@@ -309,7 +309,7 @@
     "touches_in_penalty_area_per_90",
     "shots_per_90"
   ],
-  "9 - Pressing (defensive forward)": [
+  "Pressing Forward": [
     "offensive_duels_per_90",
     "successful_def_actions_per_90",
     "def_duels_per_90",
@@ -318,7 +318,7 @@
     "progressive_runs_per_90",
     "xa_per_90"
   ],
-  "9 - Décrocheur (DLF)": [
+  "Deep-Lying Forward": [
     "xa_per_90",
     "key_passes_per_90",
     "smart_passes_per_90",

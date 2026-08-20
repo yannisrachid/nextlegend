@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, Query, HTTPException, Request
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Any, Optional, List
@@ -11,6 +11,11 @@ import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
+import ipaddress
+import socket
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from settings import settings
 from db import get_session, SessionLocal
@@ -35,6 +40,7 @@ from models import (
     ReportSeasonOption,
     RoleScore,
     ScoreHistoryPoint,
+    TransferHistoryItem,
 )
 from agentic import (
     PlayerFilters,
@@ -57,6 +63,9 @@ import unicodedata
 import json
 import csv
 import threading
+import io
+import zipfile
+import html
 from bisect import bisect_right
 
 app = FastAPI(title="NextLegend v2 API", version="0.1.0")
@@ -69,8 +78,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+MAX_PROXY_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _is_public_proxy_host(hostname: str) -> bool:
+    try:
+        addresses = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return False
+    for address in addresses:
+        ip = ipaddress.ip_address(address[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
 _MERCATO_SCHEMA_LOCK = threading.Lock()
 _MERCATO_SCHEMA_READY = False
+_AGENCY_OPS_SCHEMA_LOCK = threading.Lock()
+_AGENCY_OPS_SCHEMA_READY = False
 
 
 def _auth_json_response(request: Request, detail: str, status_code: int = 401) -> JSONResponse:
@@ -89,7 +121,7 @@ def _auth_json_response(request: Request, detail: str, status_code: int = 401) -
 
 @app.middleware("http")
 async def auth_middleware(request, call_next):
-    public_paths = {"/", "/health", "/auth/login", "/auth/logout", "/auth/me"}
+    public_paths = {"/", "/health", "/image-proxy", "/auth/login", "/auth/logout", "/auth/me"}
     if request.method == "OPTIONS":
         return await call_next(request)
     if request.url.path in public_paths or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
@@ -262,6 +294,139 @@ CREATE INDEX IF NOT EXISTS mercato_requests_club_status_idx ON mercato_requests(
 CREATE INDEX IF NOT EXISTS mercato_requests_agent_idx ON mercato_requests(assigned_agent_id);
 CREATE INDEX IF NOT EXISTS mercato_needs_request_idx ON mercato_needs(mercato_request_id);
 CREATE INDEX IF NOT EXISTS mercato_candidates_need_status_idx ON mercato_candidates(mercato_need_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS mercato_requests_active_dedupe_idx ON mercato_requests (
+    club_id,
+    LOWER(BTRIM(title)),
+    COALESCE(assigned_agent_id, ''),
+    season
+) WHERE archived_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS mercato_needs_dedupe_idx ON mercato_needs (
+    mercato_request_id,
+    COALESCE(LOWER(BTRIM(position)), ''),
+    COALESCE(LOWER(BTRIM(role)), '')
+);
+"""
+
+AGENCY_OPS_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS hq_priority_items (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    agent_name TEXT NOT NULL,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    status TEXT NOT NULL DEFAULT 'planned',
+    start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    end_date DATE,
+    color TEXT,
+    related_page TEXT,
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    updated_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hd_players (
+    id SERIAL PRIMARY KEY,
+    player_id INT REFERENCES players(id) ON DELETE SET NULL,
+    display_name TEXT NOT NULL,
+    position TEXT,
+    current_club TEXT,
+    contract_expiry DATE,
+    current_club_situation TEXT,
+    plan TEXT,
+    priority TEXT NOT NULL DEFAULT 'B',
+    demanded_transfer_fee DOUBLE PRECISION,
+    next_step TEXT,
+    assigned_agent TEXT,
+    photo_url TEXT,
+    player_phone TEXT,
+    player_email TEXT,
+    entourage_phone TEXT,
+    entourage_email TEXT,
+    season_objectives TEXT,
+    eyeball_url TEXT,
+    transfermarkt_url TEXT,
+    contract_status TEXT,
+    mandate_status TEXT,
+    medical_status TEXT,
+    market_notes TEXT,
+    scouting_notes TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    updated_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS player_phone TEXT;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS player_email TEXT;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS entourage_phone TEXT;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS entourage_email TEXT;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS season_objectives TEXT;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS eyeball_url TEXT;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS transfermarkt_url TEXT;
+
+CREATE TABLE IF NOT EXISTS hd_player_documents (
+    id SERIAL PRIMARY KEY,
+    hd_player_id INT REFERENCES hd_players(id) ON DELETE CASCADE,
+    player_id INT REFERENCES players(id) ON DELETE SET NULL,
+    document_type TEXT NOT NULL DEFAULT 'other',
+    title TEXT NOT NULL,
+    file_name TEXT,
+    file_key TEXT,
+    storage_url TEXT,
+    content_type TEXT,
+    size_bytes BIGINT,
+    notes TEXT,
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS player_transfer_history (
+    id SERIAL PRIMARY KEY,
+    source TEXT NOT NULL DEFAULT 'transferts.xlsx',
+    source_player_id INT,
+    linked_player_id INT REFERENCES players(id) ON DELETE SET NULL,
+    normalized_player_name TEXT,
+    player_name TEXT NOT NULL,
+    league_id INT,
+    league_name TEXT,
+    team_id_context INT,
+    team_name_context TEXT,
+    transfer_date DATE,
+    transfer_type TEXT,
+    transfer_fee TEXT,
+    team_in_id INT,
+    team_in_name TEXT,
+    team_out_id INT,
+    team_out_name TEXT,
+    transfer_date_serial DOUBLE PRECISION,
+    raw_payload JSONB,
+    imported_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS hq_priority_items_agent_date_idx ON hq_priority_items(agent_name, start_date);
+CREATE INDEX IF NOT EXISTS hd_players_player_id_idx ON hd_players(player_id);
+CREATE INDEX IF NOT EXISTS hd_players_agent_priority_idx ON hd_players(assigned_agent, priority);
+CREATE UNIQUE INDEX IF NOT EXISTS hd_players_active_player_unique_idx ON hd_players(player_id)
+WHERE player_id IS NOT NULL AND status <> 'archived';
+CREATE UNIQUE INDEX IF NOT EXISTS hd_players_active_name_unique_idx ON hd_players(LOWER(BTRIM(display_name)))
+WHERE status <> 'archived';
+CREATE INDEX IF NOT EXISTS hd_player_documents_hd_player_idx ON hd_player_documents(hd_player_id);
+CREATE INDEX IF NOT EXISTS player_transfer_history_source_player_idx ON player_transfer_history(source_player_id);
+CREATE INDEX IF NOT EXISTS player_transfer_history_linked_player_idx ON player_transfer_history(linked_player_id);
+CREATE INDEX IF NOT EXISTS player_transfer_history_normalized_name_idx ON player_transfer_history(normalized_player_name);
+CREATE INDEX IF NOT EXISTS player_transfer_history_date_idx ON player_transfer_history(transfer_date DESC NULLS LAST);
+CREATE UNIQUE INDEX IF NOT EXISTS player_transfer_history_unique_idx ON player_transfer_history (
+    source,
+    COALESCE(source_player_id, -1),
+    player_name,
+    COALESCE(transfer_date, DATE '1900-01-01'),
+    COALESCE(transfer_type, ''),
+    COALESCE(team_in_name, ''),
+    COALESCE(team_out_name, ''),
+    COALESCE(transfer_fee, '')
+);
 """
 
 AUTH_COOKIE_NAME = "nl_session"
@@ -481,6 +646,21 @@ def _ensure_mercato_schema(session: Session) -> None:
         )
         session.commit()
         _MERCATO_SCHEMA_READY = True
+
+
+def _ensure_agency_ops_schema(session: Session) -> None:
+    global _AGENCY_OPS_SCHEMA_READY
+    if _AGENCY_OPS_SCHEMA_READY:
+        return
+    with _AGENCY_OPS_SCHEMA_LOCK:
+        if _AGENCY_OPS_SCHEMA_READY:
+            return
+        _ensure_auth_schema(session)
+        statements = [chunk.strip() for chunk in AGENCY_OPS_SCHEMA_SQL.split(";") if chunk.strip()]
+        for statement in statements:
+            session.execute(text(statement))
+        session.commit()
+        _AGENCY_OPS_SCHEMA_READY = True
 
 
 def _hash_password(password: str, algo: str = "bcrypt") -> str:
@@ -837,6 +1017,57 @@ class ClubNeedPlayerOrder(BaseModel):
     player_ids: list[int]
 
 
+class HqPriorityItemPayload(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    agent_name: Optional[str] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    color: Optional[str] = None
+    related_page: Optional[str] = None
+
+
+class HdPlayerPayload(BaseModel):
+    player_id: Optional[int] = None
+    display_name: Optional[str] = None
+    position: Optional[str] = None
+    current_club: Optional[str] = None
+    contract_expiry: Optional[str] = None
+    current_club_situation: Optional[str] = None
+    plan: Optional[str] = None
+    priority: Optional[str] = None
+    demanded_transfer_fee: Optional[float] = None
+    next_step: Optional[str] = None
+    assigned_agent: Optional[str] = None
+    photo_url: Optional[str] = None
+    player_phone: Optional[str] = None
+    player_email: Optional[str] = None
+    entourage_phone: Optional[str] = None
+    entourage_email: Optional[str] = None
+    season_objectives: Optional[str] = None
+    eyeball_url: Optional[str] = None
+    transfermarkt_url: Optional[str] = None
+    contract_status: Optional[str] = None
+    mandate_status: Optional[str] = None
+    medical_status: Optional[str] = None
+    market_notes: Optional[str] = None
+    scouting_notes: Optional[str] = None
+    status: Optional[str] = None
+
+
+class HdPlayerDocumentPayload(BaseModel):
+    document_type: str = "other"
+    title: str
+    file_name: Optional[str] = None
+    file_key: Optional[str] = None
+    storage_url: Optional[str] = None
+    content_type: Optional[str] = None
+    size_bytes: Optional[int] = None
+    notes: Optional[str] = None
+
+
 class MercatoNeedPayload(BaseModel):
     id: Optional[int] = None
     position: Optional[str] = None
@@ -902,6 +1133,10 @@ class MercatoCandidateStatus(BaseModel):
 
 class MercatoShortlistGenerate(BaseModel):
     competitions: list[str] = []
+    age_min: Optional[int] = None
+    age_max: Optional[int] = None
+    min_minutes: Optional[int] = None
+    min_match_score: Optional[float] = None
 
 
 class AuthLoginRequest(BaseModel):
@@ -953,6 +1188,42 @@ def root() -> dict:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/image-proxy")
+def image_proxy(url: str = Query(..., min_length=8)) -> Response:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Only public HTTP(S) image URLs are supported")
+    if not _is_public_proxy_host(parsed.hostname):
+        raise HTTPException(status_code=400, detail="Image host is not allowed")
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "NextLegendImageProxy/1.0",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=6) as response:
+            content_type = response.headers.get("content-type", "").split(";")[0].lower()
+            if not content_type.startswith("image/"):
+                raise HTTPException(status_code=415, detail="URL did not return an image")
+            content = response.read(MAX_PROXY_IMAGE_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=exc.code, detail="Image could not be loaded") from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=502, detail="Image could not be loaded") from exc
+
+    if len(content) > MAX_PROXY_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image is too large")
+
+    return Response(
+        content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.post("/auth/login")
@@ -1565,6 +1836,130 @@ def _row_to_dict(row) -> dict:
     return payload
 
 
+def _seed_hd_players_if_empty(session: Session) -> None:
+    count = session.execute(text("SELECT COUNT(*) AS count FROM hd_players")).fetchone()
+    if count and int(count.count or 0) > 0:
+        return
+    seed_rows = [
+        ("Kevin Danso", "Tottenham", "Loan or permanent", "A", None, "Assess future with Tottenham"),
+        ("Mario Lemina", "Galatasaray", "Find new club", "B", None, "Find offers to increase gala proposal"),
+        ("Simon Banza", "Al Jazira", "Loan or permanent", "A", None, "Discuss TF with Al Jazira"),
+        ("Lilian Brassier", "Rennes", "Loan or permanent", "C", 15000000, "Assess future with Rennes"),
+        ("Junior Diaz", "Troyes", "Loan or permanent", "A", 8000000, "Send profile to clubs"),
+        ("Tom Pouilly", "Pau", "Permanent deal", "B", 500000, "Send profile to clubs"),
+        ("Noha Lemina", "Yverdon", "Find new club", "B", 0, "Send profile to clubs"),
+        ("Enzo Mongo", "Nantes", "Staying", "C", None, "Standby"),
+        ("Massadio Haidara", "Kocaelispor", "Staying", "D", None, "Standby"),
+    ]
+    for name, club, plan, priority, fee, next_step in seed_rows:
+        session.execute(
+            text(
+                """
+                INSERT INTO hd_players (
+                  display_name, current_club, plan, priority,
+                  demanded_transfer_fee, next_step, assigned_agent,
+                  created_at, updated_at
+                ) VALUES (
+                  :display_name, :current_club, :plan, :priority,
+                  :demanded_transfer_fee, :next_step, 'Yannis',
+                  NOW(), NOW()
+                )
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {
+                "display_name": name,
+                "current_club": club,
+                "plan": plan,
+                "priority": priority,
+                "demanded_transfer_fee": fee,
+                "next_step": next_step,
+            },
+        )
+    session.commit()
+
+
+def _xlsx_col_name(index: int) -> str:
+    name = ""
+    while index:
+        index, rem = divmod(index - 1, 26)
+        name = chr(65 + rem) + name
+    return name
+
+
+def _xlsx_cell(value: Any, row_idx: int, col_idx: int) -> str:
+    ref = f"{_xlsx_col_name(col_idx)}{row_idx}"
+    if value is None:
+        return f'<c r="{ref}"/>'
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return f'<c r="{ref}"><v>{value}</v></c>'
+    escaped = html.escape(str(value), quote=True)
+    return f'<c r="{ref}" t="inlineStr"><is><t>{escaped}</t></is></c>'
+
+
+def _xlsx_sheet_xml(rows: list[list[Any]]) -> str:
+    sheet_rows = []
+    for row_idx, row in enumerate(rows, start=1):
+        cells = "".join(_xlsx_cell(value, row_idx, col_idx) for col_idx, value in enumerate(row, start=1))
+        sheet_rows.append(f'<row r="{row_idx}">{cells}</row>')
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+        '</worksheet>'
+    )
+
+
+def _build_xlsx(sheets: list[tuple[str, list[list[Any]]]]) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            + "".join(
+                f'<Override PartName="/xl/worksheets/sheet{idx}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+                for idx in range(1, len(sheets) + 1)
+            )
+            + "</Types>",
+        )
+        zf.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            "</Relationships>",
+        )
+        zf.writestr(
+            "xl/workbook.xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            "<sheets>"
+            + "".join(
+                f'<sheet name="{html.escape(name[:31], quote=True)}" sheetId="{idx}" r:id="rId{idx}"/>'
+                for idx, (name, _) in enumerate(sheets, start=1)
+            )
+            + "</sheets></workbook>",
+        )
+        zf.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            + "".join(
+                f'<Relationship Id="rId{idx}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{idx}.xml"/>'
+                for idx in range(1, len(sheets) + 1)
+            )
+            + "</Relationships>",
+        )
+        for idx, (_, rows) in enumerate(sheets, start=1):
+            zf.writestr(f"xl/worksheets/sheet{idx}.xml", _xlsx_sheet_xml(rows))
+    return output.getvalue()
+
+
 def _build_player_context(report: Report) -> dict:
     player = report.player.model_dump()
     summary = report.summary
@@ -1611,8 +2006,129 @@ def _normalize_name(value: str) -> str:
 def _normalize_phrase(value: str) -> str:
     cleaned = unicodedata.normalize("NFKD", value)
     cleaned = "".join(ch for ch in cleaned if not unicodedata.combining(ch))
-    cleaned = re.sub(r"[^a-z0-9\\s]", " ", cleaned.lower())
+    cleaned = re.sub(r"[^a-z0-9\s]", " ", cleaned.lower())
     return " ".join(cleaned.split())
+
+
+_CLUB_LOGO_ALIASES: Optional[dict[str, str]] = None
+
+
+def _club_name_variants(value: Optional[str]) -> list[str]:
+    normalized = _normalize_phrase(value or "")
+    if not normalized:
+        return []
+    variants = {normalized}
+    words = normalized.split()
+    stop_words = {"fc", "cf", "sc", "afc", "ac", "as", "fk", "sk", "cd", "sd", "ud", "club", "football", "futbol", "soccer"}
+    stripped = [word for word in words if word not in stop_words]
+    if stripped and stripped != words:
+        variants.add(" ".join(stripped))
+    expanded = [{"utd": "united", "st": "saint"}.get(word, word) for word in words]
+    if expanded != words:
+        variants.add(" ".join(expanded))
+    return list(variants)
+
+
+def _load_club_logo_aliases() -> dict[str, str]:
+    global _CLUB_LOGO_ALIASES
+    if _CLUB_LOGO_ALIASES is not None:
+        return _CLUB_LOGO_ALIASES
+    path = Path(__file__).resolve().parent / "data" / "club_logos.json"
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        _CLUB_LOGO_ALIASES = payload.get("aliases") or {}
+    except (OSError, json.JSONDecodeError):
+        _CLUB_LOGO_ALIASES = {}
+    return _CLUB_LOGO_ALIASES
+
+
+def _club_logo_url(club_name: Optional[str]) -> str:
+    aliases = _load_club_logo_aliases()
+    for variant in _club_name_variants(club_name):
+        if aliases.get(variant):
+            return aliases[variant]
+    return ""
+
+
+def _normalized_transfer_names(*names: Optional[str]) -> list[str]:
+    seen: set[str] = set()
+    values: list[str] = []
+    for name in names:
+        normalized = _normalize_phrase(name or "")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            values.append(normalized)
+    return values
+
+
+def _team_matches_transfer(row: dict[str, Any], club_name: Optional[str]) -> bool:
+    club = _normalize_phrase(club_name or "")
+    if not club:
+        return False
+    teams = [
+        row.get("team_name_context"),
+        row.get("team_in_name"),
+        row.get("team_out_name"),
+    ]
+    for team in teams:
+        normalized_team = _normalize_phrase(team or "")
+        if normalized_team and (normalized_team == club or normalized_team in club or club in normalized_team):
+            return True
+    return False
+
+
+def _player_transfer_history(session: Session, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    _ensure_agency_ops_schema(session)
+    names = _normalized_transfer_names(payload.get("linked_player_name"), payload.get("display_name"))
+    player_id = payload.get("player_id")
+    if not player_id and not names:
+        return []
+    where_parts = []
+    params: dict[str, Any] = {}
+    if player_id:
+        where_parts.append("linked_player_id = :player_id")
+        params["player_id"] = int(player_id)
+    if names:
+        where_parts.append("normalized_player_name = ANY(CAST(:names AS TEXT[]))")
+        params["names"] = names
+    rows = session.execute(
+        text(
+            f"""
+            SELECT *
+            FROM player_transfer_history
+            WHERE {" OR ".join(where_parts)}
+            ORDER BY transfer_date DESC NULLS LAST, id DESC
+            LIMIT 80
+            """
+        ),
+        params,
+    ).fetchall()
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for row in rows:
+        item = _row_to_dict(row)
+        exact_id = bool(player_id and item.get("linked_player_id") == player_id)
+        if not exact_id and not _team_matches_transfer(item, payload.get("current_club")):
+            continue
+        key = (
+            item.get("source_player_id"),
+            item.get("player_name"),
+            item.get("transfer_date"),
+            item.get("transfer_type"),
+            item.get("team_in_name"),
+            item.get("team_out_name"),
+            item.get("transfer_fee"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        item["team_in_logo_url"] = _club_logo_url(item.get("team_in_name"))
+        item["team_out_logo_url"] = _club_logo_url(item.get("team_out_name"))
+        item["team_context_logo_url"] = _club_logo_url(item.get("team_name_context"))
+        item["match_type"] = "player_id" if exact_id else "name_club"
+        items.append(item)
+    return items[:30]
 
 
 def _resolve_llm_model_name(llm) -> str:
@@ -3469,6 +3985,133 @@ def _mercato_candidates_for_need(session: Session, need_id: int) -> list[dict[st
     return items
 
 
+def _mercato_shortlist_scored_players(
+    session: Session,
+    need: dict[str, Any],
+    payload: Optional[MercatoShortlistGenerate] = None,
+) -> list[tuple[float, dict[str, Any], dict[str, Any]]]:
+    tm_clause = _tm_select_clause(session)
+    competition_norm_sql = "TRIM(REGEXP_REPLACE(REGEXP_REPLACE(LOWER(c.name), '[^a-z0-9]+', ' ', 'g'), '\\s+', ' ', 'g'))"
+    sql = """
+    SELECT DISTINCT ON (p.id)
+      p.id AS player_id,
+      p.name,
+      p.country,
+      p.foot,
+      p.height_cm,
+      p.tm_id,
+      p.tm_profile_url,
+      ps.id AS player_season_id,
+      ps.calendar,
+      ps.team_in_selected_period AS team,
+      ps.position,
+      ps.second_position,
+      ps.assigned_role,
+      ps.minutes_played,
+      ps.league_strength_factor,
+      ps.global_score_adjusted AS raw_player_level,
+      ps.assigned_role_pct_league,
+      ps.assigned_role_pct_global,
+      c.name AS competition_name,
+      pm.age AS age""" + tm_clause + """
+    FROM players p
+    JOIN player_seasons ps ON ps.player_id = p.id
+    JOIN competitions c ON c.id = ps.competition_id
+    LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
+    WHERE ps.global_score_adjusted IS NOT NULL
+      AND ps.minutes_played >= :min_minutes
+      AND ps.calendar = ANY(:recommendation_seasons)
+      AND NOT EXISTS (
+        SELECT 1 FROM mercato_candidates mc
+        WHERE mc.mercato_need_id = :need_id AND mc.player_id = p.id
+      )
+    """
+    selected_competitions = []
+    if payload and payload.competitions:
+        selected_competitions = [
+            _normalize_phrase(str(item))
+            for item in payload.competitions
+            if _normalize_phrase(str(item))
+        ]
+    params: dict[str, Any] = {
+        "need_id": need["id"],
+        "limit": 1200,
+        "recommendation_seasons": MERCATO_RECOMMENDATION_SEASONS,
+        "min_minutes": payload.min_minutes if payload and payload.min_minutes is not None else 270,
+    }
+    if selected_competitions:
+        sql += f"""
+        AND EXISTS (
+          SELECT 1
+          FROM unnest(CAST(:search_competitions AS TEXT[])) AS selected_competition(name)
+          WHERE {competition_norm_sql} = selected_competition.name
+             OR {competition_norm_sql} LIKE '%' || selected_competition.name || '%'
+             OR selected_competition.name LIKE '%' || {competition_norm_sql} || '%'
+        )
+        """
+        params["search_competitions"] = selected_competitions
+    age_min = payload.age_min if payload and payload.age_min is not None else need.get("age_min")
+    age_max = payload.age_max if payload and payload.age_max is not None else need.get("age_max")
+    if age_min is not None:
+        sql += " AND pm.age >= :age_min"
+        params["age_min"] = age_min
+    if age_max is not None:
+        sql += " AND pm.age <= :age_max"
+        params["age_max"] = age_max
+    if need.get("height_min") is not None:
+        sql += " AND (p.height_cm IS NULL OR p.height_cm >= :height_min)"
+        params["height_min"] = need["height_min"]
+    if need.get("preferred_foot"):
+        sql += " AND (p.foot IS NULL OR p.foot ILIKE :preferred_foot)"
+        params["preferred_foot"] = f"%{need['preferred_foot']}%"
+    if need.get("position"):
+        sql += """
+        AND (
+          ps.position ILIKE :position_like
+          OR ps.second_position ILIKE :position_like
+          OR ps.assigned_role ILIKE :position_like
+        )
+        """
+        params["position_like"] = f"%{need['position']}%"
+    sql += """
+    ORDER BY p.id, ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
+    LIMIT :limit
+    """
+    rows = session.execute(text(sql), params).fetchall()
+    scored = []
+    for row in rows:
+        player = _row_to_dict(row)
+        player["tm_market_value_numeric"] = _parse_money_value(player.get("tm_market_value"))
+        score = _mercato_match_candidate(need, need, player)
+        if payload and payload.min_match_score is not None and score["match_score"] < payload.min_match_score:
+            continue
+        scored.append((score["match_score"], player, score))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return scored
+
+
+def _mercato_recommendation_payload(player: dict[str, Any], score: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        **player,
+        "source": "algorithm_preview",
+        "status": "preview",
+        "match_score": score.get("match_score"),
+        "calibrated_player_level": score.get("calibrated_player_level"),
+        "raw_player_level": score.get("raw_player_level"),
+        "league_coefficient": score.get("league_coefficient"),
+        "explanation_json": score.get("explanation_json") or {},
+    }
+    payload["tm_fields"] = _extract_tm_fields(payload)
+    payload["key_metrics"] = [
+        {"label": "Global score", "value": payload.get("raw_player_level")},
+        {"label": "Adjusted level", "value": payload.get("calibrated_player_level")},
+        {"label": "League role pct", "value": payload.get("assigned_role_pct_league")},
+        {"label": "Global role pct", "value": payload.get("assigned_role_pct_global")},
+        {"label": "Minutes", "value": payload.get("minutes_played")},
+    ]
+    return payload
+
+
 def _mercato_request_payload(session: Session, request_id: int) -> Optional[dict[str, Any]]:
     row = session.execute(
         text(
@@ -3510,6 +4153,473 @@ def _mercato_request_payload(session: Session, request_id: int) -> Optional[dict
         needs.append(need)
     request_payload["needs"] = needs
     return request_payload
+
+
+@app.get("/hq/priorities")
+def hq_priorities(session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM hq_priority_items
+            ORDER BY start_date ASC, agent_name ASC, id ASC
+            """
+        )
+    ).fetchall()
+    return {"items": [_row_to_dict(row) for row in rows]}
+
+
+@app.post("/hq/priorities")
+def create_hq_priority(payload: HqPriorityItemPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    title = _clean_text(payload.title)
+    agent_name = _clean_text(payload.agent_name)
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    if not agent_name:
+        raise HTTPException(status_code=400, detail="Agent is required")
+    row = session.execute(
+        text(
+            """
+            INSERT INTO hq_priority_items (
+              title, description, agent_name, priority, status, start_date, end_date,
+              color, related_page, created_by_agent_id, updated_by_agent_id, created_at, updated_at
+            ) VALUES (
+              :title, :description, :agent_name, :priority, :status,
+              COALESCE(NULLIF(:start_date, '')::date, CURRENT_DATE),
+              NULLIF(:end_date, '')::date,
+              :color, :related_page, :user_id, :user_id, NOW(), NOW()
+            )
+            RETURNING *
+            """
+        ),
+        {
+            "title": title,
+            "description": _clean_text(payload.description),
+            "agent_name": agent_name,
+            "priority": payload.priority or "medium",
+            "status": payload.status or "planned",
+            "start_date": payload.start_date or "",
+            "end_date": payload.end_date or "",
+            "color": _clean_text(payload.color),
+            "related_page": _clean_text(payload.related_page),
+            "user_id": _current_user_id(request),
+        },
+    ).fetchone()
+    session.commit()
+    return _row_to_dict(row)
+
+
+@app.patch("/hq/priorities/{item_id}")
+def update_hq_priority(item_id: int, payload: HqPriorityItemPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    allowed = {
+        "title",
+        "description",
+        "agent_name",
+        "priority",
+        "status",
+        "start_date",
+        "end_date",
+        "color",
+        "related_page",
+    }
+    data = payload.model_dump(exclude_unset=True)
+    set_parts = []
+    params: dict[str, Any] = {"item_id": item_id, "user_id": _current_user_id(request)}
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        params[key] = value
+        if key in {"start_date", "end_date"}:
+            set_parts.append(f"{key} = NULLIF(:{key}, '')::date")
+        else:
+            set_parts.append(f"{key} = :{key}")
+    if not set_parts:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    row = session.execute(
+        text(
+            f"""
+            UPDATE hq_priority_items
+            SET {', '.join(set_parts)}, updated_by_agent_id = :user_id, updated_at = NOW()
+            WHERE id = :item_id
+            RETURNING *
+            """
+        ),
+        params,
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Priority item not found")
+    session.commit()
+    return _row_to_dict(row)
+
+
+@app.delete("/hq/priorities/{item_id}")
+def delete_hq_priority(item_id: int, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    row = session.execute(
+        text("DELETE FROM hq_priority_items WHERE id = :item_id RETURNING id"),
+        {"item_id": item_id},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Priority item not found")
+    return {"deleted": True}
+
+
+@app.get("/hd-players")
+def hd_players(q: Optional[str] = Query(None), agent: Optional[str] = Query(None), session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    _seed_hd_players_if_empty(session)
+    sql = """
+    SELECT hp.*, p.name AS linked_player_name
+    FROM hd_players hp
+    LEFT JOIN players p ON p.id = hp.player_id
+    WHERE 1=1
+    """
+    params: dict[str, Any] = {}
+    if q:
+        sql += " AND (hp.display_name ILIKE :q OR hp.current_club ILIKE :q OR hp.plan ILIKE :q)"
+        params["q"] = f"%{q}%"
+    if agent:
+        sql += " AND hp.assigned_agent ILIKE :agent"
+        params["agent"] = f"%{agent}%"
+    sql += " ORDER BY CASE hp.priority WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 WHEN 'D' THEN 4 ELSE 5 END, hp.display_name"
+    rows = session.execute(text(sql), params).fetchall()
+    items = [_row_to_dict(row) for row in rows]
+    ids = [item["id"] for item in items]
+    documents_by_player: dict[int, list[dict[str, Any]]] = {player_id: [] for player_id in ids}
+    if ids:
+        doc_rows = session.execute(
+            text(
+                """
+                SELECT *
+                FROM hd_player_documents
+                WHERE hd_player_id = ANY(:ids)
+                ORDER BY created_at DESC
+                """
+            ),
+            {"ids": ids},
+        ).fetchall()
+        for row in doc_rows:
+            doc = _row_to_dict(row)
+            documents_by_player.setdefault(doc["hd_player_id"], []).append(doc)
+    for item in items:
+        item["documents"] = documents_by_player.get(item["id"], [])
+    return {"items": items}
+
+
+def _hd_player_payload(session: Session, hd_player_id: int) -> Optional[dict[str, Any]]:
+    row = session.execute(
+        text(
+            """
+            SELECT
+              hp.*,
+              p.name AS linked_player_name
+            FROM hd_players hp
+            LEFT JOIN players p ON p.id = hp.player_id
+            WHERE hp.id = :hd_player_id
+            """
+        ),
+        {"hd_player_id": hd_player_id},
+    ).fetchone()
+    if not row:
+        return None
+    payload = _row_to_dict(row)
+    doc_rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM hd_player_documents
+            WHERE hd_player_id = :hd_player_id
+            ORDER BY created_at DESC
+            """
+        ),
+        {"hd_player_id": hd_player_id},
+    ).fetchall()
+    payload["documents"] = [_row_to_dict(doc_row) for doc_row in doc_rows]
+    payload["mercato_prospects"] = []
+    if payload.get("player_id"):
+        prospect_rows = session.execute(
+            text(
+                """
+                SELECT
+                  mr.id AS request_id,
+                  cl.name AS club_name,
+                  comp.name AS competition_name,
+                  mn.position,
+                  mr.title,
+                  mr.priority,
+                  mr.status AS request_status,
+                  mc.status AS candidate_status,
+                  mc.match_score,
+                  mc.agent_note,
+                  mr.assigned_agent_id,
+                  assignee.display_name AS assigned_agent_name
+                FROM mercato_candidates mc
+                JOIN mercato_needs mn ON mn.id = mc.mercato_need_id
+                JOIN mercato_requests mr ON mr.id = mn.mercato_request_id
+                LEFT JOIN clubs cl ON cl.id = mr.club_id
+                LEFT JOIN competitions comp ON comp.id = cl.competition_id
+                LEFT JOIN auth_users assignee ON assignee.username = mr.assigned_agent_id
+                WHERE mc.player_id = :player_id AND mr.archived_at IS NULL
+                ORDER BY mc.match_score DESC NULLS LAST, mr.updated_at DESC NULLS LAST
+                """
+            ),
+            {"player_id": payload["player_id"]},
+        ).fetchall()
+        payload["mercato_prospects"] = [_row_to_dict(prospect_row) for prospect_row in prospect_rows]
+    payload["transfer_history"] = _player_transfer_history(session, payload)
+    return payload
+
+
+@app.get("/hd-players/{hd_player_id}")
+def get_hd_player(hd_player_id: int, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    _ensure_mercato_schema(session)
+    payload = _hd_player_payload(session, hd_player_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="HD player not found")
+    return payload
+
+
+@app.post("/hd-players")
+def create_hd_player(payload: HdPlayerPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    display_name = _clean_text(payload.display_name)
+    if not display_name:
+        raise HTTPException(status_code=400, detail="Display name is required")
+    row = session.execute(
+        text(
+            """
+            INSERT INTO hd_players (
+              player_id, display_name, position, current_club, contract_expiry,
+              current_club_situation, plan, priority, demanded_transfer_fee, next_step,
+              assigned_agent, photo_url, player_phone, player_email, entourage_phone, entourage_email,
+              season_objectives, eyeball_url, transfermarkt_url, contract_status, mandate_status, medical_status,
+              market_notes, scouting_notes, status, created_by_agent_id, updated_by_agent_id,
+              created_at, updated_at
+            ) VALUES (
+              :player_id, :display_name, :position, :current_club, NULLIF(:contract_expiry, '')::date,
+              :current_club_situation, :plan, :priority, :demanded_transfer_fee, :next_step,
+              :assigned_agent, :photo_url, :player_phone, :player_email, :entourage_phone, :entourage_email,
+              :season_objectives, :eyeball_url, :transfermarkt_url, :contract_status, :mandate_status, :medical_status,
+              :market_notes, :scouting_notes, :status, :user_id, :user_id, NOW(), NOW()
+            )
+            RETURNING *
+            """
+        ),
+        {
+            **payload.model_dump(),
+            "display_name": display_name,
+            "contract_expiry": payload.contract_expiry or "",
+            "priority": payload.priority or "B",
+            "status": payload.status or "active",
+            "user_id": _current_user_id(request),
+        },
+    ).fetchone()
+    session.commit()
+    return _hd_player_payload(session, int(row.id)) or _row_to_dict(row)
+
+
+@app.patch("/hd-players/{hd_player_id}")
+def update_hd_player(hd_player_id: int, payload: HdPlayerPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    allowed = set(HdPlayerPayload.model_fields.keys())
+    data = payload.model_dump(exclude_unset=True)
+    set_parts = []
+    params: dict[str, Any] = {"hd_player_id": hd_player_id, "user_id": _current_user_id(request)}
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        params[key] = value if value is not None else None
+        if key == "contract_expiry":
+            set_parts.append("contract_expiry = NULLIF(:contract_expiry, '')::date")
+        else:
+            set_parts.append(f"{key} = :{key}")
+    if not set_parts:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    row = session.execute(
+        text(
+            f"""
+            UPDATE hd_players
+            SET {', '.join(set_parts)}, updated_by_agent_id = :user_id, updated_at = NOW()
+            WHERE id = :hd_player_id
+            RETURNING *
+            """
+        ),
+        params,
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="HD player not found")
+    session.commit()
+    return _hd_player_payload(session, hd_player_id) or _row_to_dict(row)
+
+
+@app.post("/hd-players/{hd_player_id}/documents")
+def create_hd_player_document(hd_player_id: int, payload: HdPlayerDocumentPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    player_row = session.execute(
+        text("SELECT player_id FROM hd_players WHERE id = :hd_player_id"),
+        {"hd_player_id": hd_player_id},
+    ).fetchone()
+    if not player_row:
+        raise HTTPException(status_code=404, detail="HD player not found")
+    row = session.execute(
+        text(
+            """
+            INSERT INTO hd_player_documents (
+              hd_player_id, player_id, document_type, title, file_name, file_key,
+              storage_url, content_type, size_bytes, notes, created_by_agent_id, created_at
+            ) VALUES (
+              :hd_player_id, :player_id, :document_type, :title, :file_name, :file_key,
+              :storage_url, :content_type, :size_bytes, :notes, :user_id, NOW()
+            )
+            RETURNING *
+            """
+        ),
+        {
+            **payload.model_dump(),
+            "hd_player_id": hd_player_id,
+            "player_id": player_row.player_id,
+            "user_id": _current_user_id(request),
+        },
+    ).fetchone()
+    session.commit()
+    return _row_to_dict(row)
+
+
+@app.patch("/hd-players/documents/{document_id}")
+def update_hd_player_document(document_id: int, payload: HdPlayerDocumentPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    data = payload.model_dump(exclude_unset=True)
+    allowed = set(HdPlayerDocumentPayload.model_fields.keys())
+    set_parts = []
+    params: dict[str, Any] = {"document_id": document_id, "user_id": _current_user_id(request)}
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        params[key] = value
+        set_parts.append(f"{key} = :{key}")
+    if not set_parts:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    row = session.execute(
+        text(
+            f"""
+            UPDATE hd_player_documents
+            SET {', '.join(set_parts)}
+            WHERE id = :document_id
+            RETURNING *
+            """
+        ),
+        params,
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+    session.commit()
+    return _row_to_dict(row)
+
+
+@app.delete("/hd-players/documents/{document_id}")
+def delete_hd_player_document(document_id: int, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    row = session.execute(
+        text("DELETE FROM hd_player_documents WHERE id = :document_id RETURNING id"),
+        {"document_id": document_id},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"deleted": True}
+
+
+@app.get("/mercato/requests/export.xlsx")
+def export_mercato_requests(session: Session = Depends(get_session)):
+    _ensure_mercato_schema(session)
+    _ensure_agency_ops_schema(session)
+    _seed_hd_players_if_empty(session)
+    request_rows = session.execute(
+        text(
+            """
+            SELECT
+              mr.id,
+              cl.name AS club,
+              comp.name AS league,
+              mn.position,
+              mn.notes AS profile,
+              mr.budget_max AS fee,
+              mr.salary_max AS net_wages,
+              mr.assigned_agent_id AS agent,
+              mr.priority,
+              mr.status,
+              mr.title,
+              mr.updated_at
+            FROM mercato_requests mr
+            LEFT JOIN clubs cl ON cl.id = mr.club_id
+            LEFT JOIN competitions comp ON comp.id = cl.competition_id
+            LEFT JOIN mercato_needs mn ON mn.mercato_request_id = mr.id
+            WHERE mr.archived_at IS NULL
+            ORDER BY cl.name, mn.position, mr.id
+            """
+        )
+    ).fetchall()
+    candidate_rows = session.execute(
+        text(
+            """
+            SELECT
+              mr.id AS request_id,
+              cl.name AS club,
+              mn.position,
+              p.name AS player,
+              mc.status,
+              mc.match_score,
+              mc.calibrated_player_level,
+              mc.agent_note,
+              mr.assigned_agent_id AS agent
+            FROM mercato_candidates mc
+            JOIN mercato_needs mn ON mn.id = mc.mercato_need_id
+            JOIN mercato_requests mr ON mr.id = mn.mercato_request_id
+            LEFT JOIN clubs cl ON cl.id = mr.club_id
+            LEFT JOIN players p ON p.id = mc.player_id
+            WHERE mr.archived_at IS NULL
+            ORDER BY mr.id, mc.match_score DESC NULLS LAST
+            """
+        )
+    ).fetchall()
+    hd_rows = session.execute(
+        text(
+            """
+            SELECT display_name, current_club, contract_expiry, current_club_situation,
+                   plan, priority, demanded_transfer_fee, next_step, assigned_agent
+            FROM hd_players
+            ORDER BY CASE priority WHEN 'A' THEN 1 WHEN 'B' THEN 2 WHEN 'C' THEN 3 WHEN 'D' THEN 4 ELSE 5 END, display_name
+            """
+        )
+    ).fetchall()
+    overview = [["Name", "Current club", "Club logo URL", "Contract expiry", "Current club situation", "Plan", "Priority", "Demanded TF", "Next step", "Agent"]]
+    overview.extend([[row.display_name, row.current_club, _club_logo_url(row.current_club), row.contract_expiry, row.current_club_situation, row.plan, row.priority, row.demanded_transfer_fee, row.next_step, row.assigned_agent] for row in hd_rows])
+    requirements = [["Clubs", "Club logo URL", "Category", "Profile", "Fee", "Net wages", "Suggestion", "Status", "Agent", "Priority", "Request ID"]]
+    requirements.extend([[row.club, _club_logo_url(row.club), row.position, row.profile, row.fee, row.net_wages, row.title, row.status, row.agent, row.priority, row.id] for row in request_rows])
+    candidates = [["Request ID", "Club", "Club logo URL", "Category", "Player", "Status", "Match score", "Calibrated level", "Agent note", "Agent"]]
+    candidates.extend([[row.request_id, row.club, _club_logo_url(row.club), row.position, row.player, row.status, row.match_score, row.calibrated_player_level, row.agent_note, row.agent] for row in candidate_rows])
+    player_sheets = [
+        ("Kevin", [["Club", "Club logo URL", "Status", "Offer", "Contact", "Notes"], *[[club, _club_logo_url(club), status, offer, contact, notes] for club, status, offer, contact, notes in [["Monaco", "Interest", "", "", ""], ["Marseille", "Pending", "", "", ""], ["Everton", "Pending", "", "", ""], ["Nottingham", "Pending", "", "", ""], ["Brentford", "No interest", "", "", ""], ["Newcaslte", "No interest", "", "", ""], ["Atletico Madrid", "No interest", "", "", ""]]]]),
+        ("Lilian", [["Club", "Club logo URL", "Status", "Offer", "Contact", "Meet", "Notes"], ["Bologna", _club_logo_url("Bologna"), "Interest", "", "", "", ""]]),
+        ("Mario", [["Club", "Club logo URL", "Status", "Offer", "Contact", "Meet", "Notes"], ["Al Shabab", _club_logo_url("Al Shabab"), "Offer", "3.5 net", "", "", ""]]),
+        ("Simon", [["Club", "Club logo URL", "Status", "Offer", "Contact", "Meet", "Notes"], ["Cruzeiro Esporte Clube", _club_logo_url("Cruzeiro Esporte Clube"), "No interest", "", "Damon intermediary", "", ""]]),
+    ]
+    workbook = _build_xlsx([
+        ("Overview", overview),
+        ("Clubs requirements", requirements),
+        *player_sheets,
+        ("Matching shortlist", candidates),
+    ])
+    return Response(
+        workbook,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="nextlegend_mercato_2026.xlsx"'},
+    )
 
 
 @app.get("/mercato/requests")
@@ -3834,85 +4944,7 @@ def generate_mercato_shortlist(
         ),
         {"need_id": need_id},
     )
-    tm_clause = _tm_select_clause(session)
-    sql = """
-    SELECT DISTINCT ON (p.id)
-      p.id AS player_id,
-      p.name,
-      p.country,
-      p.foot,
-      p.height_cm,
-      p.tm_id,
-      p.tm_profile_url,
-      ps.id AS player_season_id,
-      ps.calendar,
-      ps.team_in_selected_period AS team,
-      ps.position,
-      ps.second_position,
-      ps.assigned_role,
-      ps.minutes_played,
-      ps.league_strength_factor,
-      ps.global_score_adjusted AS raw_player_level,
-      ps.assigned_role_pct_league,
-      ps.assigned_role_pct_global,
-      c.name AS competition_name,
-      pm.age AS age""" + tm_clause + """
-    FROM players p
-    JOIN player_seasons ps ON ps.player_id = p.id
-    JOIN competitions c ON c.id = ps.competition_id
-    LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
-    WHERE ps.global_score_adjusted IS NOT NULL
-      AND ps.minutes_played >= 270
-      AND ps.calendar = ANY(:recommendation_seasons)
-      AND NOT EXISTS (
-        SELECT 1 FROM mercato_candidates mc
-        WHERE mc.mercato_need_id = :need_id AND mc.player_id = p.id
-      )
-    """
-    selected_competitions = []
-    if payload and payload.competitions:
-        selected_competitions = [str(item).strip() for item in payload.competitions if str(item).strip()]
-    params: dict[str, Any] = {
-        "need_id": need_id,
-        "limit": 1200,
-        "recommendation_seasons": MERCATO_RECOMMENDATION_SEASONS,
-    }
-    if selected_competitions:
-        sql += " AND c.name = ANY(:search_competitions)"
-        params["search_competitions"] = selected_competitions
-    if need.get("age_min") is not None:
-        sql += " AND pm.age >= :age_min"
-        params["age_min"] = need["age_min"]
-    if need.get("age_max") is not None:
-        sql += " AND pm.age <= :age_max"
-        params["age_max"] = need["age_max"]
-    if need.get("height_min") is not None:
-        sql += " AND (p.height_cm IS NULL OR p.height_cm >= :height_min)"
-        params["height_min"] = need["height_min"]
-    if need.get("preferred_foot"):
-        sql += " AND (p.foot IS NULL OR p.foot ILIKE :preferred_foot)"
-        params["preferred_foot"] = f"%{need['preferred_foot']}%"
-    if need.get("position"):
-        sql += """
-        AND (
-          ps.position ILIKE :position_like
-          OR ps.second_position ILIKE :position_like
-          OR ps.assigned_role ILIKE :position_like
-        )
-        """
-        params["position_like"] = f"%{need['position']}%"
-    sql += """
-    ORDER BY p.id, ps.calendar DESC NULLS LAST, ps.minutes_played DESC NULLS LAST
-    LIMIT :limit
-    """
-    rows = session.execute(text(sql), params).fetchall()
-    scored = []
-    for row in rows:
-        player = _row_to_dict(row)
-        player["tm_market_value_numeric"] = _parse_money_value(player.get("tm_market_value"))
-        score = _mercato_match_candidate(need, need, player)
-        scored.append((score["match_score"], player, score))
-    scored.sort(key=lambda item: item[0], reverse=True)
+    scored = _mercato_shortlist_scored_players(session, need, payload)
     inserted = []
     for _, player, score in scored[:5]:
         added, candidate_id = _insert_mercato_candidate(
@@ -3934,6 +4966,26 @@ def generate_mercato_shortlist(
         )
     session.commit()
     return {"generated": len(inserted), "candidates": _mercato_candidates_for_need(session, need_id)}
+
+
+@app.post("/mercato/needs/{need_id}/preview-shortlist")
+def preview_mercato_shortlist(
+    need_id: int,
+    payload: Optional[MercatoShortlistGenerate] = None,
+    session: Session = Depends(get_session),
+):
+    _ensure_mercato_schema(session)
+    need = _mercato_need_context(session, need_id)
+    if not need:
+        raise HTTPException(status_code=404, detail="Mercato need not found")
+    if need.get("request_status") == "closed":
+        raise HTTPException(status_code=400, detail="Cannot run matching for a closed need")
+    scored = _mercato_shortlist_scored_players(session, need, payload)
+    return {
+        "need_id": need_id,
+        "generated": min(len(scored), 5),
+        "candidates": [_mercato_recommendation_payload(player, score) for _, player, score in scored[:5]],
+    }
 
 
 @app.patch("/mercato/candidates/{candidate_id}")
@@ -4182,7 +5234,8 @@ def player_report(
     player_season_id: Optional[int] = Query(None, ge=1),
     session: Session = Depends(get_session),
 ):
-    # Récupère la saison explicitement demandée, sinon la plus récente.
+    # Load the requested season when valid; otherwise fall back to the latest season.
+    row = None
     if player_season_id is not None:
         sql = """
         SELECT ps.id AS player_season_id, ps.*, p.name, p.tm_id, p.tm_profile_url, c.name AS competition_name
@@ -4196,7 +5249,7 @@ def player_report(
             text(sql),
             {"player_id": player_id, "player_season_id": player_season_id},
         ).fetchone()
-    else:
+    if row is None:
         sql = """
         SELECT ps.id AS player_season_id, ps.*, p.name, p.tm_id, p.tm_profile_url, c.name AS competition_name
         FROM player_seasons ps
@@ -4345,6 +5398,26 @@ def player_report(
     # Summary (garde seulement summary_* colonnes)
     summary = {k: v for k, v in metrics.items() if k.startswith("summary_")}
     tm_fields = {k: v for k, v in ps.items() if k.startswith("tm_")}
+    try:
+        _ensure_agency_ops_schema(session)
+        hd_photo_row = session.execute(
+            text(
+                """
+                SELECT photo_url
+                FROM hd_players
+                WHERE player_id = :player_id
+                  AND photo_url IS NOT NULL
+                  AND photo_url <> ''
+                ORDER BY updated_at DESC NULLS LAST, id DESC
+                LIMIT 1
+                """
+            ),
+            {"player_id": player_id},
+        ).fetchone()
+        if hd_photo_row and hd_photo_row.photo_url:
+            tm_fields["app_photo_url"] = hd_photo_row.photo_url
+    except Exception:
+        pass
 
     player = RankingRow(
         player_season_id=ps["id"],
@@ -4364,6 +5437,15 @@ def player_report(
         tm_id=ps.get("tm_id"),
         tm_profile_url=ps.get("tm_profile_url"),
     )
+    transfer_history = _player_transfer_history(
+        session,
+        {
+            "player_id": player_id,
+            "linked_player_name": ps.get("name"),
+            "display_name": ps.get("name"),
+            "current_club": ps.get("team_in_selected_period"),
+        },
+    )
 
     return Report(
         player=player,
@@ -4375,6 +5457,7 @@ def player_report(
         summary=summary,
         available_seasons=available_seasons,
         score_history=score_history,
+        transfer_history=[TransferHistoryItem(**item) for item in transfer_history],
         similarities_enabled=similarities_enabled,
         current_season_label=CURRENT_SEASON_LABEL,
     )

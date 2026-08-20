@@ -1,49 +1,45 @@
-# NextLegend v2 Docs (Codex)
+# NextLegend Docs
 
-This folder is the primary entry point for new Codex sessions.
+This folder is the compact project documentation for Codex sessions and human maintenance.
 
 Read order:
-1) `docs/README.md`
-2) `docs/RUNBOOK.md`
-3) `docs/HANDOFF_2026-03-11.md` (historical local + VPS handoff)
-4) `docs/PIPELINE_PLAN.md`
-5) `docs/DATA_MODEL.md`
-6) `docs/NEXTLEGEND_V2_UX_UI.md`
-7) `docs/AWS_DEPLOYMENT.md` (kept for compatibility, now MinIO-focused)
-8) `docs/NextLegend_v2_Migration_Guide.md` (history and migration notes)
+1. `docs/skill.MD` - code conventions, project invariants, and implementation rules.
+2. `docs/DATA_MODEL.md` - serving database model and table ownership.
+3. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
+4. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
 
 Project snapshot:
-- Frontend: Next.js (`apps/frontend`) served at `app.nextlegend.fr`
-- API: FastAPI (`apps/api`) served at `api.nextlegend.fr`
-- DB: Postgres
-- Batch pipeline: `jobs/pipeline` (loads MinIO CSV -> DB)
-- Object storage: MinIO (S3-compatible)
+- Frontend: Next.js in `apps/frontend`, served at `app.nextlegend.fr`.
+- API: FastAPI in `apps/api`, served at `api.nextlegend.fr`.
+- Database: Postgres.
+- Batch pipeline: `jobs/pipeline`.
+- Object storage: MinIO, S3-compatible.
+- Current product: Next Legend for HD Sports scouting and agency operations.
 
 Key invariants:
-- API root `/` is public and returns 200.
-- Auth uses HttpOnly cookie `nl_session`; `GET /auth/me` returns 200 when authenticated.
-- Frontend auth guard waits for `/auth/me`; no redirect while loading.
-- Pipeline writes `player_metrics` and `player_similarity` and stores TM fields (`tm_*`) on `player_seasons`.
+- API root `/` and `/health` are public and must return 200.
+- Auth uses the HttpOnly cookie `nl_session`.
+- Frontend auth waits for `GET /auth/me`; do not redirect while auth is loading.
+- Pipeline writes `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, and `pipeline_runs`.
+- Transfermarkt fields are stored as `tm_*` columns on `player_seasons` and `tm_id` / `tm_profile_url` on `players`.
+- Do not run the full raw pipeline on the current VPS; use local-compute then PRD-load.
 
 Quick commands:
 ```bash
-# start dev stack
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
+# dev stack
+docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
 
-# run pipeline (dev, local CSV at data/wyscout_players_final.csv)
-sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
+# dev pipeline refresh from data/wyscout_players_final.csv
+docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
 
-# prod weekly refresh
-# Do not run the full raw pipeline on the current VPS.
-# Follow docs/RUNBOOK.md.
-
-# health checks
+# prod health checks
 curl -I https://api.nextlegend.fr/
 curl -I https://api.nextlegend.fr/health
 ```
 
-Where to look:
-- Pipeline logic: `jobs/pipeline/pipeline/processing.py`
-- DB upserts: `jobs/pipeline/pipeline/db.py`
-- API routes: `apps/api/main.py`
-- Front auth guard: `apps/frontend/lib/auth.js`, `apps/frontend/pages/_app.js`
+Main code entry points:
+- API routes and lazy schemas: `apps/api/main.py`.
+- API settings: `apps/api/settings.py`.
+- Front auth guard: `apps/frontend/lib/auth.js`, `apps/frontend/pages/_app.js`.
+- Pipeline processing: `jobs/pipeline/pipeline/processing.py`.
+- Pipeline DB upserts: `jobs/pipeline/pipeline/db.py`.

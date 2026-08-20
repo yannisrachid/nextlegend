@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import ClubLogo from "@/components/ClubLogo";
 import { fetchJson, fetchJsonCached } from "@/lib/api";
 
 const TM_BASE_URL = "https://www.transfermarkt.com";
 
 const Card = ({ children, className = "", ...props }) => (
   <div
-    className={`glass-panel rounded-xl p-4 border border-white/5 ${className}`}
+    className={`surface-panel rounded-lg p-4 ${className}`}
     {...props}
   >
     {children}
@@ -13,20 +14,23 @@ const Card = ({ children, className = "", ...props }) => (
 );
 
 const Badge = ({ children }) => (
-  <span className="px-2 py-1 rounded-full bg-slate-800 text-xs text-slate-200 border border-white/5">
+  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
     {children}
   </span>
 );
 
-const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+const Label = ({ children, htmlFor }) => (
+  <label htmlFor={htmlFor} className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
     {children}
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -219,26 +223,26 @@ export default function RankingPage() {
   };
 
   return (
-    <main className="min-h-screen bg-hero-pattern text-slate-100 py-10 px-4">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-            NextLegend v2
+    <main className="nl-page px-4 py-8">
+      <div className="mx-auto max-w-[1500px] space-y-6">
+        <header className="surface-panel rounded-lg p-6">
+          <p className="nl-kicker">
+            Talent ranking
           </p>
-          <h1 className="text-4xl font-bold text-white tracking-tight">
-            Ranking
+          <h1 className="mt-2 text-4xl font-extrabold tracking-normal text-slate-950">
+            Market-ranked player database
           </h1>
-          <p className="text-slate-300 max-w-3xl">
-            Filter by role, league, position, and age. Rankings are served by
-            the v2 API with adjusted global scores and percentile context.
+          <p className="mt-2 max-w-3xl text-slate-600">
+            Build the right cohort by league, role, position and age, then prioritize players with adjusted scores and percentile context.
           </p>
         </header>
 
         <Card>
           <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
             <div className="flex flex-col gap-2">
-              <Label>Competition</Label>
+              <Label htmlFor="ranking-competition">Competition</Label>
               <Select
+                id="ranking-competition"
                 value={filters.competition}
                 onChange={(e) =>
                   updateFilter({ competition: e.target.value, season: "", team: "" })
@@ -252,8 +256,9 @@ export default function RankingPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Season</Label>
+              <Label htmlFor="ranking-season">Season</Label>
               <Select
+                id="ranking-season"
                 value={filters.season}
                 onChange={(e) => updateFilter({ season: e.target.value })}
               >
@@ -265,8 +270,9 @@ export default function RankingPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Role</Label>
+              <Label htmlFor="ranking-role">Role</Label>
               <Select
+                id="ranking-role"
                 value={filters.role}
                 onChange={(e) => updateFilter({ role: e.target.value })}
               >
@@ -278,8 +284,9 @@ export default function RankingPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Position</Label>
+              <Label htmlFor="ranking-position">Position</Label>
               <Select
+                id="ranking-position"
                 value={filters.position}
                 onChange={(e) => updateFilter({ position: e.target.value })}
               >
@@ -291,8 +298,9 @@ export default function RankingPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Team</Label>
+              <Label htmlFor="ranking-team">Team</Label>
               <Select
+                id="ranking-team"
                 value={filters.team}
                 onChange={(e) => updateFilter({ team: e.target.value })}
               >
@@ -304,11 +312,14 @@ export default function RankingPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Min minutes</Label>
+              <Label htmlFor="ranking-min-minutes">Min minutes</Label>
               <input
+                id="ranking-min-minutes"
+                name="min_minutes"
+                aria-label="Minimum minutes"
                 type="number"
                 min={0}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                className="nl-field"
                 value={filters.min_minutes}
                 onChange={(e) =>
                   updateFilter({
@@ -320,28 +331,35 @@ export default function RankingPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
             <div className="flex flex-col gap-2">
-              <Label>Age min</Label>
+              <Label htmlFor="ranking-age-min">Age min</Label>
               <input
+                id="ranking-age-min"
+                name="age_min"
+                aria-label="Minimum age"
                 type="number"
                 min={0}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                className="nl-field"
                 value={filters.age_min}
                 onChange={(e) => updateFilter({ age_min: e.target.value })}
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Age max</Label>
+              <Label htmlFor="ranking-age-max">Age max</Label>
               <input
+                id="ranking-age-max"
+                name="age_max"
+                aria-label="Maximum age"
                 type="number"
                 min={0}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                className="nl-field"
                 value={filters.age_max}
                 onChange={(e) => updateFilter({ age_max: e.target.value })}
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Rows per page</Label>
+              <Label htmlFor="ranking-limit">Rows per page</Label>
               <Select
+                id="ranking-limit"
                 value={filters.limit}
                 onChange={(e) => updateFilter({ limit: Number(e.target.value) })}
               >
@@ -356,22 +374,22 @@ export default function RankingPage() {
               <Label>Pagination</Label>
               <div className="flex items-center gap-2">
                 <button
-                  className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
+                  className="nl-button-secondary px-3"
                   disabled={page === 0 || loading}
                   onClick={() => setPage((p) => Math.max(0, p - 1))}
                 >
                   Prev
                 </button>
-                <span className="text-xs text-slate-300">{pageLabel}</span>
+                <span className="text-xs font-semibold text-slate-600">{pageLabel}</span>
                 <button
-                  className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
+                  className="nl-button-secondary px-3"
                   disabled={page + 1 >= totalPages || loading}
                   onClick={() => setPage((p) => p + 1)}
                 >
                   Next
                 </button>
               </div>
-              <p className="text-xs text-slate-500">{total} players</p>
+              <p className="text-xs font-semibold text-slate-500">{total} players</p>
             </div>
           </div>
         </Card>
@@ -385,7 +403,7 @@ export default function RankingPage() {
         <section className="grid grid-cols-1 gap-4">
           {loading ? (
             <Card>
-              <p className="text-slate-400">Loading ranking…</p>
+              <p className="text-slate-500">Loading ranking...</p>
             </Card>
           ) : (
             items.map((row, idx) => (
@@ -410,11 +428,11 @@ export default function RankingPage() {
                     );
                   }
                 }}
-                className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
+                className="cursor-pointer transition duration-200 hover:-translate-y-0.5 hover:border-teal-500/50 hover:shadow-[0_22px_70px_rgba(15,118,110,0.12)] focus:outline-none focus:ring-4 focus:ring-teal-700/20"
               >
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="text-2xl font-semibold text-primary">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-teal-700 text-lg font-extrabold !text-white">
                       {page * filters.limit + idx + 1}
                     </div>
                     <div className="flex items-center gap-3">
@@ -437,22 +455,24 @@ export default function RankingPage() {
                                 className="h-12 w-12 rounded-full object-cover border border-white/10"
                               />
                             ) : (
-                              <div className="h-12 w-12 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-200 font-semibold">
+                              <div className="h-12 w-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 font-bold">
                                 {getInitials(row.name)}
                               </div>
                             )}
                             <div>
-                              <div className="text-lg font-semibold text-white flex items-center gap-2">
+                              <div className="text-lg font-extrabold text-slate-950 flex items-center gap-2">
                                 {row.name}
                                 {prospectIds.has(row.player_id) ? (
-                                  <span className="text-yellow-400" aria-label="Prospect">
-                                    ★
+                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" aria-label="Prospect">
+                                    Prospect
                                   </span>
                                 ) : null}
                               </div>
-                              <div className="text-slate-400 text-sm">
-                                {row.team || "—"} • {row.competition_name} •{" "}
-                                {row.calendar || "–"}
+                              <div className="mt-1 flex items-center gap-2 text-sm text-slate-400">
+                                <ClubLogo name={row.team} className="h-6 w-6 rounded" />
+                                <span className="min-w-0 truncate">
+                                  {row.team || "—"} • {row.competition_name} • {row.calendar || "–"}
+                                </span>
                               </div>
                               {tmProfileUrl ? (
                                 <a
@@ -466,7 +486,7 @@ export default function RankingPage() {
                                 </a>
                               ) : null}
                               {tmMarketValue || tmAgentName ? (
-                                <div className="text-xs text-slate-400 mt-1">
+                                <div className="text-xs text-slate-500 mt-1">
                                   {tmMarketValue ? `Market value: ${tmMarketValue}` : null}
                                   {tmMarketValue && tmAgentName ? " • " : null}
                                   {tmAgentName ? `Agent: ${tmAgentName}` : null}
@@ -488,18 +508,18 @@ export default function RankingPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-6">
                     <div className="text-right">
-                      <p className="text-xs uppercase text-slate-400">
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                         Global score (adj.)
                       </p>
-                      <p className="text-2xl font-bold text-primary">
+                      <p className="text-2xl font-extrabold text-teal-800">
                         {row.global_score_adjusted?.toFixed(1) ?? "—"}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs uppercase text-slate-400">
+                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                         Role pct (league/global)
                       </p>
-                      <p className="text-lg font-semibold">
+                      <p className="text-lg font-extrabold text-slate-900">
                         {row.assigned_role_pct_league?.toFixed(0) ?? "—"} /{" "}
                         {row.assigned_role_pct_global?.toFixed(0) ?? "—"}
                       </p>

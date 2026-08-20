@@ -486,17 +486,17 @@ export default function StatsResearchPage() {
   };
 
   return (
-    <main className="min-h-screen bg-hero-pattern text-slate-100 py-10 px-4">
+    <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
             Stats Research
           </p>
           <h1 className="text-4xl font-bold text-white tracking-tight">
-            Stats Research
+            Metric discovery lab
           </h1>
           <p className="text-slate-300 max-w-3xl">
-            Explore metric relationships with league and position filters.
+            Explore performance relationships across leagues, positions and minutes thresholds to uncover stronger scouting angles.
           </p>
         </header>
 

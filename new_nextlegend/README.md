@@ -76,7 +76,7 @@ sudo docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm
 
 Run (prod):
 - do not run the full raw pipeline directly on the current VPS,
-- follow `docs/RUNBOOK.md`.
+- follow `docs/VPS_CICD.md`.
 
 Important pipeline flags:
 - `SIM_TOPK` : top-k similarities per profile (default 30)
@@ -190,7 +190,7 @@ Run the full current-season job locally, then publish the final CSVs and
 artifacts to the VPS/MinIO, and load those artifacts into PRD Postgres.
 
 Source of truth:
-- `docs/RUNBOOK.md`, section "Weekly refresh procedure"
+- `docs/VPS_CICD.md`, section "Data Refresh Policy"
 
 Do not run the full raw pipeline directly on the current VPS. The current VPS
 has about 3.7 GiB RAM and no swap; full runs with `SIM_TOPK=30` were OOM-killed
@@ -249,7 +249,7 @@ cat backup.sql | sudo docker compose --env-file .env -f infra/compose/docker-com
 
 ## 6) Clear and rebuild similarity table
 - Do not rebuild similarity directly on the current VPS.
-- Rebuild it through the local-compute, PRD-load flow in `docs/RUNBOOK.md`.
+- Rebuild it through the local-compute, PRD-load flow in `docs/VPS_CICD.md`.
 
 ## 7) Health + auth checks
 ```bash
@@ -259,7 +259,7 @@ curl -I https://api.nextlegend.fr/health
 
 ## 8) Pipeline troubleshooting
 - If the full pipeline is OOM killed on the VPS, do not retry it as-is.
-- Use the local-compute, PRD-load flow in `docs/RUNBOOK.md`.
+- Use the local-compute, PRD-load flow in `docs/VPS_CICD.md`.
 - Upgrade the VPS or add swap before considering a VPS-hosted cron again.
 - Use TM progress logs: `TM_CLUB_LOG_EVERY`, `TM_FUZZY_LOG_EVERY`.
 

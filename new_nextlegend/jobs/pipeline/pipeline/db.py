@@ -565,16 +565,19 @@ def upsert_player_seasons(engine: Engine, fact: pd.DataFrame, ids: dict):
 
 def _copy_dataframe(conn, table: str, df: pd.DataFrame, columns: Sequence[str], chunk_size: int = 5000):
     col_list = ", ".join([f'"{c}"' for c in columns])
-    copy_sql = f"COPY {table} ({col_list}) FROM STDIN WITH CSV"
+    copy_sql = f"COPY {table} ({col_list}) FROM STDIN WITH (FORMAT CSV, NULL '\\N')"
     raw = conn.connection
     with raw.cursor() as cur:
         for start in range(0, len(df), chunk_size):
             chunk = df.iloc[start : start + chunk_size]
             buffer = StringIO()
-            chunk.to_csv(buffer, index=False, header=False, na_rep="")
+            chunk.to_csv(buffer, index=False, header=False, na_rep="\\N")
             buffer.seek(0)
-            with cur.copy(copy_sql) as copy:
-                copy.write(buffer.getvalue())
+            if hasattr(cur, "copy"):
+                with cur.copy(copy_sql) as copy:
+                    copy.write(buffer.getvalue())
+            else:
+                cur.copy_expert(copy_sql, buffer)
 
 
 def upsert_player_metrics(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
 from pydantic import BaseModel
@@ -79,6 +79,33 @@ class ScoreHistoryPoint(BaseModel):
     global_score_adjusted: Optional[float] = None
 
 
+class TransferHistoryItem(BaseModel):
+    id: int
+    source: str = "transferts.xlsx"
+    source_player_id: Optional[int] = None
+    linked_player_id: Optional[int] = None
+    normalized_player_name: Optional[str] = None
+    player_name: str
+    league_id: Optional[int] = None
+    league_name: Optional[str] = None
+    team_id_context: Optional[int] = None
+    team_name_context: Optional[str] = None
+    transfer_date: Optional[date] = None
+    transfer_type: Optional[str] = None
+    transfer_fee: Optional[str] = None
+    team_in_id: Optional[int] = None
+    team_in_name: Optional[str] = None
+    team_out_id: Optional[int] = None
+    team_out_name: Optional[str] = None
+    transfer_date_serial: Optional[float] = None
+    raw_payload: Optional[dict[str, Any]] = None
+    imported_at: Optional[datetime] = None
+    team_in_logo_url: Optional[str] = None
+    team_out_logo_url: Optional[str] = None
+    team_context_logo_url: Optional[str] = None
+    match_type: Optional[str] = None
+
+
 class Report(BaseModel):
     player: RankingRow
     metrics: dict[str, Optional[float]]
@@ -89,6 +116,7 @@ class Report(BaseModel):
     summary: dict[str, Optional[float]]
     available_seasons: list[ReportSeasonOption] = []
     score_history: list[ScoreHistoryPoint] = []
+    transfer_history: list[TransferHistoryItem] = []
     similarities_enabled: bool = False
     current_season_label: str = "2025/2026"
 
