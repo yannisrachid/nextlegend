@@ -129,7 +129,7 @@ Safe reconciliation plan:
 12. Rebuild and smoke-test:
     ```bash
     cd ~/nextlegend/new_nextlegend
-    docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build
+    docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build db minio api frontend caddy
     curl -I https://api.nextlegend.fr/
     curl -I https://api.nextlegend.fr/health
     curl -sk -o /tmp/front.out -w "%{http_code}\n" https://app.nextlegend.fr
@@ -149,8 +149,10 @@ cd ~/nextlegend/new_nextlegend
 git fetch origin
 git switch prod
 git pull --ff-only origin prod
-docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build
+docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build db minio api frontend caddy
 ```
+
+Batch services (`pipeline`, `pipeline-refresh`, `current-season-job`) are behind the `jobs` profile and must never be started by a generic production deploy command.
 
 Restart only API and frontend:
 ```bash
