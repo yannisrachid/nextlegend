@@ -1,5 +1,5 @@
 # Every Monday at 07:00 on a compute-capable local machine or external worker.
 # Do not install this cron on the current PRD VPS: the full pipeline can OOM there.
-# Current season only (2025/2026 fallback 2026).
+# Current season only (2026/2027 and calendar-year 2026).
 # Monitoring is shown on Home page via pipeline status. Email alerts are optional.
 0 7 * * 1 cd /path/to/new_nextlegend/wyscout_current_season_job && mkdir -p logs && /usr/bin/flock -n /tmp/nextlegend_current_season.lock ./run_current_season_e2e_via_docker.sh >> /path/to/new_nextlegend/wyscout_current_season_job/logs/cron_current_season.log 2>&1

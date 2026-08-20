@@ -14,12 +14,12 @@ fi
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 SCRAPER_SCRIPT="${SCRAPER_SCRIPT:-$JOB_DIR/run_wyscout_current_weekly.sh}"
-SCRAPER_FINAL_CSV="${SCRAPER_FINAL_CSV:-$JOB_DIR/final_data/wyscout_players_2025_2026_final.csv}"
-TARGET_FINAL_CSV="${TARGET_FINAL_CSV:-$REPO_ROOT/data/wyscout_players_2025_2026_final.csv}"
+SCRAPER_FINAL_CSV="${SCRAPER_FINAL_CSV:-$JOB_DIR/final_data/wyscout_players_2026_2027_final.csv}"
+TARGET_FINAL_CSV="${TARGET_FINAL_CSV:-$REPO_ROOT/data/wyscout_players_2026_2027_final.csv}"
 
 DOCKER_ENV_FILE="${DOCKER_ENV_FILE:-$REPO_ROOT/.env}"
 DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-$REPO_ROOT/infra/compose/docker-compose.yml}"
-PIPELINE_INPUT_URI="${PIPELINE_INPUT_URI:-/data/wyscout_players_2025_2026_final.csv}"
+PIPELINE_INPUT_URI="${PIPELINE_INPUT_URI:-/data/wyscout_players_2026_2027_final.csv}"
 PIPELINE_INPUT_KIND="${PIPELINE_INPUT_KIND:-raw}"
 PIPELINE_RUNNER="${PIPELINE_RUNNER:-docker}" # docker|python
 

@@ -9,7 +9,7 @@ from typing import Dict, Iterable, List, Optional
 DEFAULT_SEASON_OPTIONS = ("Saison en cours", "Current season", "Temporada actual")
 DEFAULT_COLUMN_TOGGLE_LABEL = ("Toutes les colonnes", "All columns", "Todas las columnas")
 DEFAULT_APPLY_COLUMNS_LABEL = ("Appliquer", "Apply", "Aplicar")
-DEFAULT_CALENDAR_PREFERENCES = ("2025/2026", "2026")
+DEFAULT_CALENDAR_PREFERENCES = ("2026/2027", "2026")
 DEFAULT_CHUNK_TERMS = (
     "A",
     "B",
