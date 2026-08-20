@@ -51,8 +51,8 @@ Do not commit `.env` values or credentials.
 Production is the source of truth until the repository has been reconciled.
 
 After reconciliation, all work must follow this branch model:
-- `prod`: production branch. Only deploy this branch to the VPS.
-- `dev`: integration branch. Merge validated work here before promoting to prod.
+- `main`: production branch. Only deploy this branch to the VPS.
+- `dev`: integration branch. Merge validated work here before promoting to main.
 - `feature/<short-name>`: new product or technical feature.
 - `bugfix/<short-name>`: non-urgent bug fix.
 - `hotfix/<short-name>`: urgent production fix.
@@ -61,18 +61,18 @@ Required flow:
 1. Create `feature/*`, `bugfix/*`, or `hotfix/*` from the appropriate base.
 2. Merge the branch into `dev` with `git merge --no-ff`.
 3. Validate `dev`.
-4. Merge `dev` into `prod` with `git merge --no-ff` only when ready for production.
-5. Deploy `prod` to the VPS.
+4. Merge `dev` into `main` with `git merge --no-ff` only when ready for production.
+5. Deploy `main` to the VPS.
 
-All branch integrations must keep an explicit merge commit. Do not use fast-forward merges for `feature/*`, `bugfix/*`, `hotfix/*`, `dev`, or `prod` promotion merges.
+All branch integrations must keep an explicit merge commit. Do not use fast-forward merges for `feature/*`, `bugfix/*`, `hotfix/*`, `dev`, or `main` promotion merges.
 
 Hotfix rule:
-- create `hotfix/*` from `prod`;
-- validate and merge into `prod` with `git merge --no-ff`;
+- create `hotfix/*` from `main`;
+- validate and merge into `main` with `git merge --no-ff`;
 - deploy immediately;
-- merge `prod` back into `dev` with `git merge --no-ff` after deploy so branches do not diverge.
+- merge `main` back into `dev` with `git merge --no-ff` after deploy so branches do not diverge.
 
-Do not commit directly on the VPS after reconciliation. Emergency VPS edits must be captured immediately into `hotfix/*`, merged back through `prod` and `dev`, then redeployed.
+Do not commit directly on the VPS after reconciliation. Emergency VPS edits must be captured immediately into `hotfix/*`, merged back through `main` and `dev`, then redeployed.
 
 ## Reconcile Current Production With Git
 The current VPS state works and must be preserved. Do not run `git reset`, `git checkout .`, or a blind `git pull` on the VPS while it has local changes.
@@ -86,7 +86,7 @@ Safe reconciliation plan:
 3. On the VPS, create a branch from the current working tree:
    ```bash
    cd ~/nextlegend
-   git switch -c reconcile/prod-state-YYYYMMDD
+   git checkout -b reconcile/prod-state-YYYYMMDD
    ```
 4. Review untracked files and exclude runtime/secrets:
    - exclude `.env`, `.env.*`, backups, DB dumps, logs, build caches, generated runtime folders;
@@ -107,25 +107,25 @@ Safe reconciliation plan:
 8. Locally, fetch and inspect the captured branch:
    ```bash
    git fetch origin
-   git diff --stat origin/prod..origin/reconcile/prod-state-YYYYMMDD
+   git diff --stat origin/main..origin/reconcile/prod-state-YYYYMMDD
    ```
-9. Create or update `prod` from that captured branch:
+9. Create or update `main` from that captured branch:
    ```bash
-   git switch -c prod origin/reconcile/prod-state-YYYYMMDD
-   git push -u origin prod
+   git checkout -B main origin/reconcile/prod-state-YYYYMMDD
+   git push -u origin main
    ```
-   If `prod` already exists, merge the reconciliation branch into `prod` with review and `git merge --no-ff`.
-10. Create or update `dev` from `prod`:
+   If `main` already exists, merge the reconciliation branch into `main` with review and `git merge --no-ff`.
+10. Create or update `dev` from `main`:
     ```bash
-    git switch -c dev prod
+    git checkout -B dev main
     git push -u origin dev
     ```
-    If `dev` already exists, merge `prod` into `dev` with `git merge --no-ff` after resolving conflicts.
-11. On the VPS, switch to the clean production branch only after the pushed `prod` branch matches the working production state:
+    If `dev` already exists, merge `main` into `dev` with `git merge --no-ff` after resolving conflicts.
+11. On the VPS, switch to the clean production branch only after the pushed `main` branch matches the working production state:
     ```bash
     cd ~/nextlegend
     git fetch origin
-    git switch prod
+    git checkout main
     git status --short
     ```
 12. Rebuild and smoke-test:
@@ -138,23 +138,23 @@ Safe reconciliation plan:
     ```
 
 Rollback option:
-- keep the pre-reconciliation archive and DB backup until the new `prod` branch has been deployed and verified;
+- keep the pre-reconciliation archive and DB backup until the new `main` branch has been deployed and verified;
 - if deployment fails, restore the previous filesystem snapshot and restart the existing containers.
 
 ## Deploy Current Code
 Current deploy mode is manual deploy on the VPS. There is no `.github/` workflow in this repo yet.
 
-After reconciliation, deploy only from `prod`:
+After reconciliation, deploy only from `main`:
 
 ```bash
 cd ~/nextlegend/new_nextlegend
 git fetch origin
-git switch prod
-git pull --ff-only origin prod
+git checkout main
+git pull --ff-only origin main
 docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build db minio api frontend caddy
 ```
 
-`git pull --ff-only` is only for synchronizing the VPS checkout with the already-reviewed `prod` branch. It is not used for branch integration.
+`git pull --ff-only` is only for synchronizing the VPS checkout with the already-reviewed `main` branch. It is not used for branch integration.
 
 Batch services (`pipeline`, `pipeline-refresh`, `current-season-job`) are behind the `jobs` profile and must never be started by a generic production deploy command.
 

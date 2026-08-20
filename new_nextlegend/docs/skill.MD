@@ -77,9 +77,9 @@ curl -sk -o /tmp/front.out -w "%{http_code}\n" https://app.nextlegend.fr
 ```
 
 ## Git And Editing Rules
-- Branch flow after production reconciliation: `feature/*`, `bugfix/*`, or `hotfix/*` -> `dev` -> `prod`.
+- Branch flow after production reconciliation: `feature/*`, `bugfix/*`, or `hotfix/*` -> `dev` -> `main`.
 - Integrate branches with explicit 3-way merge commits: use `git merge --no-ff`, even when a fast-forward is possible.
-- Deploy only `prod` to the VPS.
+- Deploy only `main` to the VPS.
 - Do not commit directly on the VPS after reconciliation; capture emergencies as `hotfix/*`.
 - Keep changes scoped to the requested behavior.
 - Do not revert user changes unless explicitly asked.
