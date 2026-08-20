@@ -58,16 +58,18 @@ After reconciliation, all work must follow this branch model:
 - `hotfix/<short-name>`: urgent production fix.
 
 Required flow:
-1. Create `feature/*`, `bugfix/*`, or `hotfix/*` from the appropriate base.
+1. Fetch latest remote refs and create `feature/*`, `bugfix/*`, or `hotfix/*` from `origin/main`.
 2. Merge the branch into `dev` with `git merge --no-ff`.
 3. Validate `dev`.
 4. Merge `dev` into `main` with `git merge --no-ff` only when ready for production.
 5. Deploy `main` to the VPS.
 
+Never develop directly on `dev` or `main`. `dev` is only for integration, and `main` is only for production.
+
 All branch integrations must keep an explicit merge commit. Do not use fast-forward merges for `feature/*`, `bugfix/*`, `hotfix/*`, `dev`, or `main` promotion merges.
 
 Hotfix rule:
-- create `hotfix/*` from `main`;
+- create `hotfix/*` from `origin/main`;
 - validate and merge into `main` with `git merge --no-ff`;
 - deploy immediately;
 - merge `main` back into `dev` with `git merge --no-ff` after deploy so branches do not diverge.
