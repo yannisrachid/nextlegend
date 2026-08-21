@@ -9,6 +9,7 @@ new_nextlegend/docs/*
 !new_nextlegend/docs/README.md
 !new_nextlegend/docs/skill.MD
 !new_nextlegend/docs/DATA_MODEL.md
+!new_nextlegend/docs/SCORING_MODEL_WORKSHOP.md
 !new_nextlegend/docs/VPS_CICD.md
 !new_nextlegend/docs/PROJECT_HISTORY.md
 

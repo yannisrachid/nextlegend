@@ -5,8 +5,9 @@ This folder is the compact project documentation for Codex sessions and human ma
 Read order:
 1. `docs/skill.MD` - code conventions, project invariants, and implementation rules.
 2. `docs/DATA_MODEL.md` - serving database model and table ownership.
-3. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
-4. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
+3. `docs/SCORING_MODEL_WORKSHOP.md` - workshop template for rebuilding position-group scoring.
+4. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
+5. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
 
 Project snapshot:
 - Frontend: Next.js in `apps/frontend`, served at `app.nextlegend.fr`.
