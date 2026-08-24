@@ -33,6 +33,7 @@ players ────────────────┘
 - `hd_players`: represented HD Sports players and operational notes.
 - `hd_player_documents`: document metadata attached to HD players.
 - `player_transfer_history`: Wyscout transfer history imported for player reports and rooms.
+- `crm_clubs`, `crm_players`, `crm_contacts`, `crm_prospects`: integrated football CRM imported from `findyourlegend`; see `docs/CRM_INTEGRATION.md`.
 
 Several application tables are created lazily by `apps/api/main.py` on first route use. The production DB user must be allowed to `CREATE TABLE`, `ALTER TABLE`, and `CREATE INDEX`.
 
@@ -52,6 +53,7 @@ Several application tables are created lazily by `apps/api/main.py` on first rou
 ## Data Ownership
 - Pipeline owns: dimensions, `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, `pipeline_runs`.
 - API owns: auth, prospects, needs, AI history, HQ/HD workspace tables, transfer history import tables.
+- API owns CRM tables: `crm_clubs`, `crm_players`, `crm_contacts`, `crm_prospects`.
 - Frontend must not invent persisted state that bypasses the API.
 
 ## Data Model Improvement Rules
