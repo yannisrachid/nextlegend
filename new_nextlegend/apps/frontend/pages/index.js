@@ -39,7 +39,13 @@ const MODULES = [
     desc: "Manage club needs, matching shortlists and agent follow-up for 2026.",
   },
   {
-    title: "SCOUTING LAB",
+    title: "NETWORK",
+    href: "/crm",
+    metric: "Football relationships",
+    desc: "Manage clubs, players, free-role contacts and prospecting workflows.",
+  },
+  {
+    title: "SCOUTING",
     href: "/scouting-lab",
     metric: "Scouting intelligence",
     desc: "Turn ranking, reports, projections and visuals into clear recommendations.",
