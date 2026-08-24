@@ -1,18 +1,18 @@
 # Wyscout Current Season Weekly Job (Portable)
 
 Ce dossier est autonome pour relancer chaque semaine le scraping Wyscout de la saison actuelle:
-- `2025/2026`
+- `2026/2027`
 - `2026`
 
 Le dossier contient 2 niveaux de job:
 
 1. `run_wyscout_current_weekly.sh`
-- scrape (resumable) `2025/2026` puis fallback `2026`
+- scrape (resumable) `2026/2027`, et `2026` pour les championnats en année civile
 - harmonise les colonnes (`rename_columns.py`)
 
 2. `run_current_season_e2e.sh` (recommandé en local)
 - lance le scraping/renaming ci-dessus
-- copie le CSV final vers `../data/wyscout_players_2025_2026_final.csv` (ou `TARGET_FINAL_CSV`)
+- copie le CSV final vers `../data/wyscout_players_2026_2027_final.csv` (ou `TARGET_FINAL_CSV`)
 - déclenche le pipeline complet (cleaning + scores + similarités + TM + upsert DB)
 - journalise le statut et met à jour les données visibles sur la Home (`Pipeline status`)
 
@@ -103,8 +103,8 @@ le VPS PRD actuel.
 
 ## Outputs
 
-- `data/seasons/wyscout_players_2025_2026.csv`
-- `final_data/wyscout_players_2025_2026_final.csv` (fichier final consolidé pour le job)
+- `data/seasons/wyscout_players_2026_2027.csv`
+- `final_data/wyscout_players_2026_2027_final.csv` (fichier final consolidé pour le job)
 - `logs/current_season_e2e_*.log` (log horodaté du job complet)
 
 ## Paramètres utiles
@@ -130,7 +130,7 @@ Test local rapide (sans scraping + sans email):
 
 ```bash
 SKIP_SCRAPE=1 \
-SCRAPER_FINAL_CSV=../data/wyscout_players_2025_2026_final.csv \
+SCRAPER_FINAL_CSV=../data/wyscout_players_2026_2027_final.csv \
 SIM_TOPK=0 \
 SKIP_EMAIL_ALERTS=1 \
 ./run_current_season_e2e.sh

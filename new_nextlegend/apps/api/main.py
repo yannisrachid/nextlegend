@@ -103,6 +103,8 @@ _MERCATO_SCHEMA_LOCK = threading.Lock()
 _MERCATO_SCHEMA_READY = False
 _AGENCY_OPS_SCHEMA_LOCK = threading.Lock()
 _AGENCY_OPS_SCHEMA_READY = False
+_CRM_SCHEMA_LOCK = threading.Lock()
+_CRM_SCHEMA_READY = False
 
 
 def _auth_json_response(request: Request, detail: str, status_code: int = 401) -> JSONResponse:
@@ -429,6 +431,119 @@ CREATE UNIQUE INDEX IF NOT EXISTS player_transfer_history_unique_idx ON player_t
 );
 """
 
+CRM_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS crm_clubs (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    city TEXT NOT NULL,
+    country TEXT NOT NULL,
+    logo TEXT,
+    email TEXT,
+    phone TEXT,
+    website TEXT,
+    source TEXT NOT NULL DEFAULT 'nextlegend',
+    source_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS crm_players (
+    id TEXT PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    age INT NOT NULL DEFAULT 0,
+    position TEXT NOT NULL,
+    nationality TEXT NOT NULL,
+    photo TEXT,
+    email TEXT,
+    phone TEXT,
+    club_id TEXT NOT NULL REFERENCES crm_clubs(id) ON DELETE CASCADE,
+    source TEXT NOT NULL DEFAULT 'nextlegend',
+    source_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS crm_contacts (
+    id TEXT PRIMARY KEY,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    type TEXT NOT NULL DEFAULT 'CLUB',
+    notes TEXT,
+    club_id TEXT REFERENCES crm_clubs(id) ON DELETE SET NULL,
+    player_id TEXT REFERENCES crm_players(id) ON DELETE SET NULL,
+    source TEXT NOT NULL DEFAULT 'nextlegend',
+    source_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT crm_contacts_type_check CHECK (type IN ('CLUB', 'PLAYER'))
+);
+
+CREATE TABLE IF NOT EXISTS crm_prospects (
+    id TEXT PRIMARY KEY,
+    stage TEXT NOT NULL DEFAULT 'prequalification',
+    notes TEXT,
+    contact_id TEXT NOT NULL REFERENCES crm_contacts(id) ON DELETE CASCADE,
+    source TEXT NOT NULL DEFAULT 'nextlegend',
+    source_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT crm_prospects_stage_check CHECK (stage IN ('prequalification', 'relance1', 'relance2', 'relance3'))
+);
+
+CREATE INDEX IF NOT EXISTS crm_clubs_search_idx ON crm_clubs (LOWER(name), LOWER(city), LOWER(country));
+CREATE INDEX IF NOT EXISTS crm_players_club_idx ON crm_players (club_id);
+CREATE INDEX IF NOT EXISTS crm_contacts_club_idx ON crm_contacts (club_id);
+CREATE INDEX IF NOT EXISTS crm_contacts_player_idx ON crm_contacts (player_id);
+CREATE INDEX IF NOT EXISTS crm_contacts_type_idx ON crm_contacts (type);
+CREATE INDEX IF NOT EXISTS crm_prospects_contact_idx ON crm_prospects (contact_id);
+CREATE INDEX IF NOT EXISTS crm_prospects_stage_idx ON crm_prospects (stage);
+"""
+
+
+class CrmClubPayload(BaseModel):
+    name: str
+    city: str
+    country: str
+    logo: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+
+
+class CrmPlayerPayload(BaseModel):
+    first_name: str
+    last_name: str = ""
+    age: int = 0
+    position: str
+    nationality: str
+    club_id: str
+    photo: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+
+class CrmContactPayload(BaseModel):
+    first_name: str
+    last_name: str
+    role: str
+    type: str = "CLUB"
+    club_id: Optional[str] = None
+    player_id: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CrmProspectPayload(BaseModel):
+    contact_id: str
+    stage: str = "prequalification"
+    notes: Optional[str] = None
+
+
 AUTH_COOKIE_NAME = "nl_session"
 DEFAULT_SESSION_DAYS = 365
 PASSWORD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -661,6 +776,20 @@ def _ensure_agency_ops_schema(session: Session) -> None:
             session.execute(text(statement))
         session.commit()
         _AGENCY_OPS_SCHEMA_READY = True
+
+
+def _ensure_crm_schema(session: Session) -> None:
+    global _CRM_SCHEMA_READY
+    if _CRM_SCHEMA_READY:
+        return
+    with _CRM_SCHEMA_LOCK:
+        if _CRM_SCHEMA_READY:
+            return
+        statements = [chunk.strip() for chunk in CRM_SCHEMA_SQL.split(";") if chunk.strip()]
+        for statement in statements:
+            session.execute(text(statement))
+        session.commit()
+        _CRM_SCHEMA_READY = True
 
 
 def _hash_password(password: str, algo: str = "bcrypt") -> str:
@@ -1958,6 +2087,1078 @@ def _build_xlsx(sheets: list[tuple[str, list[list[Any]]]]) -> bytes:
         for idx, (_, rows) in enumerate(sheets, start=1):
             zf.writestr(f"xl/worksheets/sheet{idx}.xml", _xlsx_sheet_xml(rows))
     return output.getvalue()
+
+
+CRM_PROSPECT_STAGES = ["prequalification", "relance1", "relance2", "relance3"]
+CRM_CITY_COORDS = {
+    ("a coruna", "spain"): (43.3623, -8.4115),
+    ("ajaccio", "france"): (41.9192, 8.7386),
+    ("albacete", "spain"): (38.9943, -1.8585),
+    ("almeria", "spain"): (36.8340, -2.4637),
+    ("amadora", "portugal"): (38.7578, -9.2240),
+    ("amiens", "france"): (49.8941, 2.2958),
+    ("angers", "france"): (47.4784, -0.5632),
+    ("andorra", "andorra"): (42.5063, 1.5218),
+    ("antwerp", "belgium"): (51.2194, 4.4025),
+    ("augsburg", "germany"): (48.3705, 10.8978),
+    ("auxerre", "france"): (47.7982, 3.5738),
+    ("barcelona", "spain"): (41.3874, 2.1686),
+    ("bari", "italy"): (41.1171, 16.8719),
+    ("bastia", "france"): (42.6973, 9.4509),
+    ("bergamo", "italy"): (45.6983, 9.6773),
+    ("berlin", "germany"): (52.5200, 13.4050),
+    ("bilbao", "spain"): (43.2630, -2.9350),
+    ("birmingham", "england"): (52.4862, -1.8904),
+    ("blackburn", "england"): (53.7486, -2.4875),
+    ("bochum", "germany"): (51.4818, 7.2162),
+    ("bologna", "italy"): (44.4949, 11.3426),
+    ("bournemouth", "england"): (50.7192, -1.8808),
+    ("braga", "portugal"): (41.5454, -8.4265),
+    ("bremen", "germany"): (53.0793, 8.8017),
+    ("brescia", "italy"): (45.5416, 10.2118),
+    ("brest", "france"): (48.3904, -4.4861),
+    ("brighton", "england"): (50.8225, -0.1372),
+    ("bristol", "england"): (51.4545, -2.5879),
+    ("bruges", "belgium"): (51.2093, 3.2247),
+    ("brussels", "belgium"): (50.8503, 4.3517),
+    ("burgos", "spain"): (42.3439, -3.6969),
+    ("burnley", "england"): (53.7893, -2.2405),
+    ("caen", "france"): (49.1829, -0.3707),
+    ("cadiz", "spain"): (36.5271, -6.2886),
+    ("cagliari", "italy"): (39.2238, 9.1217),
+    ("cardiff", "wales"): (51.4816, -3.1791),
+    ("cartagena", "spain"): (37.6257, -0.9966),
+    ("charleroi", "belgium"): (50.4108, 4.4446),
+    ("clermont-ferrand", "france"): (45.7772, 3.0870),
+    ("cologne", "germany"): (50.9375, 6.9603),
+    ("como", "italy"): (45.8081, 9.0852),
+    ("cordoba", "spain"): (37.8882, -4.7794),
+    ("coventry", "england"): (52.4068, -1.5197),
+    ("cremona", "italy"): (45.1332, 10.0227),
+    ("darmstadt", "germany"): (49.8728, 8.6512),
+    ("derby", "england"): (52.9225, -1.4746),
+    ("dortmund", "germany"): (51.5136, 7.4653),
+    ("dunkerque", "france"): (51.0344, 2.3768),
+    ("dusseldorf", "germany"): (51.2277, 6.7735),
+    ("eibar", "spain"): (43.1849, -2.4716),
+    ("elche", "spain"): (38.2699, -0.7126),
+    ("estoril", "portugal"): (38.7057, -9.3977),
+    ("eupen", "belgium"): (50.6292, 6.0314),
+    ("faro", "portugal"): (37.0194, -7.9304),
+    ("florence", "italy"): (43.7696, 11.2558),
+    ("frankfurt", "germany"): (50.1109, 8.6821),
+    ("freiburg", "germany"): (47.9990, 7.8421),
+    ("funchal", "portugal"): (32.6669, -16.9241),
+    ("gelsenkirchen", "germany"): (51.5177, 7.0857),
+    ("genk", "belgium"): (50.9650, 5.5008),
+    ("genoa", "italy"): (44.4056, 8.9463),
+    ("getafe", "spain"): (40.3083, -3.7320),
+    ("ghent", "belgium"): (51.0543, 3.7174),
+    ("gijon", "spain"): (43.5322, -5.6611),
+    ("girona", "spain"): (41.9794, 2.8214),
+    ("granada", "spain"): (37.1773, -3.5986),
+    ("grenoble", "france"): (45.1885, 5.7245),
+    ("guingamp", "france"): (48.5620, -3.1500),
+    ("hamburg", "germany"): (53.5511, 9.9937),
+    ("hannover", "germany"): (52.3759, 9.7320),
+    ("hull", "england"): (53.7676, -0.3274),
+    ("huesca", "spain"): (42.1401, -0.4089),
+    ("ipswich", "england"): (52.0567, 1.1482),
+    ("karlsruhe", "germany"): (49.0069, 8.4037),
+    ("kiel", "germany"): (54.3233, 10.1228),
+    ("kortrijk", "belgium"): (50.8276, 3.2659),
+    ("la spezia", "italy"): (44.1025, 9.8241),
+    ("las palmas", "spain"): (28.1235, -15.4363),
+    ("laval", "france"): (48.0785, -0.7669),
+    ("lecce", "italy"): (40.3515, 18.1750),
+    ("leeds", "england"): (53.8008, -1.5491),
+    ("le havre", "france"): (49.4944, 0.1079),
+    ("leicester", "england"): (52.6369, -1.1398),
+    ("leipzig", "germany"): (51.3397, 12.3731),
+    ("lens", "france"): (50.4310, 2.8330),
+    ("leverkusen", "germany"): (51.0459, 7.0192),
+    ("liege", "belgium"): (50.6326, 5.5797),
+    ("lille", "france"): (50.6292, 3.0573),
+    ("lisbon", "portugal"): (38.7223, -9.1393),
+    ("liverpool", "england"): (53.4084, -2.9916),
+    ("london", "england"): (51.5074, -0.1278),
+    ("lorient", "france"): (47.7483, -3.3702),
+    ("lyon", "france"): (45.7640, 4.8357),
+    ("madrid", "spain"): (40.4168, -3.7038),
+    ("magdeburg", "germany"): (52.1205, 11.6276),
+    ("mainz", "germany"): (49.9929, 8.2473),
+    ("malaga", "spain"): (36.7213, -4.4214),
+    ("manchester", "england"): (53.4808, -2.2426),
+    ("marseille", "france"): (43.2965, 5.3698),
+    ("mechelen", "belgium"): (51.0259, 4.4775),
+    ("metz", "france"): (49.1193, 6.1757),
+    ("middlesbrough", "england"): (54.5742, -1.2351),
+    ("milan", "italy"): (45.4642, 9.1900),
+    ("modena", "italy"): (44.6471, 10.9252),
+    ("monaco", "monaco"): (43.7384, 7.4246),
+    ("montpellier", "france"): (43.6108, 3.8767),
+    ("monza", "italy"): (45.5845, 9.2744),
+    ("munich", "germany"): (48.1351, 11.5820),
+    ("nantes", "france"): (47.2184, -1.5536),
+    ("naples", "italy"): (40.8518, 14.2681),
+    ("newcastle", "england"): (54.9783, -1.6178),
+    ("nice", "france"): (43.7102, 7.2620),
+    ("norwich", "england"): (52.6309, 1.2974),
+    ("nottingham", "england"): (52.9548, -1.1581),
+    ("nuremberg", "germany"): (49.4521, 11.0767),
+    ("oviedo", "spain"): (43.3619, -5.8494),
+    ("oxford", "england"): (51.7520, -1.2577),
+    ("paderborn", "germany"): (51.7189, 8.7575),
+    ("palermo", "italy"): (38.1157, 13.3615),
+    ("pamplona", "spain"): (42.8125, -1.6458),
+    ("paris", "france"): (48.8566, 2.3522),
+    ("parma", "italy"): (44.8015, 10.3279),
+    ("pau", "france"): (43.2951, -0.3708),
+    ("pisa", "italy"): (43.7228, 10.4017),
+    ("plymouth", "england"): (50.3755, -4.1427),
+    ("porto", "portugal"): (41.1579, -8.6291),
+    ("portsmouth", "england"): (50.8198, -1.0880),
+    ("preston", "england"): (53.7632, -2.7031),
+    ("reims", "france"): (49.2583, 4.0317),
+    ("rennes", "france"): (48.1173, -1.6778),
+    ("rome", "italy"): (41.9028, 12.4964),
+    ("salerno", "italy"): (40.6824, 14.7681),
+    ("san sebastian", "spain"): (43.3183, -1.9812),
+    ("santander", "spain"): (43.4623, -3.8099),
+    ("sassuolo", "italy"): (44.5432, 10.7840),
+    ("seville", "spain"): (37.3891, -5.9845),
+    ("sheffield", "england"): (53.3811, -1.4701),
+    ("southampton", "england"): (50.9097, -1.4044),
+    ("stoke-on-trent", "england"): (53.0027, -2.1794),
+    ("strasbourg", "france"): (48.5734, 7.7521),
+    ("stuttgart", "germany"): (48.7758, 9.1829),
+    ("sunderland", "england"): (54.9069, -1.3838),
+    ("swansea", "wales"): (51.6214, -3.9436),
+    ("toulouse", "france"): (43.6047, 1.4442),
+    ("troyes", "france"): (48.2973, 4.0744),
+    ("turin", "italy"): (45.0703, 7.6869),
+    ("udine", "italy"): (46.0711, 13.2346),
+    ("ulm", "germany"): (48.4011, 9.9876),
+    ("valencia", "spain"): (39.4699, -0.3763),
+    ("valladolid", "spain"): (41.6523, -4.7245),
+    ("venice", "italy"): (45.4408, 12.3155),
+    ("verona", "italy"): (45.4384, 10.9916),
+    ("vigo", "spain"): (42.2406, -8.7207),
+    ("villarreal", "spain"): (39.9383, -0.1009),
+    ("vitoria-gasteiz", "spain"): (42.8467, -2.6727),
+    ("watford", "england"): (51.6565, -0.3903),
+    ("west bromwich", "england"): (52.5187, -1.9945),
+    ("wolfsburg", "germany"): (52.4227, 10.7865),
+    ("wolverhampton", "england"): (52.5862, -2.1288),
+    ("zaragoza", "spain"): (41.6488, -0.8891),
+}
+
+try:
+    from crm_location_data import CRM_CITY_COORD_OVERRIDES, CRM_CLUB_LOCATION_FIXES
+
+    CRM_CITY_COORDS.update(CRM_CITY_COORD_OVERRIDES)
+except ImportError:
+    CRM_CLUB_LOCATION_FIXES = {}
+
+
+
+def _crm_new_id(prefix: str) -> str:
+    return f"{prefix}_{secrets.token_urlsafe(12)}"
+
+
+def _crm_clean(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    text_value = str(value).strip()
+    return text_value or None
+
+
+def _crm_required(value: Optional[str], label: str) -> str:
+    cleaned = _crm_clean(value)
+    if not cleaned:
+        raise HTTPException(status_code=400, detail=f"{label} is required")
+    return cleaned
+
+
+def _crm_location_key(city: Optional[str], country: Optional[str]) -> tuple[str, str]:
+    def normalize(value: Optional[str]) -> str:
+        raw = str(value or "").strip().lower()
+        normalized = unicodedata.normalize("NFKD", raw)
+        ascii_only = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        return re.sub(r"\s+", " ", ascii_only)
+
+    return normalize(city), normalize(country)
+
+
+def _crm_page_response(items: list[dict], total: int, page: int, page_size: int) -> dict:
+    total_pages = max(1, (total + page_size - 1) // page_size) if total else 0
+    return {"data": items, "total": total, "page": page, "pageSize": page_size, "totalPages": total_pages}
+
+
+def _crm_pagination(page: int, page_size: int) -> tuple[int, int, int]:
+    safe_page = max(1, page)
+    safe_size = min(max(1, page_size), 200)
+    return safe_page, safe_size, (safe_page - 1) * safe_size
+
+
+def _crm_contact_select_sql(where_sql: str = "") -> str:
+    return f"""
+        SELECT
+          c.*,
+          club.name AS club_name,
+          club.city AS club_city,
+          club.country AS club_country,
+          player.first_name AS player_first_name,
+          player.last_name AS player_last_name,
+          player.position AS player_position,
+          player.age AS player_age,
+          player.nationality AS player_nationality
+        FROM crm_contacts c
+        LEFT JOIN crm_clubs club ON club.id = c.club_id
+        LEFT JOIN crm_players player ON player.id = c.player_id
+        {where_sql}
+    """
+
+
+def _crm_prospect_select_sql(where_sql: str = "") -> str:
+    return f"""
+        SELECT
+          p.*,
+          c.first_name AS contact_first_name,
+          c.last_name AS contact_last_name,
+          c.role AS contact_role,
+          c.email AS contact_email,
+          c.phone AS contact_phone,
+          c.type AS contact_type,
+          club.name AS club_name,
+          club.city AS club_city,
+          club.country AS club_country,
+          player.first_name AS player_first_name,
+          player.last_name AS player_last_name,
+          player.position AS player_position,
+          player.age AS player_age,
+          player.nationality AS player_nationality
+        FROM crm_prospects p
+        JOIN crm_contacts c ON c.id = p.contact_id
+        LEFT JOIN crm_clubs club ON club.id = c.club_id
+        LEFT JOIN crm_players player ON player.id = c.player_id
+        {where_sql}
+    """
+
+
+@app.get("/crm/summary")
+def crm_summary(session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    counts = {}
+    for key, table_name in {
+        "clubs": "crm_clubs",
+        "players": "crm_players",
+        "contacts": "crm_contacts",
+        "prospects": "crm_prospects",
+    }.items():
+        row = session.execute(text(f"SELECT COUNT(*) AS count FROM {table_name}")).fetchone()
+        counts[key] = int(row.count or 0)
+    email_row = session.execute(text("SELECT COUNT(*) AS count FROM crm_contacts WHERE email IS NOT NULL AND email <> ''")).fetchone()
+    unlinked_row = session.execute(text("SELECT COUNT(*) AS count FROM crm_contacts WHERE club_id IS NULL AND player_id IS NULL")).fetchone()
+    counts["contacts_with_email"] = int(email_row.count or 0)
+    counts["unlinked_contacts"] = int(unlinked_row.count or 0)
+    return counts
+
+
+@app.get("/crm/options")
+def crm_options(session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    clubs = [
+        _row_to_dict(row)
+        for row in session.execute(
+            text("SELECT id, name, city, country, logo FROM crm_clubs ORDER BY LOWER(name), LOWER(city) LIMIT 1500")
+        ).fetchall()
+    ]
+    players = [
+        _row_to_dict(row)
+        for row in session.execute(
+            text(
+                """
+                SELECT p.id, p.first_name, p.last_name, p.position, p.club_id, c.name AS club_name
+                FROM crm_players p
+                JOIN crm_clubs c ON c.id = p.club_id
+                ORDER BY LOWER(p.last_name), LOWER(p.first_name)
+                LIMIT 1500
+                """
+            )
+        ).fetchall()
+    ]
+    contacts = [
+        _row_to_dict(row)
+        for row in session.execute(
+            text(
+                _crm_contact_select_sql("")
+                + " ORDER BY LOWER(c.last_name), LOWER(c.first_name) LIMIT 5000"
+            )
+        ).fetchall()
+    ]
+    return {"clubs": clubs, "players": players, "contacts": contacts}
+
+
+@app.get("/crm/clubs")
+def crm_clubs(
+    page: int = Query(1),
+    pageSize: int = Query(25),
+    search: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
+    _ensure_crm_schema(session)
+    page, page_size, offset = _crm_pagination(page, pageSize)
+    params: dict[str, Any] = {"limit": page_size, "offset": offset}
+    where = ""
+    if search:
+        params["search"] = f"%{search.strip().lower()}%"
+        where = "WHERE LOWER(c.name) LIKE :search OR LOWER(c.city) LIKE :search OR LOWER(c.country) LIKE :search"
+    total = session.execute(text(f"SELECT COUNT(*) AS count FROM crm_clubs c {where}"), params).fetchone().count
+    rows = session.execute(
+        text(
+            f"""
+            SELECT c.*,
+              (SELECT COUNT(*) FROM crm_players p WHERE p.club_id = c.id) AS player_count,
+              (SELECT COUNT(*) FROM crm_contacts ct WHERE ct.club_id = c.id) AS contact_count
+            FROM crm_clubs c
+            {where}
+            ORDER BY LOWER(c.name), LOWER(c.city)
+            LIMIT :limit OFFSET :offset
+            """
+        ),
+        params,
+    ).fetchall()
+    return _crm_page_response([_row_to_dict(row) for row in rows], int(total or 0), page, page_size)
+
+
+@app.post("/crm/clubs")
+def create_crm_club(payload: CrmClubPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    name = _crm_required(payload.name, "Club name")
+    city = _crm_required(payload.city, "City")
+    country = _crm_required(payload.country, "Country")
+    duplicate = session.execute(
+        text(
+            """
+            SELECT 1 FROM crm_clubs
+            WHERE LOWER(BTRIM(name)) = LOWER(BTRIM(:name))
+              AND LOWER(BTRIM(city)) = LOWER(BTRIM(:city))
+              AND LOWER(BTRIM(country)) = LOWER(BTRIM(:country))
+            LIMIT 1
+            """
+        ),
+        {"name": name, "city": city, "country": country},
+    ).fetchone()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A club with the same name, city and country already exists")
+    club_id = _crm_new_id("club")
+    session.execute(
+        text(
+            """
+            INSERT INTO crm_clubs (id, name, city, country, logo, email, phone, website, created_at, updated_at)
+            VALUES (:id, :name, :city, :country, :logo, :email, :phone, :website, NOW(), NOW())
+            """
+        ),
+        {
+            "id": club_id,
+            "name": name,
+            "city": city,
+            "country": country,
+            "logo": _crm_clean(payload.logo),
+            "email": _crm_clean(payload.email),
+            "phone": _crm_clean(payload.phone),
+            "website": _crm_clean(payload.website),
+        },
+    )
+    session.commit()
+    return get_crm_club(club_id, session)
+
+
+@app.post("/crm/clubs/import")
+async def import_crm_clubs(request: Request, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    body = (await request.body()).decode("utf-8-sig")
+    imported = 0
+    skipped = 0
+    for row in csv.DictReader(io.StringIO(body)):
+        name = _crm_clean(row.get("name"))
+        city = _crm_clean(row.get("city"))
+        country = _crm_clean(row.get("country"))
+        if not name or not city or not country:
+            skipped += 1
+            continue
+        exists = session.execute(
+            text(
+                """
+                SELECT 1 FROM crm_clubs
+                WHERE LOWER(BTRIM(name)) = LOWER(BTRIM(:name))
+                  AND LOWER(BTRIM(city)) = LOWER(BTRIM(:city))
+                  AND LOWER(BTRIM(country)) = LOWER(BTRIM(:country))
+                LIMIT 1
+                """
+            ),
+            {"name": name, "city": city, "country": country},
+        ).fetchone()
+        if exists:
+            skipped += 1
+            continue
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_clubs (id, name, city, country, logo, email, phone, website, created_at, updated_at)
+                VALUES (:id, :name, :city, :country, :logo, :email, :phone, :website, NOW(), NOW())
+                """
+            ),
+            {
+                "id": _crm_new_id("club"),
+                "name": name,
+                "city": city,
+                "country": country,
+                "logo": _crm_clean(row.get("logo")),
+                "email": _crm_clean(row.get("email")),
+                "phone": _crm_clean(row.get("phone")),
+                "website": _crm_clean(row.get("website")),
+            },
+        )
+        imported += 1
+    session.commit()
+    return {"imported": imported, "skipped": skipped}
+
+
+@app.get("/crm/clubs/export.xlsx")
+def export_crm_clubs(session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    rows = session.execute(
+        text("SELECT name, city, country, email, phone, website, logo FROM crm_clubs ORDER BY LOWER(name)")
+    ).fetchall()
+    sheet = [["Name", "City", "Country", "Email", "Phone", "Website", "Logo"]]
+    sheet.extend([list(row._mapping.values()) for row in rows])
+    return Response(
+        _build_xlsx([("CRM Clubs", sheet)]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="crm_clubs.xlsx"'},
+    )
+
+
+@app.get("/crm/clubs/{club_id}")
+def get_crm_club(club_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    row = session.execute(
+        text(
+            """
+            SELECT c.*,
+              (SELECT COUNT(*) FROM crm_players p WHERE p.club_id = c.id) AS player_count,
+              (SELECT COUNT(*) FROM crm_contacts ct WHERE ct.club_id = c.id) AS contact_count
+            FROM crm_clubs c
+            WHERE c.id = :id
+            """
+        ),
+        {"id": club_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Club not found")
+    payload = _row_to_dict(row)
+    payload["players"] = [
+        _row_to_dict(player)
+        for player in session.execute(
+            text("SELECT * FROM crm_players WHERE club_id = :id ORDER BY LOWER(last_name), LOWER(first_name) LIMIT 100"),
+            {"id": club_id},
+        ).fetchall()
+    ]
+    payload["contacts"] = [
+        _row_to_dict(contact)
+        for contact in session.execute(
+            text(_crm_contact_select_sql("WHERE c.club_id = :id ORDER BY LOWER(c.last_name), LOWER(c.first_name) LIMIT 100")),
+            {"id": club_id},
+        ).fetchall()
+    ]
+    return payload
+
+
+@app.patch("/crm/clubs/{club_id}")
+@app.put("/crm/clubs/{club_id}")
+def update_crm_club(club_id: str, payload: CrmClubPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    updated = session.execute(
+        text(
+            """
+            UPDATE crm_clubs
+            SET name = :name, city = :city, country = :country, logo = :logo,
+                email = :email, phone = :phone, website = :website, updated_at = NOW()
+            WHERE id = :id
+            RETURNING id
+            """
+        ),
+        {
+            "id": club_id,
+            "name": _crm_required(payload.name, "Club name"),
+            "city": _crm_required(payload.city, "City"),
+            "country": _crm_required(payload.country, "Country"),
+            "logo": _crm_clean(payload.logo),
+            "email": _crm_clean(payload.email),
+            "phone": _crm_clean(payload.phone),
+            "website": _crm_clean(payload.website),
+        },
+    ).fetchone()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Club not found")
+    session.commit()
+    return get_crm_club(club_id, session)
+
+
+@app.delete("/crm/clubs/{club_id}")
+def delete_crm_club(club_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    deleted = session.execute(text("DELETE FROM crm_clubs WHERE id = :id RETURNING id"), {"id": club_id}).fetchone()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Club not found")
+    session.commit()
+    return {"deleted": True}
+
+
+@app.get("/crm/players")
+def crm_players(
+    page: int = Query(1),
+    pageSize: int = Query(25),
+    search: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
+    _ensure_crm_schema(session)
+    page, page_size, offset = _crm_pagination(page, pageSize)
+    params: dict[str, Any] = {"limit": page_size, "offset": offset}
+    where = ""
+    if search:
+        params["search"] = f"%{search.strip().lower()}%"
+        where = """
+        WHERE LOWER(p.first_name) LIKE :search OR LOWER(p.last_name) LIKE :search
+           OR LOWER(p.position) LIKE :search OR LOWER(p.nationality) LIKE :search
+           OR LOWER(c.name) LIKE :search
+        """
+    total = session.execute(
+        text(f"SELECT COUNT(*) AS count FROM crm_players p JOIN crm_clubs c ON c.id = p.club_id {where}"),
+        params,
+    ).fetchone().count
+    rows = session.execute(
+        text(
+            f"""
+            SELECT p.*, c.name AS club_name, c.city AS club_city, c.country AS club_country
+            FROM crm_players p
+            JOIN crm_clubs c ON c.id = p.club_id
+            {where}
+            ORDER BY LOWER(p.last_name), LOWER(p.first_name)
+            LIMIT :limit OFFSET :offset
+            """
+        ),
+        params,
+    ).fetchall()
+    return _crm_page_response([_row_to_dict(row) for row in rows], int(total or 0), page, page_size)
+
+
+@app.post("/crm/players")
+def create_crm_player(payload: CrmPlayerPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    if not session.execute(text("SELECT 1 FROM crm_clubs WHERE id = :id"), {"id": payload.club_id}).fetchone():
+        raise HTTPException(status_code=400, detail="A valid club_id is required")
+    first_name = _crm_required(payload.first_name, "First name")
+    last_name = _crm_clean(payload.last_name) or ""
+    duplicate = session.execute(
+        text(
+            """
+            SELECT 1 FROM crm_players
+            WHERE LOWER(BTRIM(first_name)) = LOWER(BTRIM(:first_name))
+              AND LOWER(BTRIM(last_name)) = LOWER(BTRIM(:last_name))
+              AND club_id = :club_id
+            LIMIT 1
+            """
+        ),
+        {"first_name": first_name, "last_name": last_name, "club_id": payload.club_id},
+    ).fetchone()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A player with the same name and club already exists")
+    player_id = _crm_new_id("player")
+    session.execute(
+        text(
+            """
+            INSERT INTO crm_players (
+              id, first_name, last_name, age, position, nationality, photo, email, phone, club_id, created_at, updated_at
+            ) VALUES (
+              :id, :first_name, :last_name, :age, :position, :nationality, :photo, :email, :phone, :club_id, NOW(), NOW()
+            )
+            """
+        ),
+        {
+            "id": player_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "age": int(payload.age or 0),
+            "position": _crm_required(payload.position, "Position"),
+            "nationality": _crm_required(payload.nationality, "Nationality"),
+            "photo": _crm_clean(payload.photo),
+            "email": _crm_clean(payload.email),
+            "phone": _crm_clean(payload.phone),
+            "club_id": payload.club_id,
+        },
+    )
+    session.commit()
+    return get_crm_player(player_id, session)
+
+
+@app.get("/crm/players/export.xlsx")
+def export_crm_players(session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT p.first_name, p.last_name, p.age, p.position, p.nationality, c.name AS club_name, p.email, p.phone
+            FROM crm_players p JOIN crm_clubs c ON c.id = p.club_id
+            ORDER BY LOWER(p.last_name), LOWER(p.first_name)
+            """
+        )
+    ).fetchall()
+    sheet = [["First name", "Last name", "Age", "Position", "Nationality", "Club", "Email", "Phone"]]
+    sheet.extend([list(row._mapping.values()) for row in rows])
+    return Response(
+        _build_xlsx([("CRM Players", sheet)]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="crm_players.xlsx"'},
+    )
+
+
+@app.get("/crm/players/{player_id}")
+def get_crm_player(player_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    row = session.execute(
+        text(
+            """
+            SELECT p.*, c.name AS club_name, c.city AS club_city, c.country AS club_country
+            FROM crm_players p JOIN crm_clubs c ON c.id = p.club_id
+            WHERE p.id = :id
+            """
+        ),
+        {"id": player_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Player not found")
+    payload = _row_to_dict(row)
+    payload["contacts"] = [
+        _row_to_dict(contact)
+        for contact in session.execute(
+            text(_crm_contact_select_sql("WHERE c.player_id = :id ORDER BY LOWER(c.last_name), LOWER(c.first_name) LIMIT 100")),
+            {"id": player_id},
+        ).fetchall()
+    ]
+    return payload
+
+
+@app.patch("/crm/players/{player_id}")
+@app.put("/crm/players/{player_id}")
+def update_crm_player(player_id: str, payload: CrmPlayerPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    updated = session.execute(
+        text(
+            """
+            UPDATE crm_players
+            SET first_name = :first_name, last_name = :last_name, age = :age, position = :position,
+                nationality = :nationality, photo = :photo, email = :email, phone = :phone,
+                club_id = :club_id, updated_at = NOW()
+            WHERE id = :id
+            RETURNING id
+            """
+        ),
+        {
+            "id": player_id,
+            "first_name": _crm_required(payload.first_name, "First name"),
+            "last_name": _crm_clean(payload.last_name) or "",
+            "age": int(payload.age or 0),
+            "position": _crm_required(payload.position, "Position"),
+            "nationality": _crm_required(payload.nationality, "Nationality"),
+            "photo": _crm_clean(payload.photo),
+            "email": _crm_clean(payload.email),
+            "phone": _crm_clean(payload.phone),
+            "club_id": _crm_required(payload.club_id, "Club"),
+        },
+    ).fetchone()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Player not found")
+    session.commit()
+    return get_crm_player(player_id, session)
+
+
+@app.delete("/crm/players/{player_id}")
+def delete_crm_player(player_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    deleted = session.execute(text("DELETE FROM crm_players WHERE id = :id RETURNING id"), {"id": player_id}).fetchone()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Player not found")
+    session.commit()
+    return {"deleted": True}
+
+
+@app.get("/crm/contacts")
+def crm_contacts(
+    page: int = Query(1),
+    pageSize: int = Query(25),
+    search: Optional[str] = Query(None),
+    type: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
+    _ensure_crm_schema(session)
+    page, page_size, offset = _crm_pagination(page, pageSize)
+    params: dict[str, Any] = {"limit": page_size, "offset": offset}
+    filters = []
+    if search:
+        params["search"] = f"%{search.strip().lower()}%"
+        filters.append(
+            """
+            (LOWER(c.first_name) LIKE :search OR LOWER(c.last_name) LIKE :search OR LOWER(c.role) LIKE :search
+             OR LOWER(COALESCE(club.name, '')) LIKE :search
+             OR LOWER(COALESCE(player.first_name, '') || ' ' || COALESCE(player.last_name, '')) LIKE :search)
+            """
+        )
+    if type in ("CLUB", "PLAYER"):
+        params["type"] = type
+        filters.append("c.type = :type")
+    where = f"WHERE {' AND '.join(filters)}" if filters else ""
+    count_sql = f"""
+        SELECT COUNT(*) AS count
+        FROM crm_contacts c
+        LEFT JOIN crm_clubs club ON club.id = c.club_id
+        LEFT JOIN crm_players player ON player.id = c.player_id
+        {where}
+    """
+    total = session.execute(text(count_sql), params).fetchone().count
+    rows = session.execute(
+        text(_crm_contact_select_sql(where) + " ORDER BY LOWER(c.last_name), LOWER(c.first_name) LIMIT :limit OFFSET :offset"),
+        params,
+    ).fetchall()
+    return _crm_page_response([_row_to_dict(row) for row in rows], int(total or 0), page, page_size)
+
+
+@app.post("/crm/contacts")
+def create_crm_contact(payload: CrmContactPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    contact_type = payload.type if payload.type in ("CLUB", "PLAYER") else "CLUB"
+    club_id = _crm_clean(payload.club_id)
+    player_id = _crm_clean(payload.player_id)
+    first_name = _crm_required(payload.first_name, "First name")
+    last_name = _crm_required(payload.last_name, "Last name")
+    duplicate = session.execute(
+        text(
+            """
+            SELECT 1 FROM crm_contacts
+            WHERE LOWER(BTRIM(first_name)) = LOWER(BTRIM(:first_name))
+              AND LOWER(BTRIM(last_name)) = LOWER(BTRIM(:last_name))
+              AND COALESCE(club_id, '') = COALESCE(:club_id, '')
+              AND COALESCE(player_id, '') = COALESCE(:player_id, '')
+            LIMIT 1
+            """
+        ),
+        {"first_name": first_name, "last_name": last_name, "club_id": club_id, "player_id": player_id},
+    ).fetchone()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A contact with the same name and relation already exists")
+    contact_id = _crm_new_id("contact")
+    session.execute(
+        text(
+            """
+            INSERT INTO crm_contacts (
+              id, first_name, last_name, role, email, phone, type, notes, club_id, player_id, created_at, updated_at
+            ) VALUES (
+              :id, :first_name, :last_name, :role, :email, :phone, :type, :notes, :club_id, :player_id, NOW(), NOW()
+            )
+            """
+        ),
+        {
+            "id": contact_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "role": _crm_required(payload.role, "Role"),
+            "email": _crm_clean(payload.email),
+            "phone": _crm_clean(payload.phone),
+            "type": contact_type,
+            "notes": _crm_clean(payload.notes),
+            "club_id": club_id,
+            "player_id": player_id,
+        },
+    )
+    session.commit()
+    return get_crm_contact(contact_id, session)
+
+
+@app.post("/crm/contacts/import")
+async def import_crm_contacts(request: Request, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    body = (await request.body()).decode("utf-8-sig")
+    imported = 0
+    skipped = 0
+    for row in csv.DictReader(io.StringIO(body)):
+        first_name = _crm_clean(row.get("firstName") or row.get("first_name"))
+        last_name = _crm_clean(row.get("lastName") or row.get("last_name"))
+        role = _crm_clean(row.get("role"))
+        if not first_name or not last_name or not role:
+            skipped += 1
+            continue
+        contact_type = row.get("type") if row.get("type") in ("CLUB", "PLAYER") else "CLUB"
+        session.execute(
+            text(
+                """
+                INSERT INTO crm_contacts (
+                  id, first_name, last_name, role, email, phone, type, notes, club_id, player_id, created_at, updated_at
+                ) VALUES (
+                  :id, :first_name, :last_name, :role, :email, :phone, :type, :notes, :club_id, :player_id, NOW(), NOW()
+                )
+                """
+            ),
+            {
+                "id": _crm_new_id("contact"),
+                "first_name": first_name,
+                "last_name": last_name,
+                "role": role,
+                "email": _crm_clean(row.get("email")),
+                "phone": _crm_clean(row.get("phone")),
+                "type": contact_type,
+                "notes": _crm_clean(row.get("notes")),
+                "club_id": _crm_clean(row.get("clubId") or row.get("club_id")),
+                "player_id": _crm_clean(row.get("playerId") or row.get("player_id")),
+            },
+        )
+        imported += 1
+    session.commit()
+    return {"imported": imported, "skipped": skipped}
+
+
+@app.get("/crm/contacts/export.xlsx")
+def export_crm_contacts(session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    rows = session.execute(
+        text(
+            _crm_contact_select_sql("")
+            + " ORDER BY LOWER(c.last_name), LOWER(c.first_name)"
+        )
+    ).fetchall()
+    sheet = [["First name", "Last name", "Role", "Type", "Email", "Phone", "Club", "Player", "Notes"]]
+    for row in rows:
+        item = _row_to_dict(row)
+        player_name = " ".join([item.get("player_first_name") or "", item.get("player_last_name") or ""]).strip()
+        sheet.append([
+            item.get("first_name"),
+            item.get("last_name"),
+            item.get("role"),
+            item.get("type"),
+            item.get("email"),
+            item.get("phone"),
+            item.get("club_name"),
+            player_name,
+            item.get("notes"),
+        ])
+    return Response(
+        _build_xlsx([("CRM Contacts", sheet)]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="crm_contacts.xlsx"'},
+    )
+
+
+@app.get("/crm/contacts/{contact_id}")
+def get_crm_contact(contact_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    row = session.execute(text(_crm_contact_select_sql("WHERE c.id = :id")), {"id": contact_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    payload = _row_to_dict(row)
+    prospect = session.execute(text("SELECT * FROM crm_prospects WHERE contact_id = :id"), {"id": contact_id}).fetchone()
+    payload["prospect"] = _row_to_dict(prospect) if prospect else None
+    return payload
+
+
+@app.patch("/crm/contacts/{contact_id}")
+@app.put("/crm/contacts/{contact_id}")
+def update_crm_contact(contact_id: str, payload: CrmContactPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    updated = session.execute(
+        text(
+            """
+            UPDATE crm_contacts
+            SET first_name = :first_name, last_name = :last_name, role = :role, email = :email,
+                phone = :phone, type = :type, notes = :notes, club_id = :club_id,
+                player_id = :player_id, updated_at = NOW()
+            WHERE id = :id
+            RETURNING id
+            """
+        ),
+        {
+            "id": contact_id,
+            "first_name": _crm_required(payload.first_name, "First name"),
+            "last_name": _crm_required(payload.last_name, "Last name"),
+            "role": _crm_required(payload.role, "Role"),
+            "email": _crm_clean(payload.email),
+            "phone": _crm_clean(payload.phone),
+            "type": payload.type if payload.type in ("CLUB", "PLAYER") else "CLUB",
+            "notes": _crm_clean(payload.notes),
+            "club_id": _crm_clean(payload.club_id),
+            "player_id": _crm_clean(payload.player_id),
+        },
+    ).fetchone()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    session.commit()
+    return get_crm_contact(contact_id, session)
+
+
+@app.delete("/crm/contacts/{contact_id}")
+def delete_crm_contact(contact_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    deleted = session.execute(text("DELETE FROM crm_contacts WHERE id = :id RETURNING id"), {"id": contact_id}).fetchone()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    session.commit()
+    return {"deleted": True}
+
+
+@app.get("/crm/prospects")
+def crm_prospects(
+    stage: Optional[str] = Query(None),
+    sort: str = Query("date"),
+    session: Session = Depends(get_session),
+):
+    _ensure_crm_schema(session)
+    params: dict[str, Any] = {}
+    where = ""
+    if stage in CRM_PROSPECT_STAGES:
+        where = "WHERE p.stage = :stage"
+        params["stage"] = stage
+    order_by = {
+        "name": "LOWER(c.last_name), LOWER(c.first_name)",
+        "entity": "LOWER(COALESCE(club.name, player.last_name, c.last_name))",
+        "date": "p.created_at DESC",
+    }.get(sort, "p.created_at DESC")
+    rows = session.execute(text(_crm_prospect_select_sql(where) + f" ORDER BY {order_by}"), params).fetchall()
+    items = [_row_to_dict(row) for row in rows]
+    return {"data": items, "stages": CRM_PROSPECT_STAGES}
+
+
+@app.post("/crm/prospects")
+def create_crm_prospect(payload: CrmProspectPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    if payload.stage not in CRM_PROSPECT_STAGES:
+        raise HTTPException(status_code=400, detail="Invalid prospect stage")
+    if not session.execute(text("SELECT 1 FROM crm_contacts WHERE id = :id"), {"id": payload.contact_id}).fetchone():
+        raise HTTPException(status_code=400, detail="A valid contact_id is required")
+    existing = session.execute(text("SELECT * FROM crm_prospects WHERE contact_id = :id"), {"id": payload.contact_id}).fetchone()
+    if existing:
+        return _row_to_dict(existing)
+    prospect_id = _crm_new_id("prospect")
+    session.execute(
+        text(
+            """
+            INSERT INTO crm_prospects (id, contact_id, stage, notes, created_at, updated_at)
+            VALUES (:id, :contact_id, :stage, :notes, NOW(), NOW())
+            """
+        ),
+        {"id": prospect_id, "contact_id": payload.contact_id, "stage": payload.stage, "notes": _crm_clean(payload.notes)},
+    )
+    session.commit()
+    return get_crm_prospect(prospect_id, session)
+
+
+@app.get("/crm/prospects/{prospect_id}")
+def get_crm_prospect(prospect_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    row = session.execute(text(_crm_prospect_select_sql("WHERE p.id = :id")), {"id": prospect_id}).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+    return _row_to_dict(row)
+
+
+@app.patch("/crm/prospects/{prospect_id}")
+@app.put("/crm/prospects/{prospect_id}")
+def update_crm_prospect(prospect_id: str, payload: CrmProspectPayload, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    if payload.stage not in CRM_PROSPECT_STAGES:
+        raise HTTPException(status_code=400, detail="Invalid prospect stage")
+    updated = session.execute(
+        text(
+            """
+            UPDATE crm_prospects
+            SET stage = :stage, notes = :notes, updated_at = NOW()
+            WHERE id = :id
+            RETURNING id
+            """
+        ),
+        {"id": prospect_id, "stage": payload.stage, "notes": _crm_clean(payload.notes)},
+    ).fetchone()
+    if not updated:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+    session.commit()
+    return get_crm_prospect(prospect_id, session)
+
+
+@app.delete("/crm/prospects/{prospect_id}")
+def delete_crm_prospect(prospect_id: str, session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    deleted = session.execute(text("DELETE FROM crm_prospects WHERE id = :id RETURNING id"), {"id": prospect_id}).fetchone()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+    session.commit()
+    return {"deleted": True}
+
+
+@app.get("/crm/cities")
+def crm_cities(session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT city, country, COUNT(*) AS club_count,
+                   json_agg(json_build_object('id', id, 'name', name, 'logo', logo) ORDER BY name) AS clubs
+            FROM crm_clubs
+            WHERE city IS NOT NULL AND city <> ''
+            GROUP BY city, country
+            ORDER BY club_count DESC, city
+            LIMIT 500
+            """
+        )
+    ).fetchall()
+    return {"data": [_row_to_dict(row) for row in rows]}
+
+
+@app.get("/crm/map-clusters")
+def crm_map_clusters(session: Session = Depends(get_session)):
+    _ensure_crm_schema(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT city, country, COUNT(*) AS club_count,
+                   json_agg(json_build_object('id', id, 'name', name, 'logo', logo) ORDER BY name) AS clubs
+            FROM crm_clubs
+            WHERE city IS NOT NULL AND city <> ''
+            GROUP BY city, country
+            ORDER BY club_count DESC, city
+            """
+        )
+    ).fetchall()
+    mapped = []
+    unmapped_clubs = 0
+    unmapped_locations = 0
+    for row in rows:
+        item = _row_to_dict(row)
+        coords = CRM_CITY_COORDS.get(_crm_location_key(item.get("city"), item.get("country")))
+        if not coords:
+            unmapped_clubs += int(item.get("club_count") or 0)
+            unmapped_locations += 1
+            continue
+        lat, lon = coords
+        item["lat"] = lat
+        item["lon"] = lon
+        mapped.append(item)
+    mapped.sort(key=lambda item: int(item.get("club_count") or 0), reverse=True)
+    return {
+        "data": mapped,
+        "mapped_clubs": sum(int(item.get("club_count") or 0) for item in mapped),
+        "mapped_locations": len(mapped),
+        "unmapped_clubs": unmapped_clubs,
+        "unmapped_locations": unmapped_locations,
+    }
 
 
 def _build_player_context(report: Report) -> dict:
