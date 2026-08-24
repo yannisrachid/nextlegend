@@ -78,7 +78,7 @@ Current top-level product areas:
 - `HQ`: priorities and operational cockpit.
 - `HD PLAYERS`: represented players, notes, documents, contacts, objectives.
 - `MERCATO 2026`: workbook-style needs, candidates, assignments, and export.
-- `SCOUTING LAB`: legacy scouting features grouped under a scouting shell.
+- `SCOUTING`: legacy scouting features grouped under a scouting shell.
 
 Related API-managed tables:
 - `hq_priority_items`;

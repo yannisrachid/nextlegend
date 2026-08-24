@@ -17,16 +17,16 @@ fi
 
 mkdir -p data/seasons final_data
 
-echo "[1/2] Scraping calendars 2025/2026 then 2026 (fallback)..."
+echo "[1/2] Scraping calendars 2026/2027 and 2026..."
 SCRAPE_CMD=(
   "$PYTHON_BIN" -u scripts/run_wyscout_resumable.py
   --selected-file data/leagues.txt
   --download-dir data/seasons
-  --output-csv-name wyscout_players_2025_2026.csv
-  --state-file data/seasons/.resume_2025_2026.json
+  --output-csv-name wyscout_players_2026_2027.csv
+  --state-file data/seasons/.resume_2026_2027.json
   --max-attempts "$MAX_ATTEMPTS"
   --attempt-idle-timeout-seconds "$ATTEMPT_IDLE_TIMEOUT_SECONDS"
-  --calendar-preferences 2025/2026 2026
+  --calendar-preferences 2026/2027 2026
 )
 if [[ "$FRESH_START" == "1" ]]; then
   SCRAPE_CMD+=(--fresh-start)
@@ -37,7 +37,7 @@ PYTHONUNBUFFERED=1 "${SCRAPE_CMD[@]}"
 
 echo "[2/2] Renaming columns..."
 PYTHONUNBUFFERED=1 "$PYTHON_BIN" -u scripts/rename_columns.py \
-  --input data/seasons/wyscout_players_2025_2026.csv \
-  --output final_data/wyscout_players_2025_2026_final.csv
+  --input data/seasons/wyscout_players_2026_2027.csv \
+  --output final_data/wyscout_players_2026_2027_final.csv
 
-echo "Done. Output: final_data/wyscout_players_2025_2026_final.csv"
+echo "Done. Output: final_data/wyscout_players_2026_2027_final.csv"

@@ -6,7 +6,8 @@ Read order:
 1. `docs/skill.MD` - code conventions, project invariants, and implementation rules.
 2. `docs/DATA_MODEL.md` - serving database model and table ownership.
 3. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
-4. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
+4. `docs/CRM_INTEGRATION.md` - CRM model, Neon migration, local and prod verification.
+5. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
 
 Project snapshot:
 - Frontend: Next.js in `apps/frontend`, served at `app.nextlegend.fr`.
@@ -15,6 +16,7 @@ Project snapshot:
 - Batch pipeline: `jobs/pipeline`.
 - Object storage: MinIO, S3-compatible.
 - Current product: Next Legend for HD Sports scouting and agency operations.
+- Integrated CRM: `/crm`, backed by `crm_*` tables and documented in `docs/CRM_INTEGRATION.md`.
 
 Key invariants:
 - API root `/` and `/health` are public and must return 200.

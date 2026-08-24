@@ -1,4 +1,5 @@
 import "@/styles/globals.css";
+import "leaflet/dist/leaflet.css";
 import Link from "next/link";
 import Head from "next/head";
 import { useCallback, useEffect, useState } from "react";
@@ -11,7 +12,8 @@ const NAV_ITEMS = [
   { href: "/", label: "HQ" },
   { href: "/hd-players", label: "HD PLAYERS" },
   { href: "/mercato-2026", label: "MERCATO 2026" },
-  { href: "/scouting-lab", label: "SCOUTING LAB" },
+  { href: "/crm", label: "NETWORK" },
+  { href: "/scouting-lab", label: "SCOUTING" },
 ];
 
 const SCOUTING_LAB_PATHS = [
