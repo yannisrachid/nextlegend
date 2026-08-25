@@ -15,10 +15,10 @@ import {
   getRadarMetricKeys,
   getRelevantMetricKeys,
   lowerIsBetter,
+  metricGroupOrderForPosition,
   metricGroupOrder,
   metricGroups,
   normalizePositionGroup,
-  POSITION_GROUPS,
   profileCategories,
 } from "@/lib/reportMetrics";
 
@@ -378,11 +378,10 @@ function MetricGroupCard({ groupKey, metrics, rawMode, context }) {
   );
 }
 
-export function AdvancedCharacteristics({ metrics, player, rawMode, setRawMode, context, setContext, referenceGroup, setReferenceGroup }) {
+export function AdvancedCharacteristics({ metrics, player, rawMode, setRawMode, context, setContext }) {
   const positionGroup = normalizePositionGroup(player?.assigned_role, player?.position);
   const positionMeta = getPositionMeta(player?.assigned_role, player?.position);
-  const selectedGroup = referenceGroup || positionGroup;
-  const selectedMeta = POSITION_GROUPS[selectedGroup] || positionMeta;
+  const groupOrder = metricGroupOrderForPosition(positionGroup);
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -390,23 +389,10 @@ export function AdvancedCharacteristics({ metrics, player, rawMode, setRawMode, 
           <Kicker>Advanced characteristics</Kicker>
           <h3 className="mt-2 text-2xl font-black text-slate-950">Detailed metric percentiles</h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            An 80 means the player is better than 80% of {selectedMeta.label.toLowerCase()} in {player?.competition_name || "the selected competition"} during {player?.calendar || "the selected season"}.
+            An 80 means the player is better than 80% of {positionMeta.label.toLowerCase()} in the selected {context === "league" ? "league" : "global"} context during {player?.calendar || "the selected season"}.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="text-xs font-black uppercase tracking-[0.16em] text-teal-700">
-            Compare vs
-            <select
-              className="ml-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-slate-950"
-              value={selectedGroup}
-              onChange={(event) => setReferenceGroup(event.target.value)}
-              aria-label="Average comparison group"
-            >
-              {Object.entries(POSITION_GROUPS).map(([key, group]) => (
-                <option key={key} value={key}>{group.label}</option>
-              ))}
-            </select>
-          </label>
           <div className="rounded-full border border-slate-200 bg-white p-1">
             {["global", "league"].map((item) => (
               <button key={item} type="button" onClick={() => setContext(item)} className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${context === item ? "bg-teal-700 text-white" : "text-slate-600"}`}>{item}</button>
@@ -416,7 +402,7 @@ export function AdvancedCharacteristics({ metrics, player, rawMode, setRawMode, 
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {metricGroupOrder.map((groupKey) => (
+        {groupOrder.map((groupKey) => (
           <MetricGroupCard key={groupKey} groupKey={groupKey} metrics={metrics} rawMode={rawMode} context={context} />
         ))}
       </div>
@@ -438,10 +424,10 @@ const RadarTooltip = ({ active, payload, label }) => {
 
 const seasonRadarColors = ["#0f766e", "#2563eb", "#d97706", "#7c3aed", "#dc2626", "#0891b2"];
 
-export function PlayerRadarComparison({ report, comparisonReport, context, referenceGroup }) {
+export function PlayerRadarComparison({ report, comparisonReport, context }) {
   const player = report?.player || {};
   const metrics = report?.metrics || {};
-  const positionGroup = referenceGroup || normalizePositionGroup(player.assigned_role, player.position);
+  const positionGroup = normalizePositionGroup(player.assigned_role, player.position);
   const comparison = comparisonReport?.player;
   const comparisonMetrics = comparisonReport?.metrics || {};
   const radarKeys = getRadarMetricKeys(positionGroup, report?.radar_metrics || []).filter((key) => metricAvailable(metrics, key));
@@ -460,7 +446,7 @@ export function PlayerRadarComparison({ report, comparisonReport, context, refer
         <div>
           <Kicker>Visual comparison</Kicker>
           <h3 className="mt-2 text-xl font-black text-slate-950">{player.name || "Player"} vs {comparisonLabel}</h3>
-          {!comparison ? <p className="mt-1 text-xs font-semibold text-slate-500">Average sample: {sampleSize || "-"} players, min 1/3 available minutes.</p> : null}
+          {!comparison ? <p className="mt-1 text-xs font-semibold text-slate-500">Average sample: {sampleSize || "-"} {positionGroup.toLowerCase()} with available metric data.</p> : null}
         </div>
         <div className="flex items-center gap-3 text-xs font-black uppercase tracking-[0.12em]">
           <span className="text-teal-700">Player</span>
@@ -483,10 +469,10 @@ export function PlayerRadarComparison({ report, comparisonReport, context, refer
   );
 }
 
-export function PlayerSeasonRadarComparison({ report, context, referenceGroup }) {
+export function PlayerSeasonRadarComparison({ report, context }) {
   const player = report?.player || {};
   const metrics = report?.metrics || {};
-  const positionGroup = referenceGroup || normalizePositionGroup(player.assigned_role, player.position);
+  const positionGroup = normalizePositionGroup(player.assigned_role, player.position);
   const radarKeys = getRadarMetricKeys(positionGroup, report?.radar_metrics || []).filter((key) => metricAvailable(metrics, key));
   const seasons = report?.season_metric_history || [];
   const data = radarKeys.map((key) => {
@@ -542,9 +528,9 @@ export function PlayerSeasonRadarComparison({ report, context, referenceGroup })
   );
 }
 
-export function PlayerStatsComparison({ report, comparisonReport, context, referenceGroup, onSearch, query, results, showResults, onSelect, loading }) {
+export function PlayerStatsComparison({ report, comparisonReport, context, onSearch, query, results, showResults, onSelect, loading }) {
   const player = report?.player || {};
-  const positionGroup = referenceGroup || normalizePositionGroup(player.assigned_role, player.position);
+  const positionGroup = normalizePositionGroup(player.assigned_role, player.position);
   const keys = getRadarMetricKeys(positionGroup, report?.radar_metrics || []).filter((key) => metricAvailable(report?.metrics || {}, key));
   const comparison = comparisonReport?.player;
   const comparisonLabel = comparison?.name || "Average Player";
@@ -553,7 +539,7 @@ export function PlayerStatsComparison({ report, comparisonReport, context, refer
     <ReportCard className="min-h-[460px]">
       <Kicker>Stats comparison</Kicker>
       <h3 className="mt-2 text-xl font-black text-slate-950">{player.name || "Player"} vs {comparisonLabel}</h3>
-      {!comparison ? <p className="mt-1 text-xs font-semibold text-slate-500">Default comparison uses average raw values from {sampleSize || "-"} eligible players.</p> : null}
+      {!comparison ? <p className="mt-1 text-xs font-semibold text-slate-500">Default comparison uses average raw values from {sampleSize || "-"} {positionGroup.toLowerCase()} with available metric data.</p> : null}
       <div className="relative mt-4">
         <input
           className="nl-field w-full rounded-lg px-4 py-3 text-sm font-semibold"

@@ -4552,11 +4552,6 @@ def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]
     queries = {
         "global": (
             """
-            WITH minutes_reference AS (
-                SELECT season_id, competition_id, GREATEST(MAX(COALESCE(matches_played, 0)) * 90.0, 0) AS minutes_possible
-                FROM player_seasons
-                GROUP BY season_id, competition_id
-            )
             SELECT
                 pmp.position_group,
                 pmp.metric_key,
@@ -4564,23 +4559,14 @@ def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]
                 AVG(pmp.percentile) AS avg_percentile,
                 COUNT(*) AS sample_size
             FROM player_metric_percentiles_global pmp
-            JOIN player_seasons ps2 ON ps2.id = pmp.player_season_id
-            LEFT JOIN minutes_reference mr
-              ON mr.season_id = ps2.season_id AND mr.competition_id = ps2.competition_id
             WHERE pmp.season_id = :season_id
               AND pmp.raw_value IS NOT NULL
-              AND ps2.minutes_played >= COALESCE(mr.minutes_possible, 0) / 3.0
             GROUP BY pmp.position_group, pmp.metric_key
             """,
             {"season_id": season_id},
         ),
         "league": (
             """
-            WITH minutes_reference AS (
-                SELECT season_id, competition_id, GREATEST(MAX(COALESCE(matches_played, 0)) * 90.0, 0) AS minutes_possible
-                FROM player_seasons
-                GROUP BY season_id, competition_id
-            )
             SELECT
                 pmp.position_group,
                 pmp.metric_key,
@@ -4588,13 +4574,9 @@ def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]
                 AVG(pmp.percentile) AS avg_percentile,
                 COUNT(*) AS sample_size
             FROM player_metric_percentiles_league pmp
-            JOIN player_seasons ps2 ON ps2.id = pmp.player_season_id
-            LEFT JOIN minutes_reference mr
-              ON mr.season_id = ps2.season_id AND mr.competition_id = ps2.competition_id
             WHERE pmp.season_id = :season_id
               AND pmp.competition_id = :competition_id
               AND pmp.raw_value IS NOT NULL
-              AND ps2.minutes_played >= COALESCE(mr.minutes_possible, 0) / 3.0
             GROUP BY pmp.position_group, pmp.metric_key
             """,
             {"season_id": season_id, "competition_id": competition_id},

@@ -812,7 +812,6 @@ export default function ReportPage() {
   const [selectedComparisonLabel, setSelectedComparisonLabel] = useState("");
   const [comparisonReport, setComparisonReport] = useState(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
-  const [referenceGroup, setReferenceGroup] = useState("");
   const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
@@ -975,7 +974,7 @@ export default function ReportPage() {
   const metrics = report?.metrics || {};
   const positionGroup = normalizePositionGroup(report?.player?.assigned_role, report?.player?.position);
   const positionMeta = getPositionMeta(report?.player?.assigned_role, report?.player?.position);
-  const selectedReferenceGroup = referenceGroup || positionGroup;
+  const selectedReferenceGroup = positionGroup;
   const profileCategoriesData = useMemo(() => buildProfileCategories(metrics, percentileContext), [metrics, percentileContext]);
   const characteristics = useMemo(() => buildCharacteristics(metrics, positionGroup, percentileContext), [metrics, positionGroup, percentileContext]);
   const scoreHistory = useMemo(() => (report?.score_history || []).map((row) => ({ ...row, global_score_adjusted: row.global_score_adjusted == null ? null : Number(row.global_score_adjusted) })), [report?.score_history]);
@@ -1019,12 +1018,6 @@ export default function ReportPage() {
     { label: "Outfitter", value: tmFields.tm_outfitter || tmFields.outfitter },
   ].filter((item) => hasValue(item.value) || hasValue(item.url));
   const hasTmData = tmDetails.length > 0 || socialLinks.length > 0 || hasValue(tmProfileUrl) || hasValue(tmPhotoUrl);
-
-  useEffect(() => {
-    if (report?.player?.player_season_id) {
-      setReferenceGroup(positionGroup);
-    }
-  }, [report?.player?.player_season_id, positionGroup]);
 
   return (
     <main className="nl-page px-4 py-8 text-slate-900 sm:px-6 lg:px-8">
@@ -1172,8 +1165,6 @@ export default function ReportPage() {
               setRawMode={setRawMode}
               context={percentileContext}
               setContext={setPercentileContext}
-              referenceGroup={selectedReferenceGroup}
-              setReferenceGroup={setReferenceGroup}
             />
 
             <div className="grid gap-4 xl:grid-cols-2">
@@ -1181,13 +1172,11 @@ export default function ReportPage() {
                 report={report}
                 comparisonReport={comparisonReport}
                 context={percentileContext}
-                referenceGroup={selectedReferenceGroup}
               />
               <PlayerStatsComparison
                 report={report}
                 comparisonReport={comparisonReport}
                 context={percentileContext}
-                referenceGroup={selectedReferenceGroup}
                 query={compareQuery}
                 results={compareResults}
                 showResults={showCompareResults}
@@ -1218,7 +1207,6 @@ export default function ReportPage() {
               <PlayerSeasonRadarComparison
                 report={report}
                 context={percentileContext}
-                referenceGroup={selectedReferenceGroup}
               />
               <ScoreHistory data={scoreHistory} />
             </div>

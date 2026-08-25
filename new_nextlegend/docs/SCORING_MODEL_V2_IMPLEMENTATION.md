@@ -310,6 +310,8 @@ Report principles:
 - Percentiles come from the API payload built from `player_metric_percentiles_global` and `player_metric_percentiles_league`.
 - `global` context means same season, same position group, all competitions.
 - `league` context means same season, same competition, same position group.
+- The report never lets the user compare against another position group. A goalkeeper is always benchmarked against goalkeepers, a centre forward against centre forwards, and so on.
+- Report percentiles and Average Player benchmarks use all players from the same position group in the selected context when the metric exists. They are not filtered by minutes; minutes reliability is handled by the scoring model, not by the displayed percentile cohort.
 - Strengths and weaknesses are derived only from metrics relevant to the player's position group.
 - Missing values are displayed as `-` and are never coerced to zero.
 - Similar players are limited to the top 10 statistical neighbors and displayed without similarity percentage because the ranking is already constrained server-side.
