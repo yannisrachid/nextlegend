@@ -34,7 +34,7 @@ All other routes require a valid session cookie.
 - `GET /ranking`, `GET /ranking/page`
 - `GET /players/{id}`
 - `GET /players/{id}/report`
-- `GET /players/{id}/similarities`
+- `GET /players/{id}/similarities` (max 10 returned rows)
 - `GET /meta/positions`, `GET /meta/teams`, `GET /meta/seasons`, `GET /meta/competitions`
 - `GET /meta/stats-research/metrics`
 - `GET /ops/metrics`
@@ -44,7 +44,7 @@ All other routes require a valid session cookie.
 
 ## DB expectations
 Tables populated by the pipeline:
-- `competitions`, `seasons`, `players`, `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, `pipeline_runs`
+- `competitions`, `seasons`, `players`, `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, `role_scores`, `player_similarity`, `pipeline_runs`
 
 ## Notes
 - Root `/` must remain public to avoid auth loops on frontend.

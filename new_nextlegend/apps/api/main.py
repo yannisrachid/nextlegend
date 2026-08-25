@@ -667,6 +667,32 @@ def _build_score_history(season_items: list[dict]) -> list[ScoreHistoryPoint]:
     return history
 
 
+def _build_season_metric_history(session: Session, score_history: list[ScoreHistoryPoint]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for point in score_history:
+        metrics_row = session.execute(
+            text("SELECT * FROM player_metrics WHERE player_season_id = :psid"),
+            {"psid": point.player_season_id},
+        ).fetchone()
+        metrics = _row_to_dict(metrics_row) if metrics_row else {}
+        metrics.pop("player_season_id", None)
+        metrics.pop("created_at", None)
+        metrics.pop("updated_at", None)
+        metrics = _hydrate_report_metric_percentiles(session, int(point.player_season_id), metrics)
+        items.append(
+            {
+                "player_season_id": point.player_season_id,
+                "calendar": point.calendar,
+                "competition_name": point.competition_name,
+                "team": point.team,
+                "minutes_played": point.minutes_played,
+                "global_score_adjusted": point.global_score_adjusted,
+                "metrics": metrics,
+            }
+        )
+    return items
+
+
 def _ensure_prospect_schema(session: Session) -> None:
     statements = [chunk.strip() for chunk in PROSPECT_SCHEMA_SQL.split(";") if chunk.strip()]
     for statement in statements:
@@ -4482,6 +4508,123 @@ def _load_role_metrics() -> dict[str, list[str]]:
     return _ROLE_METRICS
 
 
+def _hydrate_report_metric_percentiles(session: Session, player_season_id: int, metrics: dict) -> dict:
+    hydrated = dict(metrics or {})
+    queries = [
+        (
+            "global",
+            """
+            SELECT metric_key, percentile
+            FROM player_metric_percentiles_global
+            WHERE player_season_id = :player_season_id
+            """,
+        ),
+        (
+            "league",
+            """
+            SELECT metric_key, percentile
+            FROM player_metric_percentiles_league
+            WHERE player_season_id = :player_season_id
+            """,
+        ),
+    ]
+    for scope, sql in queries:
+        try:
+            rows = session.execute(text(sql), {"player_season_id": player_season_id}).fetchall()
+        except Exception:
+            rows = []
+        suffix = f"_pct_{scope}"
+        for row in rows:
+            metric_key = row._mapping.get("metric_key")
+            if not metric_key:
+                continue
+            hydrated[f"{metric_key}{suffix}"] = row._mapping.get("percentile")
+    return hydrated
+
+
+def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]:
+    season_id = ps.get("season_id")
+    competition_id = ps.get("competition_id")
+    if season_id is None:
+        return {"global": {}, "league": {}}
+
+    contexts: dict[str, Any] = {"global": {}, "league": {}}
+    queries = {
+        "global": (
+            """
+            WITH minutes_reference AS (
+                SELECT season_id, competition_id, GREATEST(MAX(COALESCE(matches_played, 0)) * 90.0, 0) AS minutes_possible
+                FROM player_seasons
+                GROUP BY season_id, competition_id
+            )
+            SELECT
+                pmp.position_group,
+                pmp.metric_key,
+                AVG(pmp.raw_value) AS avg_raw,
+                AVG(pmp.percentile) AS avg_percentile,
+                COUNT(*) AS sample_size
+            FROM player_metric_percentiles_global pmp
+            JOIN player_seasons ps2 ON ps2.id = pmp.player_season_id
+            LEFT JOIN minutes_reference mr
+              ON mr.season_id = ps2.season_id AND mr.competition_id = ps2.competition_id
+            WHERE pmp.season_id = :season_id
+              AND pmp.raw_value IS NOT NULL
+              AND ps2.minutes_played >= COALESCE(mr.minutes_possible, 0) / 3.0
+            GROUP BY pmp.position_group, pmp.metric_key
+            """,
+            {"season_id": season_id},
+        ),
+        "league": (
+            """
+            WITH minutes_reference AS (
+                SELECT season_id, competition_id, GREATEST(MAX(COALESCE(matches_played, 0)) * 90.0, 0) AS minutes_possible
+                FROM player_seasons
+                GROUP BY season_id, competition_id
+            )
+            SELECT
+                pmp.position_group,
+                pmp.metric_key,
+                AVG(pmp.raw_value) AS avg_raw,
+                AVG(pmp.percentile) AS avg_percentile,
+                COUNT(*) AS sample_size
+            FROM player_metric_percentiles_league pmp
+            JOIN player_seasons ps2 ON ps2.id = pmp.player_season_id
+            LEFT JOIN minutes_reference mr
+              ON mr.season_id = ps2.season_id AND mr.competition_id = ps2.competition_id
+            WHERE pmp.season_id = :season_id
+              AND pmp.competition_id = :competition_id
+              AND pmp.raw_value IS NOT NULL
+              AND ps2.minutes_played >= COALESCE(mr.minutes_possible, 0) / 3.0
+            GROUP BY pmp.position_group, pmp.metric_key
+            """,
+            {"season_id": season_id, "competition_id": competition_id},
+        ),
+    }
+
+    for context, (sql, params) in queries.items():
+        if context == "league" and competition_id is None:
+            continue
+        try:
+            rows = session.execute(text(sql), params).fetchall()
+        except Exception:
+            continue
+        for row in rows:
+            item = row._mapping
+            position_group = item.get("position_group")
+            metric_key = item.get("metric_key")
+            if not position_group or not metric_key:
+                continue
+            group = contexts[context].setdefault(str(position_group), {"metrics": {}, "sample_size": 0})
+            sample_size = int(item.get("sample_size") or 0)
+            group["sample_size"] = max(int(group.get("sample_size") or 0), sample_size)
+            group["metrics"][str(metric_key)] = {
+                "raw": item.get("avg_raw"),
+                "percentile": item.get("avg_percentile"),
+                "sample_size": sample_size,
+            }
+    return contexts
+
+
 def _load_lower_is_better() -> set[str]:
     global _LOWER_IS_BETTER, _LOWER_IS_BETTER_MTIME
     try:
@@ -6502,6 +6645,7 @@ def player_report(
     metrics.pop("player_season_id", None)
     metrics.pop("created_at", None)
     metrics.pop("updated_at", None)
+    metrics = _hydrate_report_metric_percentiles(session, int(ps["id"]), metrics)
     role_metrics_map = _load_role_metrics()
     assigned_role = ps.get("assigned_role") or ""
     role_metrics = role_metrics_map.get(assigned_role) or []
@@ -6658,9 +6802,11 @@ def player_report(
         summary=summary,
         available_seasons=available_seasons,
         score_history=score_history,
+        season_metric_history=_build_season_metric_history(session, score_history),
         transfer_history=[TransferHistoryItem(**item) for item in transfer_history],
         similarities_enabled=similarities_enabled,
         current_season_label=CURRENT_SEASON_LABEL,
+        average_contexts=_build_report_average_contexts(session, ps),
     )
 
 
@@ -6669,7 +6815,7 @@ def player_similarities(
     player_id: int,
     player_season_id: Optional[int] = Query(None, ge=1),
     profile: Optional[str] = Query(None),
-    limit: int = Query(30, ge=1, le=100),
+    limit: int = Query(10, ge=1, le=10),
     offset: int = Query(0, ge=0),
     age_min: Optional[float] = Query(None, ge=0),
     age_max: Optional[float] = Query(None, ge=0),

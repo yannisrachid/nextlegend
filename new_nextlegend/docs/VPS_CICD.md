@@ -200,7 +200,7 @@ Current production mode is local-compute, PRD-load:
 4. Load artifacts into PRD Postgres.
 5. Restart API/frontend only if code or env changed.
 
-Do not run the full raw pipeline directly on the current VPS. The VPS has limited RAM and previous full runs with `SIM_TOPK=30` were OOM-killed with exit code 137.
+Do not run the full raw pipeline directly on the current VPS. The VPS has limited RAM and previous full runs with high similarity top-k were OOM-killed with exit code 137.
 
 Local current-season command:
 ```bash
@@ -225,6 +225,8 @@ Required PRD artifact tables:
 - `clubs`
 - `player_seasons`
 - `player_metrics`
+- `player_metric_percentiles_global`
+- `player_metric_percentiles_league`
 - `role_scores`
 - `player_similarity`
 
@@ -270,6 +272,19 @@ docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T 
   sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   < backup.sql
 ```
+
+## One-Off DEV Database Promotion To PROD
+Use this only for a validated release where DEV is the intended full production dataset.
+
+Full procedure, including rollback, is documented in:
+
+```text
+docs/SCORING_MODEL_V2_IMPLEMENTATION.md
+```
+
+Required safety rule:
+- create a PROD backup before restoring the DEV dump;
+- keep the backup until API, frontend, report, ranking, comparison, and login have been verified in production.
 
 ## CI/CD Target
 Future automation should add:

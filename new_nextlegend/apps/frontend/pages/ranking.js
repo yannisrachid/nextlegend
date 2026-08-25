@@ -270,7 +270,7 @@ export default function RankingPage() {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="ranking-role">Role</Label>
+              <Label htmlFor="ranking-role">Position group</Label>
               <Select
                 id="ranking-role"
                 value={filters.role}
@@ -278,7 +278,7 @@ export default function RankingPage() {
               >
                 {roleOptions.map((r) => (
                   <option key={r} value={r}>
-                    {r || "All roles"}
+                    {r || "All position groups"}
                   </option>
                 ))}
               </Select>
@@ -509,7 +509,7 @@ export default function RankingPage() {
                   <div className="flex flex-wrap items-center gap-6">
                     <div className="text-right">
                       <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                        Global score (adj.)
+                        Score v2
                       </p>
                       <p className="text-2xl font-extrabold text-teal-800">
                         {row.global_score_adjusted?.toFixed(1) ?? "—"}
@@ -517,7 +517,7 @@ export default function RankingPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                        Role pct (league/global)
+                        Group percentile (league/score)
                       </p>
                       <p className="text-lg font-extrabold text-slate-900">
                         {row.assigned_role_pct_league?.toFixed(0) ?? "—"} /{" "}

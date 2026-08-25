@@ -79,7 +79,7 @@ Run (prod):
 - follow `docs/VPS_CICD.md`.
 
 Important pipeline flags:
-- `SIM_TOPK` : top-k similarities per profile (default 30)
+- `SIM_TOPK` : top-k similarities per profile (default 10)
 - `PIPELINE_INPUT_URI` : input CSV (S3 or local)
 - `PIPELINE_INPUT_KIND=raw` (default) or `enriched`
 - `PIPELINE_REPLACE_SIMILARITY=1` : replace similarity table
@@ -96,13 +96,14 @@ Transfermarkt reference files (`helpers/csv`):
 
 ## MinIO archives
 - `s3://$S3_BUCKET/new_nextlegend/enriched/<run_id>_<timestamp>/...`
-- Artifacts: `raw`, `enriched`, `competitions`, `seasons`, `players`, `clubs`, `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`
+- Artifacts: `raw`, `enriched`, `competitions`, `seasons`, `players`, `clubs`, `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, `role_scores`, `player_similarity`
 
 ## Database (Postgres)
 Core tables:
 - `competitions`, `seasons`, `clubs`, `players`
 - `player_seasons` (fact)
-- `player_metrics` (metrics + percentiles)
+- `player_metrics` (clean raw/scoring metrics)
+- `player_metric_percentiles_global`, `player_metric_percentiles_league`
 - `role_scores`, `player_similarity`
 - `pipeline_runs`
 
@@ -193,7 +194,7 @@ Source of truth:
 - `docs/VPS_CICD.md`, section "Data Refresh Policy"
 
 Do not run the full raw pipeline directly on the current VPS. The current VPS
-has about 3.7 GiB RAM and no swap; full runs with `SIM_TOPK=30` were OOM-killed
+has about 3.7 GiB RAM and no swap; full runs with high similarity top-k were OOM-killed
 with exit code `137`.
 
 ## 9) Current operating mode on VPS

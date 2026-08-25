@@ -68,7 +68,7 @@ Job complet (recommandé):
 
 Ce mode est recommandé en local/dev. Il n'est pas recommandé de lancer le job
 complet directement sur le VPS PRD actuel: la machine a environ `3.7 GiB` de RAM
-et pas de swap, et le run complet avec `SIM_TOPK=30` a déjà été tué en OOM
+et pas de swap, et le run complet avec un top-k similarité élevé a déjà été tué en OOM
 (`exit 137`).
 
 Le mode PRD courant est documenté ici:
@@ -117,7 +117,7 @@ Variables d'environnement optionnelles:
 - `PIPELINE_RUNNER=docker|python` (défaut `docker`; le service Docker utilise `python`)
 - `SKIP_EMAIL_ALERTS=1` (recommandé en prod actuelle)
 - `DOCKER_COMPOSE_FILE` (ex: `../infra/compose/docker-compose-prod.yml` sur VPS)
-- `SIM_TOPK` (défaut `30`, similarités pipeline)
+- `SIM_TOPK` (défaut `10`, similarités pipeline)
 - `REQUIRE_SMTP_ALERTS=1` (optionnel, force échec si SMTP non configuré)
 
 Exemple:

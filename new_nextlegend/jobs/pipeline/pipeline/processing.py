@@ -20,6 +20,8 @@ import numpy as np
 import pandas as pd
 from fuzzywuzzy import fuzz
 
+from . import scoring_v2
+
 PCT_SUFFIX_GLOBAL = "_pct_global"
 SUMMARY_DEFINITIONS: dict[str, tuple[str, ...]] = {
     "summary_finishing": (
@@ -620,6 +622,74 @@ def compute_metric_percentiles(df: pd.DataFrame, group: Optional[pd.Series]) -> 
         league_pct = pd.DataFrame(league_columns, index=df.index)
 
     return league_pct, global_pct
+
+
+def _build_metric_percentile_rows(metrics: pd.DataFrame, fact: pd.DataFrame, scope: str) -> pd.DataFrame:
+    if metrics.empty or fact.empty:
+        return pd.DataFrame()
+
+    key_cols = ["wyscout_id", "competition_name", "calendar", "team_in_selected_period"]
+    missing_keys = [col for col in key_cols if col not in metrics.columns or col not in fact.columns]
+    if missing_keys:
+        return pd.DataFrame()
+
+    metrics = metrics.copy()
+    fact = fact.copy()
+    for col in key_cols:
+        metrics[col] = metrics[col].astype("string")
+        fact[col] = fact[col].astype("string")
+
+    source_cols = key_cols + ["assigned_role"]
+    source = metrics.merge(
+        fact[source_cols],
+        on=key_cols,
+        how="left",
+        suffixes=("", "_fact"),
+    )
+    if "assigned_role_fact" in source.columns:
+        source = source.rename(columns={"assigned_role_fact": "position_group"})
+    else:
+        source = source.rename(columns={"assigned_role": "position_group"})
+    source = source[source["position_group"].notna() & (source["position_group"].astype(str) != "")]
+    if source.empty:
+        return pd.DataFrame()
+
+    candidate_metrics = [
+        col
+        for col in scoring_v2.report_metric_columns()
+        if col in source.columns
+    ]
+    if not candidate_metrics:
+        return pd.DataFrame()
+
+    if scope == "global":
+        group_cols = ["calendar", "position_group"]
+    elif scope == "league":
+        group_cols = ["calendar", "competition_name", "position_group"]
+    else:
+        raise ValueError(f"unknown percentile scope: {scope}")
+
+    records = []
+    for metric_key in candidate_metrics:
+        raw = _coerce_numeric(source[metric_key])
+        if raw.notna().sum() == 0:
+            continue
+        lower_is_better = metric_key in scoring_v2.LOWER_IS_BETTER_PERCENTILE_METRICS
+        ranking_values = -raw if lower_is_better else raw
+        percentile = ranking_values.groupby([source[col] for col in group_cols]).rank(pct=True, method="average") * 100.0
+        sample_size = raw.notna().groupby([source[col] for col in group_cols]).transform("sum")
+        metric_frame = source[key_cols + ["position_group"]].copy()
+        metric_frame["metric_key"] = metric_key
+        metric_frame["raw_value"] = raw
+        metric_frame["percentile"] = percentile
+        metric_frame["sample_size"] = sample_size
+        metric_frame["lower_is_better"] = lower_is_better
+        metric_frame = metric_frame.dropna(subset=["raw_value", "percentile"])
+        records.append(metric_frame)
+
+    if not records:
+        return pd.DataFrame()
+    return pd.concat(records, ignore_index=True)
 
 
 def compute_summary_scores(metrics_global_pct: pd.DataFrame) -> pd.DataFrame:
@@ -1401,33 +1471,42 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         tm_input["_row_id"] = row_ids
         tm_enriched, players = merge_transfermarkt(tm_input, players, tm_sources)
 
-    print("[PIPELINE] scores bruts")
-    raw_scores = compute_raw_scores(df, profiles)
-    scores_pct = compute_scores_percentiles(raw_scores)
+    print("[PIPELINE] scoring v2 position groups")
+    scoring = scoring_v2.score_dataframe(df)
+    assigned_role = scoring["position_group"].fillna("")
+    score_breakdown = scoring["score_breakdown"]
+    role_scores = scoring["role_scores"]
+    profiles = scoring_v2.as_legacy_profiles()
 
-    print("[PIPELINE] assignation rôle")
-    assigned_role = assign_role(df, scores_pct, profiles)
-    scores_pct = _scale_score_frame(scores_pct)
+    # Compatibility columns: the app still reads these names, but their semantics
+    # are now position-group v2 values rather than role-fit v1 values.
+    global_score_adjusted_series = score_breakdown.get("final_score", pd.Series(np.nan, index=df.index, dtype=float))
+    role_global_pct = global_score_adjusted_series.copy()
+    role_league_pct = pd.Series(np.nan, index=df.index, dtype=float)
+    if not role_scores.empty:
+        lookup_cols = ["wyscout_id", "competition_name", "calendar", "team_in_selected_period"]
+        role_lookup = role_scores[lookup_cols + ["pct_league"]].drop_duplicates(subset=lookup_cols)
+        team_for_lookup = df["team_in_selected_period"] if "team_in_selected_period" in df.columns else df["team"] if "team" in df.columns else pd.Series(pd.NA, index=df.index)
+        current_keys = pd.DataFrame(
+            {
+                "wyscout_id": df["player_id"],
+                "competition_name": df.get("competition_name"),
+                "calendar": df.get("calendar"),
+                "team_in_selected_period": team_for_lookup,
+                "_idx": df.index,
+            }
+        )
+        merged_pct = current_keys.merge(role_lookup, on=lookup_cols, how="left")
+        role_league_pct.loc[merged_pct["_idx"]] = pd.to_numeric(merged_pct["pct_league"], errors="coerce").to_numpy()
 
-    print("[PIPELINE] éligibilités")
-    minutes_possible = estimate_minutes_possible(df)
-    elig_league = eligibility_league(df, minutes_possible, frac=0.15)
-    df["_elig_league"] = elig_league
-    elig_global = eligibility_global(df, min_minutes=270)
-
-    print("[PIPELINE] percentiles rôle ligue/global")
-    roles_scores_league = roles_league_percentiles(df, raw_scores, assigned_role, profiles)
-    roles_scores_global = roles_global_percentiles(df, raw_scores, assigned_role, profiles, min_minutes=270)
-    roles_scores_league = _scale_score_frame(roles_scores_league)
-    roles_scores_global = _scale_score_frame(roles_scores_global)
-
-    print("[PIPELINE] similarités")
-    sim_topk = int(os.getenv("SIM_TOPK", "30") or "30")
+    print("[PIPELINE] similarités v2")
+    sim_topk = int(os.getenv("SIM_TOPK", "10") or "10")
     similarity_frames = []
-    for profile_name in profiles.keys():
-        sim_df = profile_similarity(df, profiles, assigned_role, profile_name, topk=sim_topk)
-        if not sim_df.empty:
-            similarity_frames.append(sim_df)
+    if sim_topk > 0:
+        for profile_name in profiles.keys():
+            sim_df = profile_similarity(df, profiles, assigned_role, profile_name, topk=sim_topk)
+            if not sim_df.empty:
+                similarity_frames.append(sim_df)
     similarity_df = pd.concat(similarity_frames, ignore_index=True) if similarity_frames else pd.DataFrame(columns=[
         "player_a",
         "team_a",
@@ -1473,13 +1552,11 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         f" players={len(players)} clubs={len(clubs)}"
     )
 
-    print("[PIPELINE] percentiles métriques + summary")
+    print("[PIPELINE] clean metric percentiles + summary")
     league_group = _league_group(df)
-    metrics_base = df.drop(columns=["_elig_league"], errors="ignore")
-    metrics_league_pct, metrics_global_pct = compute_metric_percentiles(metrics_base, league_group)
-    scores_league_pct, scores_global_pct = compute_metric_percentiles(raw_scores, league_group)
-    scores_league_pct = _scale_score_frame(scores_league_pct)
-    scores_global_pct = _scale_score_frame(scores_global_pct)
+    clean_metric_cols = [col for col in scoring_v2.scoring_metric_columns() if col in df.columns]
+    metrics_base = df[clean_metric_cols].copy() if clean_metric_cols else pd.DataFrame(index=df.index)
+    _metrics_league_pct, metrics_global_pct = compute_metric_percentiles(metrics_base, league_group)
     summary_scores = compute_summary_scores(metrics_global_pct)
 
     factor_series = _resolve_league_strength_factors(df)
@@ -1487,41 +1564,9 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     strength_non_default = int((factor_series != 1.0).sum())
     print(f"[PIPELINE] league strength factors non-default={strength_non_default}/{len(factor_series)}")
 
-    global_score_adjusted_series = pd.Series(np.nan, index=df.index, dtype=float)
-    for profile_name in profiles.keys():
-        global_col = f"{profile_name}_pct_global"
-        if global_col not in scores_global_pct.columns:
-            global_col = profile_name if profile_name in scores_global_pct.columns else None
-        if global_col is None:
-            continue
-        mask = assigned_role == profile_name
-        if not mask.any():
-            continue
-        global_score_adjusted_series.loc[mask] = scores_global_pct.loc[mask, global_col]
-    global_score_adjusted_series = _apply_league_score_caps(global_score_adjusted_series, df)
-
-    role_league_pct = pd.Series(np.nan, index=df.index, dtype=float)
-    role_global_pct = pd.Series(np.nan, index=df.index, dtype=float)
-    for profile_name in profiles.keys():
-        mask = assigned_role == profile_name
-        if mask.any():
-            league_col = f"{profile_name}_pct_league"
-            if league_col not in scores_league_pct.columns:
-                league_col = profile_name if profile_name in scores_league_pct.columns else None
-            if league_col is not None:
-                role_league_pct.loc[mask] = scores_league_pct.loc[mask, league_col]
-            # Keep a single source of truth: assigned role global pct mirrors adjusted global score.
-            role_global_pct.loc[mask] = global_score_adjusted_series.loc[mask]
-
     enriched_extra = pd.concat(
         [
-            scores_pct,
-            metrics_league_pct,
-            metrics_global_pct,
-            scores_league_pct,
-            scores_global_pct,
-            roles_scores_league.reindex(df.index),
-            roles_scores_global.reindex(df.index),
+            score_breakdown.drop(columns=["position_group", "position_group_key"], errors="ignore"),
             role_league_pct.rename("assigned_role_pct_league"),
             role_global_pct.rename("assigned_role_pct_global"),
             global_score_adjusted_series.rename("global_score_adjusted"),
@@ -1604,44 +1649,16 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     if team_col and team_col != "team_in_selected_period":
         metrics.rename(columns={team_col: "team_in_selected_period"}, inplace=True)
 
+    metric_percentiles_global = _build_metric_percentile_rows(metrics, fact, scope="global")
+    metric_percentiles_league = _build_metric_percentile_rows(metrics, fact, scope="league")
+    print(
+        "[PIPELINE] metric_percentiles"
+        f" global={len(metric_percentiles_global)} league={len(metric_percentiles_league)}"
+    )
+
     # Role scores long
-    role_records = []
-    for idx, row in raw_scores.iterrows():
-        for profile_name in profiles.keys():
-            raw_val = row.get(profile_name)
-            pct_league_col = f"{profile_name}_pct_league"
-            pct_global_col = f"{profile_name}_pct_global"
-            if pct_league_col in scores_league_pct.columns:
-                pct_league = scores_league_pct.loc[idx, pct_league_col]
-            elif profile_name in scores_league_pct.columns:
-                # Backward-compatible fallback for legacy column naming.
-                pct_league = scores_league_pct.loc[idx, profile_name]
-            else:
-                pct_league = np.nan
-            if pct_global_col in scores_global_pct.columns:
-                pct_global = scores_global_pct.loc[idx, pct_global_col]
-            elif profile_name in scores_global_pct.columns:
-                # Backward-compatible fallback for legacy column naming.
-                pct_global = scores_global_pct.loc[idx, profile_name]
-            else:
-                pct_global = np.nan
-            pct_global_adjusted = (
-                global_score_adjusted_series.loc[idx] if assigned_role.loc[idx] == profile_name else np.nan
-            )
-            role_records.append(
-                {
-                    "wyscout_id": df.at[idx, "player_id"],
-                    "competition_name": df.at[idx, "competition_name"],
-                    "calendar": df.at[idx, "calendar"],
-                    "team_in_selected_period": df.at[idx, "team_in_selected_period"] if "team_in_selected_period" in df.columns else df.at[idx, "team"] if "team" in df.columns else None,
-                    "profile": profile_name,
-                    "raw_score": raw_val,
-                    "pct_league": pct_league,
-                    "pct_global": pct_global,
-                    "pct_global_adjusted": pct_global_adjusted,
-                }
-            )
-    role_scores = pd.DataFrame(role_records)
+    # v2 stores one compatibility row per player-season: profile = position group.
+    print(f"[PIPELINE] position_group_scores rows={len(role_scores)}")
 
     # Player similarity mapping
     if similarity_df.empty:
@@ -1666,13 +1683,15 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
     return {
         "raw": df_raw,
         "enriched": enriched,
-        "players_scores": scores_pct,
+        "players_scores": score_breakdown,
         "competitions": competitions,
         "seasons": seasons,
         "players": players,
         "clubs": clubs,
         "player_seasons": fact,
         "player_metrics": metrics,
+        "player_metric_percentiles_global": metric_percentiles_global,
+        "player_metric_percentiles_league": metric_percentiles_league,
         "role_scores": role_scores,
         "player_similarity": similarity_mapped,
     }
@@ -1960,6 +1979,16 @@ def build_artifacts_from_enriched(
     )
 
     role_scores = _build_role_scores_from_enriched(df, profiles, team_col)
+    if team_col and team_col != "team_in_selected_period":
+        metrics_for_percentiles = metrics.rename(columns={team_col: "team_in_selected_period"})
+    else:
+        metrics_for_percentiles = metrics
+    metric_percentiles_global = _build_metric_percentile_rows(metrics_for_percentiles, fact, scope="global")
+    metric_percentiles_league = _build_metric_percentile_rows(metrics_for_percentiles, fact, scope="league")
+    print(
+        "[PIPELINE] metric_percentiles"
+        f" global={len(metric_percentiles_global)} league={len(metric_percentiles_league)}"
+    )
     similarity_mapped = _map_similarity_ids(similarity_df, df, team_col)
 
     return {
@@ -1971,6 +2000,8 @@ def build_artifacts_from_enriched(
         "clubs": clubs,
         "player_seasons": fact,
         "player_metrics": metrics,
+        "player_metric_percentiles_global": metric_percentiles_global,
+        "player_metric_percentiles_league": metric_percentiles_league,
         "role_scores": role_scores,
         "player_similarity": similarity_mapped,
     }

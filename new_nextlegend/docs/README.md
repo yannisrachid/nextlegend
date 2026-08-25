@@ -6,9 +6,10 @@ Read order:
 1. `docs/skill.MD` - code conventions, project invariants, and implementation rules.
 2. `docs/DATA_MODEL.md` - serving database model and table ownership.
 3. `docs/SCORING_MODEL_WORKSHOP.md` - workshop template for rebuilding position-group scoring.
-4. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
-5. `docs/CRM_INTEGRATION.md` - CRM model, Neon migration, local and prod verification.
-6. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
+4. `docs/SCORING_MODEL_V2_IMPLEMENTATION.md` - implemented scoring v2, DB cleanup, local/prod rollout, and refresh policy.
+5. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
+6. `docs/CRM_INTEGRATION.md` - CRM model, Neon migration, local and prod verification.
+7. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
 
 Project snapshot:
 - Frontend: Next.js in `apps/frontend`, served at `app.nextlegend.fr`.
@@ -24,6 +25,7 @@ Key invariants:
 - Auth uses the HttpOnly cookie `nl_session`.
 - Frontend auth waits for `GET /auth/me`; do not redirect while auth is loading.
 - Pipeline writes `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, and `pipeline_runs`.
+- Scoring v2 uses position groups, not tactical role assignment. Legacy `assigned_role` fields now contain the position group for API compatibility.
 - Transfermarkt fields are stored as `tm_*` columns on `player_seasons` and `tm_id` / `tm_profile_url` on `players`.
 - Do not run the full raw pipeline on the current VPS; use local-compute then PRD-load.
 
