@@ -1,84 +1,460 @@
-# Data Model
+# Next Legend Data Model
 
-The Postgres database is the serving layer for the API and frontend. The pipeline owns football data; the API owns application and workflow tables.
+This document describes the PostgreSQL serving model used by the API, frontend, and pipeline.
 
-## Core Football Tables
-- `competitions`: competition dimension.
-- `seasons`: season dimension.
-- `clubs`: club dimension.
-- `players`: player dimension, including `tm_id` and `tm_profile_url`.
-- `player_seasons`: central fact table for one player in one club/competition/season context.
-- `player_metrics`: wide metrics table keyed by `player_season_id`.
-- `player_metric_percentiles_global`: long-format metric percentiles versus the same season and position group across all competitions.
-- `player_metric_percentiles_league`: long-format metric percentiles versus the same season, competition, and position group.
-- `role_scores`: legacy compatibility table for v2 position-group scores, one row per `player_season_id` and position group.
-- `player_similarity`: top-10 neighbors per profile.
-- `pipeline_runs`: batch run tracking and monitoring.
+## Ownership
 
-High-level relationships:
-```text
-competitions ┐
-seasons      ├─ player_seasons ─ player_metrics
-clubs        ┘          │
-players ────────────────┘
-                         ├─ role_scores
-                         ├─ player_metric_percentiles_global
-                         ├─ player_metric_percentiles_league
-                         └─ player_similarity(player_a_season_id/player_b_season_id)
+- Pipeline-owned football data: dimensions, player-season facts, metrics, scoring, percentiles, similarity, pipeline runs.
+- API-owned application data: auth, prospects, club needs, AI history, HQ/HD workspace, transfer history, CRM.
+- Frontend-owned data: none. The frontend must consume API state and must not persist business state directly.
+
+## Mermaid ER Diagram
+
+```mermaid
+erDiagram
+  competitions ||--o{ player_seasons : competition_id
+  seasons ||--o{ player_seasons : season_id
+  clubs ||--o{ player_seasons : club_id
+  players ||--o{ player_seasons : player_id
+
+  player_seasons ||--|| player_metrics : player_season_id
+  player_seasons ||--o{ role_scores : player_season_id
+  player_seasons ||--o{ player_metric_percentiles_global : player_season_id
+  player_seasons ||--o{ player_metric_percentiles_league : player_season_id
+  player_seasons ||--o{ player_similarity : player_a_season_id
+  player_seasons ||--o{ player_similarity : player_b_season_id
+
+  players ||--o{ prospects : player_id
+  clubs ||--o{ club_needs : club_id
+  club_needs ||--o{ club_need_players : club_need_id
+  player_seasons ||--o{ club_need_players : player_season_id
+
+  auth_users ||--o{ auth_sessions : user_id
+  auth_users ||--o{ ai_conversations : user_id
+  ai_conversations ||--o{ ai_messages : conversation_id
+  auth_users ||--o{ hq_priority_items : created_by_agent_id
+  auth_users ||--o{ hd_players : created_by_agent_id
+  hd_players ||--o{ hd_player_documents : hd_player_id
+  players ||--o{ hd_players : player_id
+  players ||--o{ player_transfer_history : linked_player_id
+
+  auth_users ||--o{ mercato_requests : created_by_agent_id
+  auth_users ||--o{ mercato_requests : assigned_agent_id
+  mercato_requests ||--o{ mercato_needs : request_id
+  mercato_needs ||--o{ mercato_candidates : need_id
+  mercato_candidates ||--o{ mercato_candidate_events : candidate_id
+
+  crm_clubs ||--o{ crm_players : club_id
+  crm_clubs ||--o{ crm_contacts : club_id
+  crm_players ||--o{ crm_contacts : player_id
+  crm_contacts ||--o{ crm_prospects : contact_id
 ```
 
-## Application Tables
-- `auth_users`, `auth_sessions`: login and HttpOnly session model.
-- `prospects`: selected players.
-- `club_needs`: recruitment needs.
-- `club_need_players`: players attached to needs.
-- `ai_conversations`, `ai_messages`: AI assistant history and payloads.
-- `hq_priority_items`: agency HQ Kanban/calendar priorities.
-- `hd_players`: represented HD Sports players and operational notes.
-- `hd_player_documents`: document metadata attached to HD players.
-- `player_transfer_history`: Wyscout transfer history imported for player reports and rooms.
-- `crm_clubs`, `crm_players`, `crm_contacts`, `crm_prospects`: integrated football CRM imported from `findyourlegend`; see `docs/CRM_INTEGRATION.md`.
+## Core Football Tables
 
-Several application tables are created lazily by `apps/api/main.py` on first route use. The production DB user must be allowed to `CREATE TABLE`, `ALTER TABLE`, and `CREATE INDEX`.
+### `competitions`
 
-## Key Fields
-`player_seasons` is the main API surface. It includes:
-- identity/context: `player_id`, `club_id`, `competition_id`, `season_id`;
-- football context: position, age, minutes, team/league labels;
-- scoring: `assigned_role`, `global_score_adjusted`, `assigned_role_pct_global`, `assigned_role_pct_league`;
-- Transfermarkt: `tm_*` fields such as profile, value, contract, image, nationality, and external links.
+Competition dimension.
 
-`player_metrics` stores clean Wyscout metrics plus the compact v2 scoring breakdown. It must not accumulate stale role-score or percentile explosion columns. The pipeline prunes obsolete metric columns by default with `PIPELINE_PRUNE_METRIC_COLUMNS=1`.
+Important fields:
+- `id`
+- `name`
+- country/level fields when available
 
-Metric percentiles are stored outside `player_metrics` to keep the fact table compact:
-- `player_metric_percentiles_global`: same season, same position group, all competitions.
-- `player_metric_percentiles_league`: same season, same competition, same position group.
-- Both tables are keyed by `player_season_id + metric_key`.
-- Lower-is-better metrics, such as cards and fouls, are inverted before percentile ranking and flagged with `lower_is_better=true`.
+Owned by: pipeline.
 
-`role_scores` keeps its historical name for API compatibility. In scoring v2, `role_scores.profile` is the position group. For the assigned position group, `role_scores.pct_global_adjusted` must align with `player_seasons.global_score_adjusted`.
+### `seasons`
 
-`player_similarity` is rebuilt by the pipeline. Use `PIPELINE_REPLACE_SIMILARITY=1` when regenerating it to avoid duplicates. Dev and prod should store only the top 10 most similar players per player-season.
+Season dimension.
 
-The effective natural key of `player_seasons` is `player_id + competition_id + season_id + club_id`. `player_metrics` is keyed by `player_season_id`. Weekly refreshes should upsert changed rows and preserve player-season rows that are temporarily missing from a scraper run. Percentile recalculation requires the refreshed current-season slice to be complete enough for the target season; do not compute season-wide percentiles from a partial changed-row-only input.
+Important fields:
+- `id`
+- `calendar`
 
-## Data Ownership
-- Pipeline owns: dimensions, `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, `role_scores`, `player_similarity`, `pipeline_runs`.
-- API owns: auth, prospects, needs, AI history, HQ/HD workspace tables, transfer history import tables.
-- API owns CRM tables: `crm_clubs`, `crm_players`, `crm_contacts`, `crm_prospects`.
-- Frontend must not invent persisted state that bypasses the API.
+Owned by: pipeline.
 
-## Data Model Improvement Rules
-- Prefer explicit foreign keys and indexes for API query paths.
-- Keep historical seasons. Do not run destructive table replacement in production unless the goal is a full rebuild.
-- Keep weekly refreshes incremental: default `PIPELINE_REPLACE_TABLES=0` and `PIPELINE_REPLACE_INPUT_SLICES=0`.
-- Avoid storing duplicated display labels when a dimension join is reliable; keep labels only when they preserve imported source context or simplify hot API paths.
-- Add columns with migrations or lazy schema code that is idempotent.
-- For workflow tables, prefer `archived_at` or status fields over hard deletes when users need operational history.
-- For auditability, preserve `created_at`, `updated_at`, and user/author fields on user-managed entities.
-- For external data, keep both stable IDs and source URLs where available.
+### `clubs`
 
-## Production Checks
+Club dimension used by scouting data, not the CRM.
+
+Important fields:
+- `id`
+- `name`
+- logo/reference fields when available
+
+Owned by: pipeline.
+
+### `players`
+
+Player identity dimension.
+
+Important fields:
+- `id`
+- Wyscout identity
+- display name
+- `tm_id`
+- `tm_profile_url`
+
+Owned by: pipeline.
+
+### `player_seasons`
+
+Central fact table. One row represents a player in one club, competition, and season context.
+
+Effective natural key:
+
+```text
+player_id + competition_id + season_id + club_id
+```
+
+Important fields:
+- `player_id`
+- `club_id`
+- `competition_id`
+- `season_id`
+- `position`
+- `age`
+- `minutes_played`
+- `matches_played`
+- `team_in_selected_period`
+- `assigned_role`
+- `global_score_adjusted`
+- `assigned_role_pct_global`
+- `assigned_role_pct_league`
+- Transfermarkt `tm_*` fields
+
+Scoring v2 compatibility:
+- `assigned_role` stores the v2 position group display name, not a tactical role.
+- `global_score_adjusted` stores the final Next Legend score.
+- `assigned_role_pct_global` mirrors the visible final score for legacy consumers.
+- `assigned_role_pct_league` stores same-league/same-season score context.
+
+Owned by: pipeline.
+
+### `player_metrics`
+
+Metrics table keyed by `player_season_id`.
+
+Purpose:
+- clean Wyscout raw metrics;
+- compact v2 scoring breakdown;
+- report raw values.
+
+Rules:
+- do not store metric percentile explosion columns here;
+- do not store stale role-score columns;
+- keep totals and per-90 metrics distinct, for example `xg` vs `xg_per_90`;
+- keep snake_case metric names;
+- missing data is `NULL`, never forced to `0`.
+
+The pipeline prunes obsolete metric columns by default with:
+
+```text
+PIPELINE_PRUNE_METRIC_COLUMNS=1
+```
+
+Owned by: pipeline.
+
+### `role_scores`
+
+Legacy table name kept for API compatibility.
+
+In scoring v2:
+- `profile` is the position group;
+- one row exists per player-season when the player maps to a position group;
+- `pct_global_adjusted` aligns with `player_seasons.global_score_adjusted` for the assigned group.
+
+Owned by: pipeline.
+
+### `player_metric_percentiles_global`
+
+Long-format metric percentiles.
+
+Scope:
+
+```text
+same season + same position group + all competitions
+```
+
+Key:
+
+```text
+player_season_id + metric_key
+```
+
+Important fields:
+- `player_season_id`
+- `season_id`
+- `position_group`
+- `metric_key`
+- `raw_value`
+- `percentile`
+- `sample_size`
+- `lower_is_better`
+
+The report uses this table for global metric context. A goalkeeper is compared only with goalkeepers, a centre forward only with centre forwards, etc.
+
+Owned by: pipeline.
+
+### `player_metric_percentiles_league`
+
+Long-format metric percentiles.
+
+Scope:
+
+```text
+same season + same competition + same position group
+```
+
+Key:
+
+```text
+player_season_id + metric_key
+```
+
+Important fields:
+- `player_season_id`
+- `season_id`
+- `competition_id`
+- `position_group`
+- `metric_key`
+- `raw_value`
+- `percentile`
+- `sample_size`
+- `lower_is_better`
+
+Owned by: pipeline.
+
+### `player_similarity`
+
+Top statistical neighbors.
+
+Rules:
+- rebuilt by the pipeline;
+- max 10 neighbors per source player-season in dev and prod;
+- use `PIPELINE_REPLACE_SIMILARITY=1` when regenerating to avoid duplicates.
+
+Owned by: pipeline.
+
+### `pipeline_runs`
+
+Batch run tracking.
+
+Used for:
+- home monitoring;
+- pipeline status;
+- artifact traceability.
+
+Owned by: pipeline.
+
+## Scouting And Workflow Tables
+
+### `prospects`
+
+Selected player prospects.
+
+Relationship:
+- optional link to `players`.
+
+Owned by: API.
+
+### `club_needs`
+
+Recruitment needs for clubs.
+
+Relationship:
+- optional/required club context depending on API route;
+- linked to candidates through `club_need_players`.
+
+Owned by: API.
+
+### `club_need_players`
+
+Join table between club needs and player-season candidates.
+
+Relationships:
+- `club_need_id` -> `club_needs.id`
+- `player_season_id` -> `player_seasons.id`
+
+Owned by: API.
+
+## Auth And AI Tables
+
+### `auth_users`
+
+Application users.
+
+Owned by: API.
+
+### `auth_sessions`
+
+HttpOnly session storage.
+
+Relationship:
+- `user_id` -> `auth_users.username`
+
+Owned by: API.
+
+### `ai_conversations`
+
+AI conversation header/history.
+
+Owned by: API.
+
+### `ai_messages`
+
+AI conversation messages.
+
+Relationship:
+- `conversation_id` -> `ai_conversations.id`
+
+Owned by: API.
+
+## HD Sports Workspace
+
+### `hq_priority_items`
+
+Agency HQ Kanban/calendar priorities.
+
+Owned by: API.
+
+### `hd_players`
+
+Represented HD Sports players and operational notes.
+
+Relationships:
+- optional `player_id` -> `players.id`
+- created/updated by `auth_users`
+
+Owned by: API.
+
+### `hd_player_documents`
+
+Documents attached to represented players.
+
+Relationship:
+- `hd_player_id` -> `hd_players.id`
+
+Owned by: API.
+
+### `player_transfer_history`
+
+Transfer history imported from Wyscout/Transfermarkt-like sources and displayed in player reports/rooms.
+
+Relationships:
+- optional `linked_player_id` -> `players.id`
+
+Owned by: API/import tooling.
+
+## Mercato Tables
+
+### `mercato_requests`
+
+Mercato request/workflow header.
+
+Relationships:
+- `created_by_agent_id` -> `auth_users.username`
+- `assigned_agent_id` -> `auth_users.username`
+
+Owned by: API.
+
+### `mercato_needs`
+
+Needs attached to a mercato request.
+
+Relationship:
+- `request_id` -> `mercato_requests.id`
+
+Owned by: API.
+
+### `mercato_candidates`
+
+Candidate players attached to a mercato need.
+
+Relationship:
+- `need_id` -> `mercato_needs.id`
+
+Owned by: API.
+
+### `mercato_candidate_events`
+
+Event log for a mercato candidate.
+
+Relationship:
+- `candidate_id` -> `mercato_candidates.id`
+
+Owned by: API.
+
+## Network CRM Tables
+
+The CRM model is imported from `findyourlegend` into dedicated `crm_*` tables. It is separate from scouting `clubs`, `players`, and `prospects`.
+
+### `crm_clubs`
+
+Football clubs used by the Network CRM.
+
+Relationships:
+- has many `crm_players`;
+- has many `crm_contacts`.
+
+Owned by: API/CRM migration.
+
+### `crm_players`
+
+CRM players linked to CRM clubs.
+
+Relationship:
+- `club_id` -> `crm_clubs.id`
+
+Owned by: API/CRM migration.
+
+### `crm_contacts`
+
+Central CRM entity.
+
+Relationships:
+- optional `club_id` -> `crm_clubs.id`;
+- optional `player_id` -> `crm_players.id`;
+- has many `crm_prospects`.
+
+Important rule:
+- `type = PLAYER` is a category, not proof of a linked CRM player.
+- contacts without club/player relation are valid and must remain supported.
+
+Owned by: API/CRM migration.
+
+### `crm_prospects`
+
+CRM prospection pipeline.
+
+Relationship:
+- `contact_id` -> `crm_contacts.id`
+
+Stages:
+- `prequalification`
+- `relance1`
+- `relance2`
+- `relance3`
+
+Owned by: API/CRM migration.
+
+## Refresh Rules
+
+Weekly/current-season refreshes:
+- default to incremental upsert;
+- keep historical seasons;
+- preserve player-season rows temporarily missing from scraper output;
+- do not truncate football tables unless explicitly doing a full rebuild;
+- recompute percentiles on a complete current-season slice, not on changed rows only;
+- keep similarity top-k at 10.
+
+Production:
+- do not run the full raw pipeline on the current VPS;
+- use local-compute, then load artifacts or a validated DB dump into PROD;
+- always back up PROD before destructive restore.
+
+## Verification Queries
+
 ```sql
 SELECT
   (SELECT count(*) FROM player_seasons) AS player_seasons,
@@ -86,16 +462,23 @@ SELECT
   (SELECT count(*) FROM player_metric_percentiles_global) AS metric_pct_global,
   (SELECT count(*) FROM player_metric_percentiles_league) AS metric_pct_league,
   (SELECT count(*) FROM role_scores) AS role_scores,
-  (SELECT count(*) FROM player_similarity) AS player_similarity;
+  (SELECT count(*) FROM player_similarity) AS player_similarity,
+  (SELECT count(*) FROM crm_contacts) AS crm_contacts;
 
 SELECT id, run_id, status, rows_processed, source_uri, started_at, ended_at
 FROM pipeline_runs
 ORDER BY id DESC
 LIMIT 5;
+
+SELECT position_group, metric_key, count(*) AS rows, max(sample_size) AS sample_size
+FROM player_metric_percentiles_global
+GROUP BY position_group, metric_key
+ORDER BY position_group, rows DESC
+LIMIT 50;
 ```
 
 Expected invariants:
-- `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, and `role_scores` are non-empty after a successful load.
-- `player_similarity` is non-empty when `SIM_TOPK > 0`, with at most 10 rows per source player-season.
-- Latest `pipeline_runs.status` should be `success` after a refresh.
-- Auth-required API endpoints return 401 without `nl_session`.
+- `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, and `role_scores` are non-empty after a successful scoring load.
+- `player_similarity` has at most 10 rows per source player-season.
+- `crm_contacts` remains non-empty after CRM migration or DEV-to-PROD DB promotion.
+- API endpoints requiring auth return `401` without `nl_session`.
