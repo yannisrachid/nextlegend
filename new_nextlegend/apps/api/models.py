@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Competition(BaseModel):
@@ -116,9 +116,11 @@ class Report(BaseModel):
     summary: dict[str, Optional[float]]
     available_seasons: list[ReportSeasonOption] = []
     score_history: list[ScoreHistoryPoint] = []
+    season_metric_history: list[dict[str, Any]] = []
     transfer_history: list[TransferHistoryItem] = []
     similarities_enabled: bool = False
     current_season_label: str = "2025/2026"
+    average_contexts: dict[str, Any] = Field(default_factory=dict)
 
 
 class SimilarityRow(BaseModel):

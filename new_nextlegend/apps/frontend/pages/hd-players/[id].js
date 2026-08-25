@@ -615,7 +615,7 @@ export default function HdPlayerDetailPage() {
                 {[
                   ["Team", reportPlayer.team],
                   ["Competition", reportPlayer.competition_name],
-                  ["Role", englishRole(reportPlayer.assigned_role)],
+                  ["Position group", englishRole(reportPlayer.assigned_role)],
                   ["Position", reportPlayer.position],
                   ["Minutes", reportPlayer.minutes_played],
                   ["Global score", reportPlayer.global_score_adjusted != null ? Number(reportPlayer.global_score_adjusted).toFixed(1) : null],
@@ -641,7 +641,7 @@ export default function HdPlayerDetailPage() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Performance radar</p>
-                        <h3 className="mt-1 text-xl font-extrabold text-slate-950">Role percentile shape</h3>
+                        <h3 className="mt-1 text-xl font-extrabold text-slate-950">Position group percentile shape</h3>
                       </div>
                       <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-black text-teal-800">
                         Global percentile

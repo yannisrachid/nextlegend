@@ -9,8 +9,10 @@ The Postgres database is the serving layer for the API and frontend. The pipelin
 - `players`: player dimension, including `tm_id` and `tm_profile_url`.
 - `player_seasons`: central fact table for one player in one club/competition/season context.
 - `player_metrics`: wide metrics table keyed by `player_season_id`.
-- `role_scores`: long role-fit table, one row per `player_season_id` and role profile.
-- `player_similarity`: top-k neighbors per profile.
+- `player_metric_percentiles_global`: long-format metric percentiles versus the same season and position group across all competitions.
+- `player_metric_percentiles_league`: long-format metric percentiles versus the same season, competition, and position group.
+- `role_scores`: legacy compatibility table for v2 position-group scores, one row per `player_season_id` and position group.
+- `player_similarity`: top-10 neighbors per profile.
 - `pipeline_runs`: batch run tracking and monitoring.
 
 High-level relationships:
@@ -20,6 +22,8 @@ seasons      ├─ player_seasons ─ player_metrics
 clubs        ┘          │
 players ────────────────┘
                          ├─ role_scores
+                         ├─ player_metric_percentiles_global
+                         ├─ player_metric_percentiles_league
                          └─ player_similarity(player_a_season_id/player_b_season_id)
 ```
 
@@ -44,14 +48,22 @@ Several application tables are created lazily by `apps/api/main.py` on first rou
 - scoring: `assigned_role`, `global_score_adjusted`, `assigned_role_pct_global`, `assigned_role_pct_league`;
 - Transfermarkt: `tm_*` fields such as profile, value, contract, image, nationality, and external links.
 
-`player_metrics` is intentionally wide. It stores raw Wyscout metrics plus derived percentiles. Add metric columns here only when they are needed by ranking, report, projection, comparison, visualization, AI filtering, or future scoring.
+`player_metrics` stores clean Wyscout metrics plus the compact v2 scoring breakdown. It must not accumulate stale role-score or percentile explosion columns. The pipeline prunes obsolete metric columns by default with `PIPELINE_PRUNE_METRIC_COLUMNS=1`.
 
-`role_scores` is the source of truth for role fit lists. For the assigned role, `role_scores.pct_global` must align with `player_seasons.global_score_adjusted`.
+Metric percentiles are stored outside `player_metrics` to keep the fact table compact:
+- `player_metric_percentiles_global`: same season, same position group, all competitions.
+- `player_metric_percentiles_league`: same season, same competition, same position group.
+- Both tables are keyed by `player_season_id + metric_key`.
+- Lower-is-better metrics, such as cards and fouls, are inverted before percentile ranking and flagged with `lower_is_better=true`.
 
-`player_similarity` is rebuilt by the pipeline. Use `PIPELINE_REPLACE_SIMILARITY=1` when regenerating it to avoid duplicates.
+`role_scores` keeps its historical name for API compatibility. In scoring v2, `role_scores.profile` is the position group. For the assigned position group, `role_scores.pct_global_adjusted` must align with `player_seasons.global_score_adjusted`.
+
+`player_similarity` is rebuilt by the pipeline. Use `PIPELINE_REPLACE_SIMILARITY=1` when regenerating it to avoid duplicates. Dev and prod should store only the top 10 most similar players per player-season.
+
+The effective natural key of `player_seasons` is `player_id + competition_id + season_id + club_id`. `player_metrics` is keyed by `player_season_id`. Weekly refreshes should upsert changed rows and preserve player-season rows that are temporarily missing from a scraper run. Percentile recalculation requires the refreshed current-season slice to be complete enough for the target season; do not compute season-wide percentiles from a partial changed-row-only input.
 
 ## Data Ownership
-- Pipeline owns: dimensions, `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, `pipeline_runs`.
+- Pipeline owns: dimensions, `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, `role_scores`, `player_similarity`, `pipeline_runs`.
 - API owns: auth, prospects, needs, AI history, HQ/HD workspace tables, transfer history import tables.
 - API owns CRM tables: `crm_clubs`, `crm_players`, `crm_contacts`, `crm_prospects`.
 - Frontend must not invent persisted state that bypasses the API.
@@ -59,6 +71,7 @@ Several application tables are created lazily by `apps/api/main.py` on first rou
 ## Data Model Improvement Rules
 - Prefer explicit foreign keys and indexes for API query paths.
 - Keep historical seasons. Do not run destructive table replacement in production unless the goal is a full rebuild.
+- Keep weekly refreshes incremental: default `PIPELINE_REPLACE_TABLES=0` and `PIPELINE_REPLACE_INPUT_SLICES=0`.
 - Avoid storing duplicated display labels when a dimension join is reliable; keep labels only when they preserve imported source context or simplify hot API paths.
 - Add columns with migrations or lazy schema code that is idempotent.
 - For workflow tables, prefer `archived_at` or status fields over hard deletes when users need operational history.
@@ -70,6 +83,8 @@ Several application tables are created lazily by `apps/api/main.py` on first rou
 SELECT
   (SELECT count(*) FROM player_seasons) AS player_seasons,
   (SELECT count(*) FROM player_metrics) AS player_metrics,
+  (SELECT count(*) FROM player_metric_percentiles_global) AS metric_pct_global,
+  (SELECT count(*) FROM player_metric_percentiles_league) AS metric_pct_league,
   (SELECT count(*) FROM role_scores) AS role_scores,
   (SELECT count(*) FROM player_similarity) AS player_similarity;
 
@@ -80,7 +95,7 @@ LIMIT 5;
 ```
 
 Expected invariants:
-- `player_seasons`, `player_metrics`, and `role_scores` are non-empty after a successful load.
-- `player_similarity` is non-empty when `SIM_TOPK > 0`.
+- `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, and `role_scores` are non-empty after a successful load.
+- `player_similarity` is non-empty when `SIM_TOPK > 0`, with at most 10 rows per source player-season.
 - Latest `pipeline_runs.status` should be `success` after a refresh.
 - Auth-required API endpoints return 401 without `nl_session`.

@@ -683,11 +683,11 @@ export default function ComparisonPage() {
                         <span>{formatScore(item.report.player.minutes_played)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>League Score</span>
+                        <span>League percentile</span>
                         <span>{formatScore(item.report.player.assigned_role_pct_league)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Global Score</span>
+                        <span>Score v2</span>
                         <span>{formatScore(item.report.player.assigned_role_pct_global)}</span>
                       </div>
                     </div>
