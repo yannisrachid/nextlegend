@@ -6,6 +6,7 @@ uses psycopg2 execute_values for ON CONFLICT upserts.
 
 from __future__ import annotations
 
+import os
 from typing import Iterable, Sequence
 
 import numpy as np
@@ -14,6 +15,13 @@ from io import StringIO
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+
+RESERVED_PLAYER_METRIC_COLUMNS = {"player_season_id", "created_at", "updated_at"}
+
+
+def _quote_ident(identifier: str) -> str:
+    return '"' + str(identifier).replace('"', '""') + '"'
 
 
 SCHEMA_SQL = """
@@ -109,6 +117,45 @@ CREATE UNIQUE INDEX IF NOT EXISTS role_scores_unique ON role_scores (player_seas
 CREATE INDEX IF NOT EXISTS player_seasons_competition_season_idx ON player_seasons (competition_id, season_id);
 CREATE INDEX IF NOT EXISTS role_scores_player_season_idx ON role_scores (player_season_id);
 
+CREATE TABLE IF NOT EXISTS player_metric_percentiles_global (
+    id SERIAL PRIMARY KEY,
+    player_season_id INT NOT NULL REFERENCES player_seasons(id) ON DELETE CASCADE,
+    season_id INT NOT NULL REFERENCES seasons(id),
+    metric_key TEXT NOT NULL,
+    raw_value DOUBLE PRECISION,
+    percentile DOUBLE PRECISION,
+    position_group TEXT NOT NULL,
+    sample_size INT NOT NULL,
+    lower_is_better BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(player_season_id, metric_key)
+);
+CREATE INDEX IF NOT EXISTS player_metric_percentiles_global_ps_idx
+    ON player_metric_percentiles_global(player_season_id);
+CREATE INDEX IF NOT EXISTS player_metric_percentiles_global_scope_idx
+    ON player_metric_percentiles_global(season_id, position_group, metric_key);
+
+CREATE TABLE IF NOT EXISTS player_metric_percentiles_league (
+    id SERIAL PRIMARY KEY,
+    player_season_id INT NOT NULL REFERENCES player_seasons(id) ON DELETE CASCADE,
+    season_id INT NOT NULL REFERENCES seasons(id),
+    competition_id INT NOT NULL REFERENCES competitions(id),
+    metric_key TEXT NOT NULL,
+    raw_value DOUBLE PRECISION,
+    percentile DOUBLE PRECISION,
+    position_group TEXT NOT NULL,
+    sample_size INT NOT NULL,
+    lower_is_better BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(player_season_id, metric_key)
+);
+CREATE INDEX IF NOT EXISTS player_metric_percentiles_league_ps_idx
+    ON player_metric_percentiles_league(player_season_id);
+CREATE INDEX IF NOT EXISTS player_metric_percentiles_league_scope_idx
+    ON player_metric_percentiles_league(season_id, competition_id, position_group, metric_key);
+
 CREATE TABLE IF NOT EXISTS player_similarity (
     id SERIAL PRIMARY KEY,
     profile TEXT,
@@ -182,7 +229,7 @@ def truncate_fact_tables(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE player_similarity, role_scores, player_metrics, player_seasons"
+                "TRUNCATE TABLE player_similarity, role_scores, player_metric_percentiles_global, player_metric_percentiles_league, player_metrics, player_seasons"
             )
         )
 
@@ -271,6 +318,28 @@ def purge_fact_slice(engine: Engine, fact: pd.DataFrame, ids: dict) -> None:
                 """
             )
         ).rowcount
+        metric_pct_global_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM player_metric_percentiles_global
+                USING player_seasons ps, _nl_slice s
+                WHERE s.competition_id = ps.competition_id
+                  AND s.season_id = ps.season_id
+                  AND player_metric_percentiles_global.player_season_id = ps.id
+                """
+            )
+        ).rowcount
+        metric_pct_league_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM player_metric_percentiles_league
+                USING player_seasons ps, _nl_slice s
+                WHERE s.competition_id = ps.competition_id
+                  AND s.season_id = ps.season_id
+                  AND player_metric_percentiles_league.player_season_id = ps.id
+                """
+            )
+        ).rowcount
         metrics_deleted = conn.execute(
             text(
                 """
@@ -296,7 +365,9 @@ def purge_fact_slice(engine: Engine, fact: pd.DataFrame, ids: dict) -> None:
             "[DB] fact slice purge:"
             f" pairs={len(pairs)} targeted={int(targeted)}"
             f" deleted player_seasons={player_seasons_deleted}"
-            f" metrics={metrics_deleted} role_scores={role_scores_deleted} similarity={similarity_deleted}"
+            f" metrics={metrics_deleted} role_scores={role_scores_deleted}"
+            f" metric_pct_global={metric_pct_global_deleted} metric_pct_league={metric_pct_league_deleted}"
+            f" similarity={similarity_deleted}"
         )
 
 
@@ -633,7 +704,7 @@ def upsert_player_metrics(
         print("[WARN] player_metrics has no numeric columns after cleanup")
         return
     effective_use_copy = use_copy or len(metric_cols) > 200
-    # Ensure columns exist
+    # Ensure columns exist and optionally prune stale derived columns.
     if metric_cols:
         with engine.begin() as conn:
             existing = conn.execute(
@@ -642,7 +713,15 @@ def upsert_player_metrics(
             existing_cols = {r[0] for r in existing}
             for col in metric_cols:
                 if col not in existing_cols:
-                    conn.execute(text(f'ALTER TABLE player_metrics ADD COLUMN "{col}" DOUBLE PRECISION'))
+                    conn.execute(text(f"ALTER TABLE player_metrics ADD COLUMN {_quote_ident(col)} DOUBLE PRECISION"))
+            prune_columns = os.getenv("PIPELINE_PRUNE_METRIC_COLUMNS", "1").lower() not in {"0", "false", "no"}
+            if prune_columns:
+                keep_cols = set(metric_cols).union(RESERVED_PLAYER_METRIC_COLUMNS)
+                stale_cols = sorted(col for col in existing_cols if col not in keep_cols)
+                for col in stale_cols:
+                    conn.execute(text(f"ALTER TABLE player_metrics DROP COLUMN IF EXISTS {_quote_ident(col)}"))
+                if stale_cols:
+                    print(f"[DB] player_metrics pruned stale columns={len(stale_cols)}")
 
     metrics = metrics.where(pd.notna(metrics), None)
 
@@ -676,6 +755,116 @@ def upsert_player_metrics(
         print(f"[DB] player_metrics total rows={total}")
 
 
+def upsert_metric_percentiles(
+    engine: Engine,
+    percentiles: pd.DataFrame,
+    season_index: dict,
+    ids: dict,
+    *,
+    scope: str,
+    replace: bool = False,
+):
+    if percentiles.empty:
+        print(f"[DB] player_metric_percentiles_{scope} empty; skip.")
+        return
+    if scope not in {"global", "league"}:
+        raise ValueError(f"unknown metric percentile scope: {scope}")
+
+    table = f"player_metric_percentiles_{scope}"
+    percentiles = percentiles.copy()
+    print(f"[DB] {table} input rows={len(percentiles)}")
+    percentiles["player_id"] = percentiles["wyscout_id"].astype(str).map(ids["players"])
+    percentiles["competition_id"] = percentiles["competition_name"].map(ids["competitions"])
+    percentiles["season_id"] = percentiles["calendar"].map(ids["seasons"])
+    percentiles["club_id"] = _map_club_ids(
+        percentiles,
+        team_col="team_in_selected_period",
+        competition_col="competition_name",
+        clubs_by_competition=ids.get("clubs_by_competition", {}),
+        clubs_by_name=ids.get("clubs", {}),
+        default_value=-1,
+    )
+    percentiles["player_season_id"] = list(
+        zip(
+            percentiles["player_id"],
+            percentiles["competition_id"],
+            percentiles["season_id"],
+            percentiles["club_id"].fillna(-1),
+        )
+    )
+    percentiles["player_season_id"] = percentiles["player_season_id"].map(season_index)
+    before_rows = len(percentiles)
+    percentiles = percentiles.dropna(subset=["player_season_id", "season_id", "metric_key", "position_group"])
+    if scope == "league":
+        percentiles = percentiles.dropna(subset=["competition_id"])
+    percentiles["player_season_id"] = pd.to_numeric(percentiles["player_season_id"], errors="coerce")
+    percentiles["season_id"] = pd.to_numeric(percentiles["season_id"], errors="coerce")
+    percentiles["competition_id"] = pd.to_numeric(percentiles["competition_id"], errors="coerce")
+    percentiles["sample_size"] = pd.to_numeric(percentiles["sample_size"], errors="coerce")
+    percentiles = percentiles.dropna(subset=["player_season_id", "season_id", "sample_size"])
+    if scope == "league":
+        percentiles = percentiles.dropna(subset=["competition_id"])
+    percentiles["player_season_id"] = percentiles["player_season_id"].astype("Int64")
+    percentiles["season_id"] = percentiles["season_id"].astype("Int64")
+    percentiles["sample_size"] = percentiles["sample_size"].astype("Int64")
+    if scope == "league":
+        percentiles["competition_id"] = percentiles["competition_id"].astype("Int64")
+    dropped = before_rows - len(percentiles)
+    print(f"[DB] {table} mapped rows={len(percentiles)} dropped={dropped}")
+
+    if scope == "global":
+        cols = [
+            "player_season_id",
+            "season_id",
+            "metric_key",
+            "raw_value",
+            "percentile",
+            "position_group",
+            "sample_size",
+            "lower_is_better",
+        ]
+    else:
+        cols = [
+            "player_season_id",
+            "season_id",
+            "competition_id",
+            "metric_key",
+            "raw_value",
+            "percentile",
+            "position_group",
+            "sample_size",
+            "lower_is_better",
+        ]
+    percentiles = percentiles[cols].drop_duplicates(subset=["player_season_id", "metric_key"], keep="last")
+    percentiles = percentiles.where(pd.notna(percentiles), None)
+    update_cols = [col for col in cols if col not in {"player_season_id", "metric_key"}]
+
+    with engine.begin() as conn:
+        if replace:
+            conn.execute(text(f"TRUNCATE {table}"))
+        else:
+            unique_ids = [int(val) for val in percentiles["player_season_id"].unique() if pd.notna(val)]
+            if unique_ids:
+                conn.execute(
+                    text(f"DELETE FROM {table} WHERE player_season_id = ANY(:ids)"),
+                    {"ids": unique_ids},
+                )
+        if len(percentiles) >= 50_000:
+            _copy_dataframe(conn, table, percentiles, cols)
+        else:
+            rows = percentiles[cols].itertuples(index=False, name=None)
+            _execute_upsert(
+                conn,
+                table,
+                cols,
+                rows,
+                ["player_season_id", "metric_key"],
+                update_cols,
+            )
+        total = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+        print(f"[DB] {table} total rows={total}")
+
+
 def upsert_role_scores(engine: Engine, role_scores: pd.DataFrame, season_index: dict, ids: dict):
     if role_scores.empty:
         return
@@ -707,6 +896,14 @@ def upsert_role_scores(engine: Engine, role_scores: pd.DataFrame, season_index: 
     cols = ["player_season_id", "profile", "raw_score", "pct_league", "pct_global", "pct_global_adjusted"]
     rows = role_scores[cols].itertuples(index=False, name=None)
     with engine.begin() as conn:
+        unique_ids = [int(val) for val in role_scores["player_season_id"].unique() if pd.notna(val)]
+        if unique_ids:
+            deleted = conn.execute(
+                text("DELETE FROM role_scores WHERE player_season_id = ANY(:ids)"),
+                {"ids": unique_ids},
+            ).rowcount
+            if deleted:
+                print(f"[DB] role_scores deleted stale rows={deleted}")
         _execute_upsert(
             conn,
             "role_scores",

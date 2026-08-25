@@ -113,7 +113,8 @@ services:
     environment:
       PIPELINE_INPUT_URI: s3://${S3_BUCKET}/data/wyscout_players_final.csv
       PIPELINE_INPUT_KIND: raw
-      PIPELINE_REPLACE_TABLES: 1
+      PIPELINE_REPLACE_TABLES: 0
+      PIPELINE_REPLACE_INPUT_SLICES: 0
       S3_PREFIX: new_nextlegend
       ARCHIVE_RETAIN_RUNS: 8
       MERCATO_LEAGUE_LEVELS_PATH: /config/mercato_league_levels.json

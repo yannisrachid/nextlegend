@@ -47,7 +47,7 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Input can be raw Wyscout CSV or enriched data via `PIPELINE_INPUT_KIND=raw|enriched`.
 - Transfermarkt matching uses curated references in `helpers/csv` before fuzzy fallback.
 - Keep fuzzy matching conservative: reject ambiguous weak-token matches.
-- Similarities are top-k per role profile; default `SIM_TOPK=30`.
+- Similarities are top-k per position group; default `SIM_TOPK=10`.
 - Use `PIPELINE_REPLACE_SIMILARITY=1` when rebuilding `player_similarity`.
 - In production, do not run the full raw pipeline on the current VPS. Use local-compute then PRD-load.
 

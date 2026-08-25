@@ -275,6 +275,9 @@ def export_local_artifacts(artifacts: dict[str, pd.DataFrame]):
 
 
 def archive_to_s3(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
+    if not cfg.bucket:
+        print("[ARCHIVE] no bucket provided; skip archive upload.")
+        return
     ts = dt.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     prefix = f"{cfg.prefix or 'new_nextlegend'}/enriched/{cfg.run_id}_{ts}"
     client = s3_client(cfg)
@@ -370,6 +373,8 @@ def upsert_db(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
     clubs = artifacts.get("clubs", pd.DataFrame())
     fact = artifacts.get("player_seasons", pd.DataFrame())
     metrics = artifacts.get("player_metrics", pd.DataFrame())
+    metric_percentiles_global = artifacts.get("player_metric_percentiles_global", pd.DataFrame())
+    metric_percentiles_league = artifacts.get("player_metric_percentiles_league", pd.DataFrame())
     role_scores = artifacts.get("role_scores", pd.DataFrame())
     similarity = artifacts.get("player_similarity", pd.DataFrame())
 
@@ -378,13 +383,29 @@ def upsert_db(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
     if replace_tables:
         db.truncate_fact_tables(engine)
     ids = db.resolve_ids(engine)
-    replace_input_slices = os.getenv("PIPELINE_REPLACE_INPUT_SLICES", "1").lower() not in {"0", "false", "no"}
+    replace_input_slices = os.getenv("PIPELINE_REPLACE_INPUT_SLICES", "0").lower() not in {"0", "false", "no"}
     if not replace_tables and replace_input_slices:
         db.purge_fact_slice(engine, fact, ids)
     season_index = db.upsert_player_seasons(engine, fact, ids)
     replace_similarity = os.getenv("PIPELINE_REPLACE_SIMILARITY", "1").lower() not in {"0", "false", "no"}
     copy_similarity = os.getenv("PIPELINE_COPY_SIMILARITY", "0").lower() in {"1", "true", "yes"}
     db.upsert_player_metrics(engine, metrics, season_index, ids, replace=replace_tables, use_copy=replace_tables)
+    db.upsert_metric_percentiles(
+        engine,
+        metric_percentiles_global,
+        season_index,
+        ids,
+        scope="global",
+        replace=replace_tables,
+    )
+    db.upsert_metric_percentiles(
+        engine,
+        metric_percentiles_league,
+        season_index,
+        ids,
+        scope="league",
+        replace=replace_tables,
+    )
     db.upsert_role_scores(engine, role_scores, season_index, ids)
     db.upsert_similarity(
         engine,
