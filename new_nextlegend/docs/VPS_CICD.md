@@ -205,17 +205,12 @@ Do not run the full raw pipeline directly on the current VPS. The VPS has limite
 Local current-season command:
 ```bash
 cd /Users/yannis/ylfc/new_nextlegend
-DOCKER_COMPOSE_FILE=infra/compose/docker-compose.yml \
-DOCKER_ENV_FILE=.env \
-SKIP_EMAIL_ALERTS=1 \
-PIPELINE_REPLACE_INPUT_SLICES=1 \
-PIPELINE_REPLACE_SIMILARITY=1 \
-./wyscout_current_season_job/run_current_season_e2e_via_docker.sh
+./scripts/load_current_season_enriched.sh
 ```
 
 Expected local outputs:
-- `data/wyscout_players_final.csv`.
-- enriched pipeline artifacts.
+- `data/wyscout_players_2026_2027_cleaned.csv`.
+- `data/current_season_similarity/player_similarity.csv`.
 - local `pipeline_runs.status = success`.
 
 Required PRD artifact tables:
@@ -232,9 +227,19 @@ Required PRD artifact tables:
 
 PRD loader rules:
 - keep `PIPELINE_REPLACE_TABLES=0`;
-- use `PIPELINE_REPLACE_INPUT_SLICES=1`;
-- use `PIPELINE_REPLACE_SIMILARITY=1`;
+- use `PIPELINE_REPLACE_INPUT_SLICES=0` for routine weekly refreshes;
+- use `PIPELINE_REPLACE_SIMILARITY=0`; similarity is merged by unique edge then pruned to `SIM_TOPK`;
+- keep `SIM_TOPK=10`;
+- enforce freshness with `DATA_FRESHNESS_EXPECT_CALENDARS='2026/2027 2026'` for current-season loads;
 - preserve historical seasons.
+
+PRD current-season enriched load:
+
+```bash
+cd ~/nextlegend/new_nextlegend
+DOCKER_COMPOSE_FILE=infra/compose/docker-compose-prod.yml \
+./scripts/load_current_season_enriched.sh
+```
 
 ## Monitoring
 Primary monitoring is inside the Home page via `Pipeline status`.

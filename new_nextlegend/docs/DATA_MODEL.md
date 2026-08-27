@@ -448,6 +448,25 @@ Weekly/current-season refreshes:
 - recompute percentiles on a complete current-season slice, not on changed rows only;
 - keep similarity top-k at 10.
 
+Incremental persistence rules:
+- `player_seasons` natural key is `player_id + competition_id + season_id + club_id`.
+- `player_metrics` primary key is `player_season_id`.
+- `player_metric_percentiles_global` key is `player_season_id + metric_key`.
+- `player_metric_percentiles_league` key is `player_season_id + metric_key`.
+- `role_scores` key is `player_season_id + profile`.
+- `player_similarity` key is `player_a_season_id + player_b_season_id + profile`.
+- Upserts update existing rows only when at least one persisted value is different (`IS DISTINCT FROM`).
+- Routine refreshes must not call slice purges; use `PIPELINE_REPLACE_INPUT_SLICES=0`.
+- `PIPELINE_REPLACE_TABLES=1` is reserved for explicit full rebuilds.
+
+Data quality and freshness gates run before persistence:
+- required raw/fact columns must exist;
+- natural keys must be complete and duplicate-free;
+- scores must stay in `[50, 99]`;
+- expected calendars can be enforced with `DATA_FRESHNESS_EXPECT_CALENDARS`;
+- similarity must stay at or below `SIM_TOPK`, normally `10`;
+- low club roster counts are logged as warnings because early-season data can be partial.
+
 Production:
 - do not run the full raw pipeline on the current VPS;
 - use local-compute, then load artifacts or a validated DB dump into PROD;
@@ -480,5 +499,6 @@ LIMIT 50;
 Expected invariants:
 - `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, and `role_scores` are non-empty after a successful scoring load.
 - `player_similarity` has at most 10 rows per source player-season.
+- `pipeline_runs.message` includes a `data_quality` report for each successful ingestion.
 - `crm_contacts` remains non-empty after CRM migration or DEV-to-PROD DB promotion.
 - API endpoints requiring auth return `401` without `nl_session`.
