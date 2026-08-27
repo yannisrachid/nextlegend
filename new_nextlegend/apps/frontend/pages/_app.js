@@ -83,7 +83,7 @@ export default function App({ Component, pageProps }) {
         <link rel="shortcut icon" href="/logo_nl.png" />
       </Head>
       {!isLogin ? (
-        <AppShell onLogout={handleLogout} shouldUseScoutingLab={shouldUseScoutingLab}>
+        <AppShell onLogout={handleLogout} shouldUseScoutingLab={shouldUseScoutingLab} me={me}>
           {shouldUseScoutingLab ? (
             <ScoutingLabShell me={me}>
               <Component {...pageProps} />

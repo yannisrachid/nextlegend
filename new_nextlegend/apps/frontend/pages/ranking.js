@@ -225,11 +225,11 @@ export default function RankingPage() {
   return (
     <main className="nl-page px-4 py-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="surface-panel rounded-lg p-6">
+        <header className="nl-page-header">
           <p className="nl-kicker">
             Talent ranking
           </p>
-          <h1 className="mt-2 text-4xl font-extrabold tracking-normal text-slate-950">
+          <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950 md:text-4xl">
             Market-ranked player database
           </h1>
           <p className="mt-2 max-w-3xl text-slate-600">
@@ -237,7 +237,7 @@ export default function RankingPage() {
           </p>
         </header>
 
-        <Card>
+        <Card className="nl-filter-bar">
           <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="ranking-competition">Competition</Label>
@@ -400,136 +400,136 @@ export default function RankingPage() {
           </Card>
         )}
 
-        <section className="grid grid-cols-1 gap-4">
+        <Card className="overflow-hidden p-0">
           {loading ? (
-            <Card>
-              <p className="text-slate-500">Loading ranking...</p>
-            </Card>
+            <div className="space-y-3 p-4">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <div key={index} className="grid grid-cols-[48px_minmax(0,1fr)_110px_110px] gap-3 rounded-md border border-white/10 bg-white/[0.025] p-3">
+                  <div className="nl-skeleton h-10 w-10 rounded-full" />
+                  <div className="space-y-2">
+                    <div className="nl-skeleton h-3 w-1/3" />
+                    <div className="nl-skeleton h-3 w-2/3" />
+                  </div>
+                  <div className="nl-skeleton h-8" />
+                  <div className="nl-skeleton h-8" />
+                </div>
+              ))}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="p-6">
+              <div className="nl-empty-state">
+                <p className="text-sm font-semibold text-slate-950">No players match these filters.</p>
+                <p className="mt-1 text-xs text-slate-500">Broaden the cohort or lower the minutes threshold.</p>
+              </div>
+            </div>
           ) : (
-            items.map((row, idx) => (
-              <Card
-                key={row.player_season_id}
-                role="button"
-                tabIndex={0}
-                onClick={() =>
-                  window.open(
-                    `/report?player_id=${row.player_id}&player_season_id=${row.player_season_id}`,
-                    "_blank",
-                    "noopener,noreferrer"
-                  )
-                }
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    window.open(
-                      `/report?player_id=${row.player_id}&player_season_id=${row.player_season_id}`,
-                      "_blank",
-                      "noopener,noreferrer"
-                    );
-                  }
-                }}
-                className="cursor-pointer transition duration-200 hover:-translate-y-0.5 hover:border-teal-500/50 hover:shadow-[0_22px_70px_rgba(15,118,110,0.12)] focus:outline-none focus:ring-4 focus:ring-teal-700/20"
-              >
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-teal-700 text-lg font-extrabold !text-white">
-                      {page * filters.limit + idx + 1}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {(() => {
-                        const tmFields = row.tm_fields || {};
-                        const tmPhotoUrl = toAbsoluteUrl(
-                          tmFields.tm_profile_image_url || tmFields.profile_image_url
-                        );
-                        const tmProfileUrl = toAbsoluteUrl(
-                          tmFields.tm_profile_url || row.tm_profile_url
-                        );
-                        const tmMarketValue = formatCompactNumber(tmFields.tm_market_value);
-                        const tmAgentName = tmFields.tm_agent_name;
-                        return (
-                          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-[980px] w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                    <th className="w-14 px-4 py-3">Rank</th>
+                    <th className="px-4 py-3">Player</th>
+                    <th className="px-4 py-3">Context</th>
+                    <th className="px-4 py-3">Profile</th>
+                    <th className="px-4 py-3 text-right">Score</th>
+                    <th className="px-4 py-3 text-right">Percentiles</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {items.map((row, idx) => {
+                    const tmFields = row.tm_fields || {};
+                    const tmPhotoUrl = toAbsoluteUrl(tmFields.tm_profile_image_url || tmFields.profile_image_url);
+                    const tmProfileUrl = toAbsoluteUrl(tmFields.tm_profile_url || row.tm_profile_url);
+                    const tmMarketValue = formatCompactNumber(tmFields.tm_market_value);
+                    const tmAgentName = tmFields.tm_agent_name;
+                    const openReport = () =>
+                      window.open(
+                        `/report?player_id=${row.player_id}&player_season_id=${row.player_season_id}`,
+                        "_blank",
+                        "noopener,noreferrer"
+                      );
+
+                    return (
+                      <tr
+                        key={row.player_season_id}
+                        className="cursor-pointer align-middle"
+                        tabIndex={0}
+                        onClick={openReport}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            openReport();
+                          }
+                        }}
+                      >
+                        <td className="px-4 py-3">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 text-xs font-semibold text-[#8CC7A7]">
+                            {page * filters.limit + idx + 1}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex min-w-0 items-center gap-3">
                             {tmPhotoUrl ? (
-                              <img
-                                src={tmPhotoUrl}
-                                alt={row.name}
-                                className="h-12 w-12 rounded-full object-cover border border-white/10"
-                              />
+                              <img src={tmPhotoUrl} alt={row.name} className="h-10 w-10 rounded-md border border-white/10 object-cover" />
                             ) : (
-                              <div className="h-12 w-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 font-bold">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-xs font-semibold text-slate-500">
                                 {getInitials(row.name)}
                               </div>
                             )}
-                            <div>
-                              <div className="text-lg font-extrabold text-slate-950 flex items-center gap-2">
-                                {row.name}
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate font-semibold text-slate-950">{row.name}</p>
                                 {prospectIds.has(row.player_id) ? (
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" aria-label="Prospect">
+                                  <span className="rounded-md border border-amber-300/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-200">
                                     Prospect
                                   </span>
                                 ) : null}
                               </div>
-                              <div className="mt-1 flex items-center gap-2 text-sm text-slate-400">
-                                <ClubLogo name={row.team} className="h-6 w-6 rounded" />
-                                <span className="min-w-0 truncate">
-                                  {row.team || "—"} • {row.competition_name} • {row.calendar || "–"}
-                                </span>
-                              </div>
                               {tmProfileUrl ? (
-                                <a
-                                  href={tmProfileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-xs text-primary hover:text-primary/80"
-                                  onClick={(event) => event.stopPropagation()}
-                                >
-                                  Transfermarkt profile
+                                <a href={tmProfileUrl} target="_blank" rel="noreferrer" className="text-xs text-[#8CC7A7] hover:text-white" onClick={(event) => event.stopPropagation()}>
+                                  Transfermarkt
                                 </a>
                               ) : null}
-                              {tmMarketValue || tmAgentName ? (
-                                <div className="text-xs text-slate-500 mt-1">
-                                  {tmMarketValue ? `Market value: ${tmMarketValue}` : null}
-                                  {tmMarketValue && tmAgentName ? " • " : null}
-                                  {tmAgentName ? `Agent: ${tmAgentName}` : null}
-                                </div>
-                              ) : null}
-                              <div className="flex flex-wrap gap-2 mt-2">
-                                {row.assigned_role ? (
-                                  <Badge>{row.assigned_role}</Badge>
-                                ) : null}
-                                {row.position ? <Badge>{row.position}</Badge> : null}
-                                {row.age ? <Badge>{row.age} yrs</Badge> : null}
-                                <Badge>{Math.round(row.minutes_played || 0)} mins</Badge>
-                              </div>
                             </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-6">
-                    <div className="text-right">
-                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                        Score v2
-                      </p>
-                      <p className="text-2xl font-extrabold text-teal-800">
-                        {row.global_score_adjusted?.toFixed(1) ?? "—"}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                        Group percentile (league/score)
-                      </p>
-                      <p className="text-lg font-extrabold text-slate-900">
-                        {row.assigned_role_pct_league?.toFixed(0) ?? "—"} /{" "}
-                        {row.assigned_role_pct_global?.toFixed(0) ?? "—"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ))
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <ClubLogo name={row.team} className="h-6 w-6 rounded" />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-slate-700">{row.team || "—"}</p>
+                              <p className="truncate text-xs text-slate-500">{row.competition_name} · {row.calendar || "–"}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex max-w-[280px] flex-wrap gap-1.5">
+                            {row.assigned_role ? <Badge>{row.assigned_role}</Badge> : null}
+                            {row.position ? <Badge>{row.position}</Badge> : null}
+                            {row.age ? <Badge>{row.age} yrs</Badge> : null}
+                            <Badge>{Math.round(row.minutes_played || 0)} mins</Badge>
+                            {tmMarketValue ? <Badge>{tmMarketValue}</Badge> : null}
+                            {tmAgentName ? <Badge>{tmAgentName}</Badge> : null}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <p className="text-xl font-semibold text-[#8CC7A7]">{row.global_score_adjusted?.toFixed(1) ?? "—"}</p>
+                          <p className="text-[11px] text-slate-500">Score v2</p>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <p className="font-semibold text-slate-950">
+                            {row.assigned_role_pct_league?.toFixed(0) ?? "—"} / {row.assigned_role_pct_global?.toFixed(0) ?? "—"}
+                          </p>
+                          <p className="text-[11px] text-slate-500">League / global</p>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-        </section>
+        </Card>
       </div>
     </main>
   );

@@ -25,9 +25,9 @@ const DEFAULT_RADAR_METRICS = [
 ];
 
 const PLAYER_STYLES = [
-  { label: "Player 1", color: "#22d3ee" },
-  { label: "Player 2", color: "#f97316" },
-  { label: "Player 3", color: "#34d399" },
+  { label: "Player 1", color: "#559A78" },
+  { label: "Player 2", color: "#C3A56B" },
+  { label: "Player 3", color: "#A0A8A3" },
 ];
 
 const EXCLUDED_METRIC_PREFIXES = [

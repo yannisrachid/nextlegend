@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { deleteJson, fetchJson, patchJson, postJson } from "@/lib/api";
+import { EmptyState, MetricCard, PageHeader, Panel } from "@/components/ui/product";
 
 const AGENTS = ["Steven", "Don", "Yannis", "Lidahi"];
 
@@ -115,6 +116,14 @@ export default function Home() {
 
   const urgentCount = useMemo(() => items.filter((item) => item.priority === "urgent").length, [items]);
 
+  const statusSummary = useMemo(
+    () => KANBAN_COLUMNS.map((column) => ({
+      ...column,
+      count: items.filter((item) => normalizeStatus(item.status) === column.value).length,
+    })),
+    [items]
+  );
+
   const startEdit = (item) => {
     setEditingId(item.id);
     setForm({
@@ -185,46 +194,55 @@ export default function Home() {
   return (
     <main className="nl-page px-4 py-6 md:py-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
-        <section className="surface-panel relative overflow-hidden rounded-lg p-6 md:p-8">
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/50 to-transparent" />
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-end">
-            <div>
-              <p className="nl-kicker">HQ</p>
-              <h1 className="mt-3 max-w-4xl text-3xl font-semibold leading-tight text-slate-950 md:text-5xl">
-                HD Sports command room.
-              </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-                Next Legend brings the agency portfolio, mercato priorities and scouting intelligence into one premium operating system.
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="surface-subtle rounded-lg p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">Active tasks</p>
-                <p className="mt-2 text-3xl font-extrabold text-slate-950">{activeCount}</p>
-              </div>
-              <div className="rounded-lg border border-rose-200 bg-rose-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-rose-700">Urgent</p>
-                <p className="mt-2 text-3xl font-extrabold text-rose-900">{urgentCount}</p>
-              </div>
-              <div className="rounded-lg border border-teal-200 bg-teal-50 p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-teal-700">Agents</p>
-                <p className="mt-2 text-3xl font-extrabold text-teal-950">{AGENTS.length}</p>
-              </div>
-              <div className="surface-subtle rounded-lg p-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">Players</p>
-                <p className="mt-2 text-3xl font-extrabold text-slate-950">{playerCount}</p>
-              </div>
-            </div>
+        <PageHeader
+          eyebrow="HQ"
+          title="HD Sports command room."
+          description="Next Legend brings the agency portfolio, network and scouting intelligence into one operating workspace."
+        />
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Active tasks" value={activeCount} sub="Open workstreams" tone="success" />
+            <MetricCard label="Urgent" value={urgentCount} sub="Needs attention" tone="danger" />
+            <MetricCard label="Agents" value={AGENTS.length} sub="Owners available" />
+            <MetricCard label="Players" value={playerCount} sub="Portfolio rooms" />
           </div>
+          <Panel className="p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="nl-kicker">Flow</p>
+                <h2 className="mt-1 text-lg font-semibold text-slate-950">Execution health</h2>
+              </div>
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-2.5 py-1 text-xs font-semibold text-[#8CC7A7]">
+                {items.length} total
+              </span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {statusSummary.map((column) => (
+                <div key={column.value}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-500">{column.label}</span>
+                    <span className="font-semibold text-slate-950">{column.count}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                    <div
+                      className="h-full rounded-full bg-[#3A8967]"
+                      style={{ width: `${items.length ? Math.max(6, (column.count / items.length) * 100) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
         </section>
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {MODULES.map((module) => (
-            <Link key={module.title} href={module.href} className="surface-panel group rounded-lg p-5 transition hover:-translate-y-0.5 hover:border-teal-500">
-              <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-teal-700">{module.metric}</span>
-              <h2 className="mt-3 text-2xl font-extrabold text-slate-950">{module.title}</h2>
+            <Link key={module.title} href={module.href} className="surface-panel group rounded-lg p-5 transition hover:-translate-y-0.5 hover:border-[#3A8967]/40 hover:bg-white/[0.06]">
+              <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#8CC7A7]">{module.metric}</span>
+              <h2 className="mt-3 text-xl font-semibold text-slate-950">{module.title}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">{module.desc}</p>
-              <span className="mt-5 inline-flex text-sm font-extrabold text-amber-100/80">Enter workspace</span>
+              <span className="mt-5 inline-flex text-sm font-semibold text-[#8CC7A7]">Enter workspace</span>
             </Link>
           ))}
         </section>
@@ -323,9 +341,11 @@ export default function Home() {
                   </div>
                   <div className="mt-3 space-y-3">
                     {columnItems.length === 0 ? (
-                      <p className="rounded-md border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-500">
-                        {draggedId ? "Drop the priority here." : "No priority in this lane."}
-                      </p>
+                      draggedId ? (
+                        <EmptyState title="Drop here" description="Move the selected priority into this lane." />
+                      ) : (
+                        <EmptyState title="No priority" description="This lane is clear." />
+                      )
                     ) : null}
                     {columnItems.map((item) => (
                       <article

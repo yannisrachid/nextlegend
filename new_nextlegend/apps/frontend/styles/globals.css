@@ -13,8 +13,8 @@
     --popover: 225 25% 8%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 38 92% 64%;
-    --primary-foreground: 24 26% 7%;
+    --primary: 151 42% 38%;
+    --primary-foreground: 150 34% 94%;
 
     --secondary: 225 17% 12%;
     --secondary-foreground: 210 40% 98%;
@@ -30,7 +30,7 @@
 
     --border: 220 11% 19%;
     --input: 220 11% 19%;
-    --ring: 38 92% 64%;
+    --ring: 151 42% 38%;
 
     --radius: 0.5rem;
   }
@@ -232,7 +232,7 @@
   }
 
   ::selection {
-    background: rgba(245, 158, 11, 0.24);
+    background: rgba(58, 137, 103, 0.28);
   }
 }
 
@@ -258,11 +258,11 @@
   }
 
   .nl-field {
-    @apply w-full rounded-md border border-white/10 bg-black/[0.35] px-3 py-2 text-sm text-white outline-none transition duration-200 placeholder:text-white/40 focus:border-amber-300/70 focus:ring-4 focus:ring-amber-300/10 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply w-full rounded-md border border-white/10 bg-black/[0.35] px-3 py-2 text-sm text-white outline-none transition duration-200 placeholder:text-white/40 focus:border-[#3A8967] focus:ring-4 focus:ring-[#3A8967]/15 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nl-button-primary {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-black shadow-[0_14px_34px_rgba(255,255,255,0.10)] transition duration-200 hover:bg-amber-50 focus:outline-none focus:ring-4 focus:ring-white/15 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-[#3A8967] px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(58,137,103,0.18)] transition duration-200 hover:bg-[#478F70] active:scale-[0.99] focus:outline-none focus:ring-4 focus:ring-[#3A8967]/20 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nl-button-secondary {
@@ -273,8 +273,12 @@
     @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-white/80 transition duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-4 focus:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
+  .nl-icon-button {
+    @apply inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-white/70 transition duration-200 hover:border-[#3A8967]/40 hover:bg-[#2F7D5C]/15 hover:text-white focus:outline-none focus:ring-4 focus:ring-[#3A8967]/15 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
   .nl-kicker {
-    @apply text-xs font-bold uppercase tracking-[0.16em] text-amber-200/80;
+    @apply text-xs font-bold uppercase tracking-[0.16em] text-[#8CC7A7];
   }
 
   .nl-page {
@@ -290,8 +294,36 @@
     pointer-events: none;
     background:
       linear-gradient(180deg, rgba(255,255,255,0.035), transparent 26%),
-      radial-gradient(ellipse at 50% -12%, rgba(245,158,11,0.16), transparent 38%),
-      linear-gradient(90deg, rgba(20,184,166,0.06), transparent 24%, rgba(245,158,11,0.05));
+      radial-gradient(ellipse at 50% -12%, rgba(58,137,103,0.18), transparent 38%),
+      linear-gradient(90deg, rgba(47,125,92,0.08), transparent 24%, rgba(85,154,120,0.07));
+  }
+
+  .nl-page-header {
+    @apply surface-panel relative overflow-hidden rounded-lg p-5 md:p-6;
+  }
+
+  .nl-page-header::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(85,154,120,0.58), transparent);
+  }
+
+  .nl-metric-card {
+    @apply rounded-lg border border-white/10 bg-white/[0.035] p-4 transition duration-200 hover:border-[#3A8967]/40 hover:bg-white/[0.055];
+  }
+
+  .nl-filter-bar {
+    @apply rounded-lg border border-white/10 bg-black/30 p-3 shadow-[0_14px_44px_rgba(0,0,0,0.24)];
+  }
+
+  .nl-empty-state {
+    @apply rounded-lg border border-dashed border-white/15 bg-white/[0.03] p-6 text-center text-sm font-medium text-white/60;
+  }
+
+  .nl-skeleton {
+    @apply animate-pulse rounded-md bg-white/[0.07];
   }
 
   .nl-page .surface-panel,
@@ -414,7 +446,7 @@
   .nl-page .text-teal-950,
   .nl-page .text-sky-700,
   .nl-page .text-sky-800 {
-    color: #5eead4;
+    color: #8CC7A7;
   }
 
   .nl-page .border-rose-200 {
@@ -427,7 +459,22 @@
 
   .nl-page .border-teal-200,
   .nl-page .border-sky-200 {
-    border-color: rgba(20, 184, 166, 0.28);
+    border-color: rgba(58, 137, 103, 0.34);
+  }
+
+  .nl-page .recharts-cartesian-grid line,
+  .nl-page .recharts-polar-grid-angle line,
+  .nl-page .recharts-polar-grid-concentric path {
+    stroke: rgba(255, 255, 255, 0.08);
+  }
+
+  .nl-page .recharts-text,
+  .nl-page .recharts-cartesian-axis-tick-value {
+    fill: rgba(160, 168, 163, 0.84);
+  }
+
+  .nl-page .recharts-legend-item-text {
+    color: rgba(243, 245, 244, 0.76) !important;
   }
 
   .nl-page input[type="date"] {
@@ -450,11 +497,11 @@
   }
 
   .scouting-lab-shell {
-    @apply grid min-h-screen w-full max-w-full overflow-x-hidden bg-hero-pattern lg:grid-cols-[260px_minmax(0,1fr)];
+    @apply min-h-screen w-full max-w-full overflow-x-hidden bg-hero-pattern;
   }
 
   .scouting-lab-sidebar {
-    @apply sticky top-[65px] z-20 min-w-0 max-w-full border-b border-white/10 bg-black/80 px-4 py-4 text-white backdrop-blur-xl lg:h-[calc(100vh-65px)] lg:border-b-0 lg:border-r lg:px-4 lg:py-6;
+    @apply sticky top-[64px] z-40 flex min-w-0 max-w-full items-center gap-4 border-b border-white/10 bg-[#050706]/90 px-4 py-3 text-white backdrop-blur-xl md:px-6;
   }
 
   .scouting-lab-content {
