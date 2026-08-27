@@ -168,6 +168,18 @@ CREATE TABLE IF NOT EXISTS player_similarity (
 );
 CREATE INDEX IF NOT EXISTS player_similarity_a_season_idx ON player_similarity (player_a_season_id);
 CREATE INDEX IF NOT EXISTS player_similarity_b_season_idx ON player_similarity (player_b_season_id);
+DELETE FROM player_similarity
+WHERE player_a_season_id IS NULL
+   OR player_b_season_id IS NULL
+   OR profile IS NULL;
+DELETE FROM player_similarity newer
+USING player_similarity older
+WHERE newer.id > older.id
+  AND newer.player_a_season_id = older.player_a_season_id
+  AND newer.player_b_season_id = older.player_b_season_id
+  AND newer.profile = older.profile;
+CREATE UNIQUE INDEX IF NOT EXISTS player_similarity_unique_edge
+    ON player_similarity (player_a_season_id, player_b_season_id, profile);
 
 CREATE TABLE IF NOT EXISTS pipeline_runs (
     id SERIAL PRIMARY KEY,
@@ -380,15 +392,25 @@ def _execute_upsert(
     update_cols: Sequence[str],
     page_size: int = 1000,
 ):
-    col_list = ", ".join(columns)
-    conflict = ", ".join(conflict_cols)
-    update = ", ".join([f"{c}=EXCLUDED.{c}" for c in update_cols]) if update_cols else ""
+    quoted_table = _quote_ident(table)
+    col_list = ", ".join(_quote_ident(c) for c in columns)
+    conflict = ", ".join(_quote_ident(c) for c in conflict_cols)
+    update_parts = [f"{_quote_ident(c)}=EXCLUDED.{_quote_ident(c)}" for c in update_cols]
+    if update_cols and table != "player_similarity":
+        update_parts.append("updated_at=NOW()")
+    update = ", ".join(update_parts)
     placeholders = ", ".join([f":{c}" for c in columns])
-    sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+    sql = f"INSERT INTO {quoted_table} ({col_list}) VALUES ({placeholders})"
     if conflict_cols:
         sql += f" ON CONFLICT ({conflict})"
         if update:
             sql += f" DO UPDATE SET {update}"
+            distinct_checks = [
+                f"{quoted_table}.{_quote_ident(c)} IS DISTINCT FROM EXCLUDED.{_quote_ident(c)}"
+                for c in update_cols
+            ]
+            if distinct_checks:
+                sql += " WHERE " + " OR ".join(distinct_checks)
         else:
             sql += " DO NOTHING"
 
@@ -651,6 +673,44 @@ def _copy_dataframe(conn, table: str, df: pd.DataFrame, columns: Sequence[str], 
                 cur.copy_expert(copy_sql, buffer)
 
 
+def _copy_upsert_dataframe(
+    conn,
+    table: str,
+    df: pd.DataFrame,
+    columns: Sequence[str],
+    conflict_cols: Sequence[str],
+    update_cols: Sequence[str],
+):
+    if df.empty:
+        return
+    stage = f"_stage_{table}"
+    quoted_table = _quote_ident(table)
+    quoted_stage = _quote_ident(stage)
+    col_list = ", ".join(_quote_ident(c) for c in columns)
+    conflict = ", ".join(_quote_ident(c) for c in conflict_cols)
+    update_parts = [f"{_quote_ident(c)}=EXCLUDED.{_quote_ident(c)}" for c in update_cols]
+    if update_cols and table != "player_similarity":
+        update_parts.append("updated_at=NOW()")
+    update = ", ".join(update_parts)
+    conn.execute(text(f"DROP TABLE IF EXISTS {quoted_stage}"))
+    conn.execute(text(f"CREATE TEMP TABLE {quoted_stage} (LIKE {quoted_table} INCLUDING DEFAULTS) ON COMMIT DROP"))
+    _copy_dataframe(conn, stage, df, columns)
+    sql = f"INSERT INTO {quoted_table} ({col_list}) SELECT {col_list} FROM {quoted_stage}"
+    if conflict_cols:
+        sql += f" ON CONFLICT ({conflict})"
+        if update:
+            sql += f" DO UPDATE SET {update}"
+            distinct_checks = [
+                f"{quoted_table}.{_quote_ident(c)} IS DISTINCT FROM EXCLUDED.{_quote_ident(c)}"
+                for c in update_cols
+            ]
+            if distinct_checks:
+                sql += " WHERE " + " OR ".join(distinct_checks)
+        else:
+            sql += " DO NOTHING"
+    conn.execute(text(sql))
+
+
 def upsert_player_metrics(
     engine: Engine,
     metrics: pd.DataFrame,
@@ -728,28 +788,14 @@ def upsert_player_metrics(
     with engine.begin() as conn:
         if replace:
             conn.execute(text("TRUNCATE player_metrics"))
-        else:
-            unique_ids = [int(val) for val in metrics["player_season_id"].unique() if pd.notna(val)]
-            conn.execute(
-                text("DELETE FROM player_metrics WHERE player_season_id = ANY(:ids)"),
-                {"ids": unique_ids},
-            )
-
-        try:
-            if effective_use_copy:
-                _copy_dataframe(conn, "player_metrics", metrics, metrics.columns.tolist())
-            else:
-                metrics.to_sql(
-                    "player_metrics",
-                    conn,
-                    if_exists="append",
-                    index=False,
-                    chunksize=200,
-                    method="multi",
-                )
-        except Exception as exc:  # noqa: BLE001
-            print(f"[ERROR] player_metrics insert failed: {exc}")
-            raise
+        _copy_upsert_dataframe(
+            conn,
+            "player_metrics",
+            metrics,
+            metrics.columns.tolist(),
+            ["player_season_id"],
+            metric_cols,
+        )
 
         total = conn.execute(text("SELECT COUNT(*) FROM player_metrics")).scalar()
         print(f"[DB] player_metrics total rows={total}")
@@ -842,15 +888,8 @@ def upsert_metric_percentiles(
     with engine.begin() as conn:
         if replace:
             conn.execute(text(f"TRUNCATE {table}"))
-        else:
-            unique_ids = [int(val) for val in percentiles["player_season_id"].unique() if pd.notna(val)]
-            if unique_ids:
-                conn.execute(
-                    text(f"DELETE FROM {table} WHERE player_season_id = ANY(:ids)"),
-                    {"ids": unique_ids},
-                )
         if len(percentiles) >= 50_000:
-            _copy_dataframe(conn, table, percentiles, cols)
+            _copy_upsert_dataframe(conn, table, percentiles, cols, ["player_season_id", "metric_key"], update_cols)
         else:
             rows = percentiles[cols].itertuples(index=False, name=None)
             _execute_upsert(
@@ -896,14 +935,6 @@ def upsert_role_scores(engine: Engine, role_scores: pd.DataFrame, season_index: 
     cols = ["player_season_id", "profile", "raw_score", "pct_league", "pct_global", "pct_global_adjusted"]
     rows = role_scores[cols].itertuples(index=False, name=None)
     with engine.begin() as conn:
-        unique_ids = [int(val) for val in role_scores["player_season_id"].unique() if pd.notna(val)]
-        if unique_ids:
-            deleted = conn.execute(
-                text("DELETE FROM role_scores WHERE player_season_id = ANY(:ids)"),
-                {"ids": unique_ids},
-            ).rowcount
-            if deleted:
-                print(f"[DB] role_scores deleted stale rows={deleted}")
         _execute_upsert(
             conn,
             "role_scores",
@@ -978,7 +1009,7 @@ def upsert_similarity(
     )
     similarity["player_a_season_id"] = similarity["player_a_season_id"].map(season_index)
     similarity["player_b_season_id"] = similarity["player_b_season_id"].map(season_index)
-    similarity = similarity.dropna(subset=["player_a_id", "player_b_id"])
+    similarity = similarity.dropna(subset=["player_a_id", "player_b_id", "player_a_season_id", "player_b_season_id", "profile"])
     print(f"[DB] player_similarity rows after id mapping={len(similarity)}")
     for col in ("player_a_id", "player_b_id", "player_a_season_id", "player_b_season_id"):
         if col in similarity.columns:
@@ -987,12 +1018,20 @@ def upsert_similarity(
             )
     cols = ["profile", "player_a_id", "player_b_id", "player_a_season_id", "player_b_season_id", "similarity"]
     similarity = similarity[cols].where(pd.notna(similarity[cols]), None)
-    similarity = similarity.drop_duplicates(subset=cols)
+    similarity = similarity.drop_duplicates(subset=["player_a_season_id", "player_b_season_id", "profile"], keep="last")
+    topk = int(os.getenv("SIM_TOPK", "10") or "10")
     with engine.begin() as conn:
         if replace:
             conn.execute(text("TRUNCATE player_similarity"))
-        if use_copy:
-            _copy_dataframe(conn, "player_similarity", similarity, cols)
+        if use_copy or len(similarity) >= 50_000:
+            _copy_upsert_dataframe(
+                conn,
+                "player_similarity",
+                similarity,
+                cols,
+                ["player_a_season_id", "player_b_season_id", "profile"],
+                ["similarity", "player_a_id", "player_b_id"],
+            )
         else:
             rows = similarity[cols].itertuples(index=False, name=None)
             _execute_upsert(
@@ -1000,9 +1039,32 @@ def upsert_similarity(
                 "player_similarity",
                 cols,
                 rows,
-                [],
-                [],
+                ["player_a_season_id", "player_b_season_id", "profile"],
+                ["similarity", "player_a_id", "player_b_id"],
             )
+        if topk > 0:
+            deleted = conn.execute(
+                text(
+                    """
+                    DELETE FROM player_similarity ps
+                    USING (
+                        SELECT id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY player_a_season_id, profile
+                                   ORDER BY similarity DESC NULLS LAST, id ASC
+                               ) AS rn
+                        FROM player_similarity
+                        WHERE player_a_season_id IS NOT NULL
+                          AND profile IS NOT NULL
+                    ) ranked
+                    WHERE ps.id = ranked.id
+                      AND ranked.rn > :topk
+                    """
+                ),
+                {"topk": topk},
+            ).rowcount
+            if deleted:
+                print(f"[DB] player_similarity pruned rows above topk={topk}: {deleted}")
         total = conn.execute(text("SELECT COUNT(*) FROM player_similarity")).scalar()
         print(f"[DB] player_similarity total rows={total}")
 
