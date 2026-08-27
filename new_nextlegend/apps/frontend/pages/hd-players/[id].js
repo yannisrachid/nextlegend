@@ -697,7 +697,7 @@ export default function HdPlayerDetailPage() {
 
             <div className="surface-panel rounded-lg p-5">
               <p className="nl-kicker">Prospect clubs</p>
-              <h2 className="mt-2 text-2xl font-extrabold text-slate-950">Mercato 2026 pipeline</h2>
+              <h2 className="mt-2 text-2xl font-extrabold text-slate-950">Prospect club pipeline</h2>
               <div className="mt-4 overflow-x-auto">
                 <table className="min-w-[820px] w-full text-left text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">

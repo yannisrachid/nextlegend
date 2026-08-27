@@ -5,7 +5,6 @@ import { useState } from "react";
 const NAV_ITEMS = [
   { href: "/", label: "HQ" },
   { href: "/hd-players", label: "HD Players" },
-  { href: "/mercato-2026", label: "Mercato 2026" },
   { href: "/crm", label: "Network" },
   { href: "/scouting-lab", label: "Scouting" },
 ];
@@ -58,15 +57,15 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab }) {
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-black/80 text-white backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-black/[0.85] text-white backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-3">
           <Link href="/" className="group flex min-w-fit items-center gap-3" onClick={() => setMobileMenuOpen(false)}>
-            <span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white shadow-[0_12px_28px_rgba(255,255,255,0.08)]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white shadow-[0_12px_28px_rgba(245,158,11,0.12)]">
               <img src="/logo_nl.png" alt="Next Legend" className="h-7 w-7 object-contain" />
             </span>
             <span className="leading-tight">
               <span className="block text-lg font-semibold tracking-normal text-white">Next Legend</span>
-              <span className="block text-[11px] font-bold uppercase tracking-[0.16em] text-white/50">
+              <span className="block text-[11px] font-bold uppercase tracking-[0.16em] text-amber-100/50">
                 HD Sports intelligence
               </span>
             </span>
@@ -92,7 +91,7 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab }) {
         </div>
 
         {mobileMenuOpen ? (
-          <div className="border-t border-white/10 bg-black/95 px-4 py-4 lg:hidden">
+          <div className="border-t border-white/10 bg-black/95 px-4 py-4 shadow-[0_24px_60px_rgba(0,0,0,0.44)] lg:hidden">
             <div className="mx-auto flex max-w-[1500px] flex-col gap-3">
               {nav}
               <button type="button" onClick={onLogout} className="nl-button-ghost w-full">

@@ -33,12 +33,6 @@ const MODULES = [
     desc: "Centralize player rooms, documents, season data and market strategy.",
   },
   {
-    title: "MERCATO 2026",
-    href: "/mercato-2026",
-    metric: "Market execution",
-    desc: "Manage club needs, matching shortlists and agent follow-up for 2026.",
-  },
-  {
     title: "NETWORK",
     href: "/crm",
     metric: "Football relationships",
@@ -189,13 +183,14 @@ export default function Home() {
   };
 
   return (
-    <main className="nl-page px-4 py-8 md:py-10">
+    <main className="nl-page px-4 py-6 md:py-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
-        <section className="surface-panel rounded-lg p-6 md:p-8">
+        <section className="surface-panel relative overflow-hidden rounded-lg p-6 md:p-8">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/50 to-transparent" />
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-end">
             <div>
               <p className="nl-kicker">HQ</p>
-              <h1 className="mt-3 max-w-4xl text-4xl font-extrabold leading-tight text-slate-950 md:text-6xl">
+              <h1 className="mt-3 max-w-4xl text-3xl font-semibold leading-tight text-slate-950 md:text-5xl">
                 HD Sports command room.
               </h1>
               <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
@@ -203,7 +198,7 @@ export default function Home() {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="surface-subtle rounded-lg p-4">
                 <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">Active tasks</p>
                 <p className="mt-2 text-3xl font-extrabold text-slate-950">{activeCount}</p>
               </div>
@@ -215,7 +210,7 @@ export default function Home() {
                 <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-teal-700">Agents</p>
                 <p className="mt-2 text-3xl font-extrabold text-teal-950">{AGENTS.length}</p>
               </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="surface-subtle rounded-lg p-4">
                 <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">Players</p>
                 <p className="mt-2 text-3xl font-extrabold text-slate-950">{playerCount}</p>
               </div>
@@ -229,7 +224,7 @@ export default function Home() {
               <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-teal-700">{module.metric}</span>
               <h2 className="mt-3 text-2xl font-extrabold text-slate-950">{module.title}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">{module.desc}</p>
-              <span className="mt-5 inline-flex text-sm font-extrabold text-slate-950">Enter workspace</span>
+              <span className="mt-5 inline-flex text-sm font-extrabold text-amber-100/80">Enter workspace</span>
             </Link>
           ))}
         </section>
@@ -285,7 +280,7 @@ export default function Home() {
             </div>
             <div className="mt-3 grid gap-3 lg:grid-cols-[170px_minmax(180px,260px)_minmax(260px,1fr)_auto] lg:items-start">
               <input className="nl-field" name="task_start_date" aria-label="Start date" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
-              <input className="nl-field" name="task_related_page" aria-label="Linked page" value={form.related_page} onChange={(e) => setForm((p) => ({ ...p, related_page: e.target.value }))} placeholder="/mercato-2026" />
+              <input className="nl-field" name="task_related_page" aria-label="Linked page" value={form.related_page} onChange={(e) => setForm((p) => ({ ...p, related_page: e.target.value }))} placeholder="/scouting-lab" />
               <textarea className="nl-field min-h-[46px]" name="task_description" aria-label="Task notes" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} placeholder="Task notes, club context or next action" />
               <div className="flex gap-2">
                 <button type="button" className="nl-button-primary whitespace-nowrap" onClick={saveItem} disabled={saving}>

@@ -7,30 +7,30 @@
     --background: 220 45% 3%;
     --foreground: 210 40% 98%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 218 36% 15%;
+    --card: 225 25% 8%;
+    --card-foreground: 210 40% 98%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 218 36% 15%;
+    --popover: 225 25% 8%;
+    --popover-foreground: 210 40% 98%;
 
-    --primary: 160 84% 30%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 38 92% 64%;
+    --primary-foreground: 24 26% 7%;
 
-    --secondary: 210 35% 94%;
-    --secondary-foreground: 218 36% 15%;
+    --secondary: 225 17% 12%;
+    --secondary-foreground: 210 40% 98%;
 
-    --muted: 210 35% 94%;
-    --muted-foreground: 217 18% 38%;
+    --muted: 225 15% 11%;
+    --muted-foreground: 218 15% 66%;
 
-    --accent: 190 83% 42%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 170 75% 42%;
+    --accent-foreground: 220 45% 3%;
 
     --destructive: 358 72% 48%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 26% 86%;
-    --input: 214 26% 86%;
-    --ring: 160 84% 30%;
+    --border: 220 11% 19%;
+    --input: 220 11% 19%;
+    --ring: 38 92% 64%;
 
     --radius: 0.5rem;
   }
@@ -232,17 +232,17 @@
   }
 
   ::selection {
-    background: rgba(20, 184, 166, 0.22);
+    background: rgba(245, 158, 11, 0.24);
   }
 }
 
 @layer utilities {
   .glass-panel {
-    @apply bg-white/90 backdrop-blur-xl border border-slate-200/80 shadow-[0_18px_50px_rgba(15,23,42,0.08)];
+    @apply border border-white/10 bg-white/[0.045] shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl;
   }
 
   .glass-sidebar {
-    @apply bg-white/90 backdrop-blur-xl border-r border-slate-200/80;
+    @apply border-r border-white/10 bg-black/80 backdrop-blur-xl;
   }
 
   .text-glow {
@@ -250,23 +250,23 @@
   }
 
   .surface-panel {
-    @apply bg-white/95 border border-white/80 shadow-[0_24px_72px_rgba(0,0,0,0.22)] backdrop-blur-xl;
+    @apply border border-white/10 bg-white/[0.045] shadow-[0_22px_70px_rgba(0,0,0,0.32)] backdrop-blur-xl;
   }
 
   .surface-subtle {
-    @apply bg-slate-50 border border-slate-200/80;
+    @apply border border-white/10 bg-white/[0.035];
   }
 
   .nl-field {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition duration-200 placeholder:text-slate-400 focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10;
+    @apply w-full rounded-md border border-white/10 bg-black/[0.35] px-3 py-2 text-sm text-white outline-none transition duration-200 placeholder:text-white/40 focus:border-amber-300/70 focus:ring-4 focus:ring-amber-300/10 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nl-button-primary {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-semibold text-white shadow-sm transition duration-200 hover:bg-slate-900 focus:outline-none focus:ring-4 focus:ring-black/10 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-black shadow-[0_14px_34px_rgba(255,255,255,0.10)] transition duration-200 hover:bg-amber-50 focus:outline-none focus:ring-4 focus:ring-white/15 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nl-button-secondary {
-    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition duration-200 hover:border-slate-950 hover:text-black focus:outline-none focus:ring-4 focus:ring-black/10 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.045] px-4 py-2 text-sm font-semibold text-white/80 transition duration-200 hover:border-white/25 hover:bg-white/[0.075] hover:text-white focus:outline-none focus:ring-4 focus:ring-white/10 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nl-button-ghost {
@@ -274,11 +274,179 @@
   }
 
   .nl-kicker {
-    @apply text-xs font-bold uppercase tracking-[0.16em] text-teal-700;
+    @apply text-xs font-bold uppercase tracking-[0.16em] text-amber-200/80;
   }
 
   .nl-page {
-    @apply min-h-screen bg-hero-pattern text-slate-900;
+    @apply min-h-screen bg-hero-pattern text-white;
+    background-attachment: fixed;
+  }
+
+  .nl-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), transparent 26%),
+      radial-gradient(ellipse at 50% -12%, rgba(245,158,11,0.16), transparent 38%),
+      linear-gradient(90deg, rgba(20,184,166,0.06), transparent 24%, rgba(245,158,11,0.05));
+  }
+
+  .nl-page .surface-panel,
+  .nl-page .glass-panel,
+  .nl-page .rounded-xl.border,
+  .nl-page .rounded-2xl.border,
+  .nl-page .rounded-3xl.border,
+  .nl-page .rounded-lg.border {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .nl-page .text-slate-950,
+  .nl-page .text-slate-900,
+  .nl-page .text-slate-800 {
+    color: rgba(255, 255, 255, 0.94);
+  }
+
+  .nl-page .text-slate-700,
+  .nl-page .text-slate-600 {
+    color: rgba(226, 232, 240, 0.76);
+  }
+
+  .nl-page .text-slate-500,
+  .nl-page .text-slate-400,
+  .nl-page .text-slate-300,
+  .nl-page .text-slate-200,
+  .nl-page .text-slate-100 {
+    color: rgba(203, 213, 225, 0.66);
+  }
+
+  .nl-page .bg-white,
+  .nl-page .bg-white\/80,
+  .nl-page .bg-white\/85,
+  .nl-page .bg-white\/90,
+  .nl-page .bg-white\/95,
+  .nl-page .bg-slate-50,
+  .nl-page .bg-slate-50\/80,
+  .nl-page .bg-slate-50\/90 {
+    background-color: rgba(255, 255, 255, 0.045);
+  }
+
+  .nl-page .bg-slate-100,
+  .nl-page .bg-slate-200 {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .nl-page .border-slate-100,
+  .nl-page .border-slate-200,
+  .nl-page .border-slate-200\/80,
+  .nl-page .border-slate-300,
+  .nl-page .border-white\/70,
+  .nl-page .border-white\/80 {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .nl-page .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+  .nl-page .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .nl-page table {
+    color: rgba(226, 232, 240, 0.82);
+  }
+
+  .nl-page thead,
+  .nl-page .bg-slate-900\/95 {
+    background-color: rgba(255, 255, 255, 0.055);
+  }
+
+  .nl-page tbody tr {
+    transition: background-color 160ms ease, border-color 160ms ease;
+  }
+
+  .nl-page tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .nl-page option {
+    color: #f8fafc;
+    background: #070a11;
+  }
+
+  .nl-page .bg-rose-50 {
+    background-color: rgba(244, 63, 94, 0.12);
+  }
+
+  .nl-page .club-logo-surface.bg-white {
+    background-color: rgba(255, 255, 255, 0.94);
+  }
+
+  .nl-page .club-logo-surface.club-logo-fallback {
+    background-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .nl-page .bg-amber-50 {
+    background-color: rgba(245, 158, 11, 0.12);
+  }
+
+  .nl-page .bg-teal-50,
+  .nl-page .bg-emerald-50,
+  .nl-page .bg-sky-50 {
+    background-color: rgba(20, 184, 166, 0.1);
+  }
+
+  .nl-page .text-rose-700,
+  .nl-page .text-rose-800,
+  .nl-page .text-rose-900 {
+    color: #fda4af;
+  }
+
+  .nl-page .text-amber-700,
+  .nl-page .text-amber-800,
+  .nl-page .text-amber-900 {
+    color: #fcd34d;
+  }
+
+  .nl-page .text-teal-700,
+  .nl-page .text-teal-800,
+  .nl-page .text-teal-900,
+  .nl-page .text-teal-950,
+  .nl-page .text-sky-700,
+  .nl-page .text-sky-800 {
+    color: #5eead4;
+  }
+
+  .nl-page .border-rose-200 {
+    border-color: rgba(244, 63, 94, 0.32);
+  }
+
+  .nl-page .border-amber-200 {
+    border-color: rgba(245, 158, 11, 0.32);
+  }
+
+  .nl-page .border-teal-200,
+  .nl-page .border-sky-200 {
+    border-color: rgba(20, 184, 166, 0.28);
+  }
+
+  .nl-page input[type="date"] {
+    color-scheme: dark;
+  }
+
+  .nl-page .rounded-xl,
+  .nl-page .rounded-2xl,
+  .nl-page .rounded-3xl,
+  .nl-page [class*="rounded-[1.75rem]"],
+  .nl-page [class*="rounded-[2rem]"] {
+    border-radius: 0.5rem;
+  }
+
+  .nl-page .shadow-sm,
+  .nl-page .shadow-lg,
+  .nl-page .shadow-xl,
+  .nl-page .shadow-2xl {
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
   }
 
   .scouting-lab-shell {

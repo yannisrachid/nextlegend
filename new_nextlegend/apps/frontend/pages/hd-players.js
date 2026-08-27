@@ -82,11 +82,12 @@ export default function HdPlayersPage() {
   return (
     <main className="nl-page px-4 py-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
-        <header className="surface-panel rounded-lg p-6 md:p-8">
+        <header className="surface-panel relative overflow-hidden rounded-lg p-6 md:p-8">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/50 to-transparent" />
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <p className="nl-kicker">HD Sports portfolio</p>
-              <h1 className="mt-2 text-4xl font-extrabold text-slate-950 md:text-5xl">
+              <h1 className="mt-2 text-3xl font-semibold text-slate-950 md:text-5xl">
                 Player rooms built for representation.
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
@@ -135,13 +136,13 @@ export default function HdPlayersPage() {
             <Link
               key={item.id}
               href={`/hd-players/${item.id}`}
-              className="surface-panel group overflow-hidden rounded-lg transition hover:-translate-y-0.5 hover:border-teal-500"
+              className="surface-panel group overflow-hidden rounded-lg transition hover:-translate-y-0.5 hover:border-amber-200/35"
             >
-              <div className="relative h-64 bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.18),transparent_34%),linear-gradient(135deg,#f8fafc,#e2e8f0)]">
+              <div className="relative h-64 bg-[linear-gradient(135deg,#0b0f18,#151923)]">
                 {item.photo_url ? (
                   <img src={item.photo_url} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-6xl font-black text-slate-300">
+                  <div className="flex h-full items-center justify-center text-6xl font-black text-white/[0.22]">
                     {initials(item.display_name)}
                   </div>
                 )}
@@ -149,7 +150,7 @@ export default function HdPlayersPage() {
                   <span className={`rounded-full border px-3 py-1 text-xs font-black ${priorityClass(item.priority)}`}>
                     Priority {item.priority || "B"}
                   </span>
-                  <span className="rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-xs font-black text-slate-700">
+                  <span className="rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-black text-white/80 backdrop-blur">
                     {item.assigned_agent || "Unassigned"}
                   </span>
                 </div>

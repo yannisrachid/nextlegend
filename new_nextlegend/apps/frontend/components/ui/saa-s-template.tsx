@@ -114,9 +114,6 @@ const Navigation = React.memo(() => (
         <a href="/hd-players" className="text-sm text-white/60 transition-colors hover:text-white">
           HD Players
         </a>
-        <a href="/mercato-2026" className="text-sm text-white/60 transition-colors hover:text-white">
-          Mercato
-        </a>
         <a href="/scouting-lab" className="text-sm text-white/60 transition-colors hover:text-white">
           Scouting
         </a>

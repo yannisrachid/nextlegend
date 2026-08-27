@@ -30,7 +30,7 @@ export default function ClubLogo({
     };
   }, [name]);
 
-  const baseClass = `${className} shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white`;
+  const baseClass = `${className} club-logo-surface shrink-0 overflow-hidden rounded-md border border-white/10 bg-white`;
   if (logoUrl && !failed) {
     return (
       <span className={baseClass}>
@@ -46,7 +46,7 @@ export default function ClubLogo({
   }
 
   return (
-    <span className={`${baseClass} flex items-center justify-center bg-slate-100 text-[10px] font-black text-slate-500 ${fallbackClassName}`}>
+    <span className={`${baseClass} club-logo-fallback flex items-center justify-center bg-white/[0.06] text-[10px] font-black text-white/60 ${fallbackClassName}`}>
       {initials(name)}
     </span>
   );

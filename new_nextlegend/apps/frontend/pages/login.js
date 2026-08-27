@@ -39,8 +39,8 @@ export default function LoginPage() {
 
   return (
     <main className="nl-page flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-white/10 bg-white shadow-[0_28px_90px_rgba(0,0,0,0.34)] lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="hidden min-h-[560px] flex-col justify-between bg-black p-8 text-white lg:flex">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-white/10 bg-white/[0.045] shadow-[0_32px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="hidden min-h-[560px] flex-col justify-between border-r border-white/10 bg-black/40 p-8 text-white lg:flex">
           <div>
             <img src="/logo_nl.png" alt="Next Legend" className="h-12 w-12 rounded-md bg-white p-1" />
             <p className="mt-6 text-xs font-bold uppercase tracking-[0.16em] text-white/50">
@@ -51,7 +51,7 @@ export default function LoginPage() {
             </h1>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {["Player reports", "Market ranking", "Mercato plans", "Scouting briefs"].map((item) => (
+            {["Player reports", "Market ranking", "Portfolio rooms", "Scouting briefs"].map((item) => (
               <div key={item} className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm font-semibold text-white">
                 {item}
               </div>
