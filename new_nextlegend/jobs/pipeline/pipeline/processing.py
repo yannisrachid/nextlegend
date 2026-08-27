@@ -505,14 +505,15 @@ def profile_similarity(
 
     numeric_vectors = []
     for metric in normalized.keys():
-        values = _coerce_numeric(df[metric]).fillna(0.0)
+        source = df[metric] if metric in df.columns else pd.Series(np.nan, index=df.index)
+        values = _coerce_numeric(source).fillna(0.0)
         if metric in lower_is_better:
             values = -values
         weight_scale = math.sqrt(float(normalized[metric])) if normalized[metric] else 0.0
         numeric_vectors.append(values * weight_scale)
-    numeric_vectors.append(df.get("foot", pd.Series(index=df.index)).apply(_foot_numeric))
-    numeric_vectors.append(_coerce_numeric(df.get("height", pd.Series(index=df.index))))
-    numeric_vectors.append(_coerce_numeric(df.get("weight", pd.Series(index=df.index))))
+    numeric_vectors.append(df.get("foot", pd.Series("", index=df.index, dtype="object")).apply(_foot_numeric))
+    numeric_vectors.append(_coerce_numeric(df.get("height", pd.Series(np.nan, index=df.index, dtype=float))))
+    numeric_vectors.append(_coerce_numeric(df.get("weight", pd.Series(np.nan, index=df.index, dtype=float))))
     vectors = pd.concat(numeric_vectors, axis=1)
     vectors = vectors.apply(pd.to_numeric, errors="coerce").loc[mask_profile].fillna(0.0)
     if vectors.empty:
@@ -1819,6 +1820,22 @@ def _map_similarity_ids(similarity: pd.DataFrame, enriched: pd.DataFrame, team_c
         sim = sim.rename(columns={"competition_name_a": "competition_a"})
     if "competition_name_b" in sim.columns and "competition_b" not in sim.columns:
         sim = sim.rename(columns={"competition_name_b": "competition_b"})
+    native_cols = [
+        "player_a_id",
+        "player_b_id",
+        "player_a",
+        "player_b",
+        "team_a",
+        "team_b",
+        "competition_a",
+        "competition_b",
+        "calendar_a",
+        "calendar_b",
+        "profile",
+        "similarity",
+    ]
+    if set(native_cols).issubset(sim.columns):
+        return sim[native_cols].copy()
 
     key_cols = ["player_id", "player", "competition_name", "calendar"]
     if team_col:
@@ -1883,7 +1900,7 @@ def build_artifacts_from_enriched(
     if "second_position" not in df.columns:
         df = split_positions_cols(df)
 
-    profiles = load_profiles_from_env()
+    profiles = scoring_v2.as_legacy_profiles()
     print(f"[PIPELINE] profils chargés: {len(profiles)}")
     df["league_strength_factor"] = _resolve_league_strength_factors(df)
 
@@ -1896,9 +1913,16 @@ def build_artifacts_from_enriched(
         score_columns.add(profile_name)
         score_columns.add(f"{profile_name}_pct_league")
         score_columns.add(f"{profile_name}_pct_global")
+    already_scored_v2 = (
+        "scoring_model_version" in df.columns
+        and df["scoring_model_version"].astype("string").str.contains("position_groups", na=False).any()
+    )
     for column in score_columns:
         if column in df.columns:
-            df[column] = _scale_score_series(df[column], skip_if_already_scaled=True)
+            if already_scored_v2:
+                df[column] = _coerce_numeric(df[column])
+            else:
+                df[column] = _scale_score_series(df[column], skip_if_already_scaled=True)
     if "global_score_adjusted" in df.columns and "assigned_role_pct_global" in df.columns:
         mask = _coerce_numeric(df["global_score_adjusted"]).notna()
         df.loc[mask, "assigned_role_pct_global"] = df.loc[mask, "global_score_adjusted"]

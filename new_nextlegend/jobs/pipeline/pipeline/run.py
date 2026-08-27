@@ -23,7 +23,7 @@ from botocore.exceptions import ClientError
 from sqlalchemy import create_engine
 from io import BytesIO
 
-from . import processing, db
+from . import processing, db, data_quality
 
 
 @dataclass
@@ -245,6 +245,19 @@ def load_dataframe(path: Path, limit: Optional[int]) -> pd.DataFrame:
     return df
 
 
+def _source_mtime(cfg: PipelineConfig, local_path: Path) -> float | None:
+    if cfg.input_uri.startswith("s3://"):
+        return None
+    source_path = Path(cfg.input_uri).expanduser()
+    if not source_path.is_absolute():
+        source_path = source_path.resolve()
+    if source_path.exists():
+        return source_path.stat().st_mtime
+    if local_path.exists():
+        return local_path.stat().st_mtime
+    return None
+
+
 def process_dataframe(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     return processing.build_artifacts(df)
 
@@ -432,6 +445,9 @@ def main():
     try:
         ensure_bucket_exists(cfg)
         input_path = download_input(cfg, tmp_dir)
+        source_mtime = _source_mtime(cfg, input_path)
+        if source_mtime is not None:
+            os.environ["DATA_FRESHNESS_INPUT_MTIME"] = str(source_mtime)
         upload_raw_if_local(cfg, input_path)
         df_raw = load_dataframe(input_path, cfg.limit)
         if cfg.input_kind == "enriched":
@@ -443,8 +459,9 @@ def main():
         run_log.rows_processed = len(df_raw)
         # Enrich log with artifact sizes
         sizes = {k: len(v) if isinstance(v, pd.DataFrame) else 0 for k, v in artifacts.items()}
+        quality_report = data_quality.validate_artifacts(raw=df_raw, artifacts=artifacts)
         print(f"[PIPELINE] artifact sizes: {sizes}")
-        run_log.message = json.dumps({"artifacts": sizes})
+        run_log.message = json.dumps({"artifacts": sizes, "data_quality": quality_report})
         export_local_artifacts(artifacts)
 
         if not cfg.dry_run:
