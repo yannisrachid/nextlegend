@@ -23,7 +23,7 @@ export default function ScoutingLabShell({ children, me }) {
       <aside className="scouting-lab-sidebar">
         <div className="mb-5">
           <p className="nl-kicker">Scouting Lab</p>
-          <h2 className="mt-2 text-xl font-extrabold text-slate-950">Research desk</h2>
+          <h2 className="mt-2 text-xl font-semibold text-white">Research desk</h2>
         </div>
         <nav className="flex gap-2 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
           {items.map((item) => {
@@ -36,12 +36,12 @@ export default function ScoutingLabShell({ children, me }) {
                 href={item.href}
                 className={`min-w-[150px] rounded-md border px-3 py-3 transition lg:min-w-0 ${
                   isActive
-                    ? "border-teal-600 bg-teal-50 text-teal-900"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-teal-500 hover:text-slate-950"
+                    ? "border-white bg-white text-black shadow-[0_16px_34px_rgba(255,255,255,0.10)]"
+                    : "border-white/10 bg-white/[0.04] text-white/70 hover:border-white/30 hover:bg-white/[0.08] hover:text-white"
                 }`}
               >
                 <span className="block text-sm font-extrabold">{item.label}</span>
-                <span className="mt-1 block text-xs font-semibold text-slate-500">{item.desc}</span>
+                <span className={`mt-1 block text-xs font-semibold ${isActive ? "text-black/60" : "text-white/40"}`}>{item.desc}</span>
               </Link>
             );
           })}

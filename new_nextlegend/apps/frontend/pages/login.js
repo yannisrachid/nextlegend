@@ -39,20 +39,20 @@ export default function LoginPage() {
 
   return (
     <main className="nl-page flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white/90 shadow-[0_28px_90px_rgba(15,23,42,0.12)] backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="hidden min-h-[560px] flex-col justify-between !bg-slate-950 p-8 !text-white lg:flex">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-white/10 bg-white shadow-[0_28px_90px_rgba(0,0,0,0.34)] lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="hidden min-h-[560px] flex-col justify-between bg-black p-8 text-white lg:flex">
           <div>
             <img src="/logo_nl.png" alt="Next Legend" className="h-12 w-12 rounded-md bg-white p-1" />
-            <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-teal-200">
+            <p className="mt-6 text-xs font-bold uppercase tracking-[0.16em] text-white/50">
               Next Legend by HD Sports
             </p>
-            <h1 className="mt-4 max-w-sm text-4xl font-extrabold leading-tight !text-white">
+            <h1 className="mt-4 max-w-sm text-4xl font-semibold leading-tight text-white">
               Intelligence for football decisions that move markets.
             </h1>
           </div>
           <div className="grid grid-cols-2 gap-3">
             {["Player reports", "Market ranking", "Mercato plans", "Scouting briefs"].map((item) => (
-              <div key={item} className="rounded-md border border-white/10 bg-white/10 px-3 py-3 text-sm font-semibold !text-white">
+              <div key={item} className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm font-semibold text-white">
                 {item}
               </div>
             ))}
@@ -100,7 +100,7 @@ export default function LoginPage() {
               autoComplete="current-password"
             />
           </div>
-          {error ? <p className="text-sm text-amber-300">{error}</p> : null}
+          {error ? <p className="text-sm font-semibold text-rose-700">{error}</p> : null}
           <button
             type="submit"
             disabled={loading}

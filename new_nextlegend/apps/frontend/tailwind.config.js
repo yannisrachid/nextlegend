@@ -68,7 +68,7 @@ module.exports = {
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "hero-pattern":
-          "linear-gradient(135deg, rgba(255,255,255,0.96), rgba(241,245,249,0.92) 42%, rgba(236,253,245,0.72)), radial-gradient(circle at 18% 0%, rgba(20,184,166,0.18), transparent 32%), radial-gradient(circle at 88% 8%, rgba(14,165,233,0.14), transparent 34%)",
+          "linear-gradient(135deg, #02040a 0%, #05070c 48%, #0b1f1d 100%)",
       },
       keyframes: {
         "accordion-down": {
