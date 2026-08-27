@@ -607,6 +607,27 @@ def _season_filter_values(value: Optional[str]) -> list[str]:
     return [label for label in sorted(labels) if label]
 
 
+def _apply_season_filter(
+    sql: str,
+    params: dict,
+    season: Optional[str],
+    *,
+    column: str = "ps.calendar",
+    param_prefix: str = "season",
+) -> tuple[str, dict]:
+    if not season:
+        return sql, params
+    season_values = _season_filter_values(season)
+    if len(season_values) <= 1:
+        sql += f" AND {column} = :{param_prefix}"
+        params[param_prefix] = season_values[0] if season_values else season
+    else:
+        key = f"{param_prefix}_values"
+        sql += f" AND {column} = ANY(:{key})"
+        params[key] = season_values
+    return sql, params
+
+
 def _current_season_labels() -> list[str]:
     return _season_filter_values(CURRENT_SEASON_LABEL)
 
@@ -4761,9 +4782,7 @@ def _apply_ranking_filters(
         sql += " AND ps.assigned_role = :role"
         params["role"] = role
     sql, params = _apply_competition_filter(sql, params, competition)
-    if season:
-        sql += " AND ps.calendar = :season"
-        params["season"] = season
+    sql, params = _apply_season_filter(sql, params, season)
     if position:
         sql += " AND ps.position = :position"
         params["position"] = position
@@ -7089,9 +7108,7 @@ def meta_positions(
     """
     params = {}
     sql, params = _apply_competition_filter(sql, params, competition)
-    if season:
-        sql += " AND ps.calendar = :season"
-        params["season"] = season
+    sql, params = _apply_season_filter(sql, params, season)
     sql += " ORDER BY ps.position"
     rows = session.execute(text(sql), params).fetchall()
     return [r.position for r in rows if r.position]
@@ -7111,9 +7128,7 @@ def meta_teams(
     """
     params = {}
     sql, params = _apply_competition_filter(sql, params, competition)
-    if season:
-        sql += " AND ps.calendar = :season"
-        params["season"] = season
+    sql, params = _apply_season_filter(sql, params, season)
     sql += " ORDER BY ps.team_in_selected_period"
     rows = session.execute(text(sql), params).fetchall()
     return [r.team for r in rows if r.team]
@@ -7155,9 +7170,7 @@ def meta_players(
     """
     params = {"limit": limit}
     sql, params = _apply_competition_filter(sql, params, competition)
-    if season:
-        sql += " AND ps.calendar = :season"
-        params["season"] = season
+    sql, params = _apply_season_filter(sql, params, season)
     if team:
         sql += " AND ps.team_in_selected_period = :team"
         params["team"] = team
