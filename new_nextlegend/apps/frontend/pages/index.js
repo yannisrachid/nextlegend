@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { deleteJson, fetchJson, patchJson, postJson } from "@/lib/api";
-import { EmptyState, MetricCard, PageHeader, Panel } from "@/components/ui/product";
+import { EmptyState, PageHeader, Panel } from "@/components/ui/product";
 
 const AGENTS = ["Steven", "Don", "Yannis", "Lidahi"];
 
@@ -22,30 +22,26 @@ const KANBAN_COLUMNS = [
 
 const MODULES = [
   {
-    title: "HQ",
-    href: "/",
-    metric: "Agency command",
-    desc: "Coordinate priorities, owners and decisions across the HD Sports team.",
-  },
-  {
-    title: "HD PLAYERS",
+    title: "HD Players",
     href: "/hd-players",
-    metric: "Player portfolio",
-    desc: "Centralize player rooms, documents, season data and market strategy.",
+    metric: "Portfolio",
+    desc: "Player rooms, documents, season data and market strategy.",
   },
   {
-    title: "NETWORK",
+    title: "Network",
     href: "/crm",
-    metric: "Football relationships",
-    desc: "Manage clubs, players, free-role contacts and prospecting workflows.",
+    metric: "CRM",
+    desc: "Clubs, players, contacts and relationship workflows.",
   },
   {
-    title: "SCOUTING",
+    title: "Scouting Lab",
     href: "/scouting-lab",
-    metric: "Scouting intelligence",
-    desc: "Turn ranking, reports, projections and visuals into clear recommendations.",
+    metric: "Intelligence",
+    desc: "Ranking, reports, projections and visual decision support.",
   },
 ];
+
+const today = () => new Date().toISOString().slice(0, 10);
 
 const emptyForm = {
   title: "",
@@ -53,7 +49,7 @@ const emptyForm = {
   agent_name: "Yannis",
   priority: "medium",
   status: "todo",
-  start_date: new Date().toISOString().slice(0, 10),
+  start_date: today(),
   end_date: "",
   related_page: "/",
 };
@@ -67,6 +63,29 @@ const normalizeStatus = (status) => {
 const priorityClass = (priority) =>
   PRIORITIES.find((item) => item.value === priority)?.className || PRIORITIES[2].className;
 
+const issueKey = (item) => `HQ-${String(item.id || "NEW").padStart(3, "0")}`;
+
+const agentInitials = (name = "HD") =>
+  name
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+const isOpenIssue = (item) => !["done", "completed"].includes(normalizeStatus(item.status));
+
+const dueState = (dateValue) => {
+  if (!dateValue) return { label: "No due date", tone: "neutral" };
+  const due = new Date(`${dateValue}T00:00:00`);
+  const now = new Date(`${today()}T00:00:00`);
+  const diffDays = Math.round((due - now) / 86400000);
+  if (diffDays < 0) return { label: `${Math.abs(diffDays)}d overdue`, tone: "danger" };
+  if (diffDays === 0) return { label: "Due today", tone: "warning" };
+  if (diffDays <= 3) return { label: `Due in ${diffDays}d`, tone: "warning" };
+  return { label: dateValue, tone: "neutral" };
+};
+
 export default function Home() {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -74,18 +93,15 @@ export default function Home() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [agentFilter, setAgentFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverStatus, setDragOverStatus] = useState("");
-  const [playerCount, setPlayerCount] = useState(0);
+  const [issueModalOpen, setIssueModalOpen] = useState(false);
 
   const loadItems = async () => {
     try {
-      const [priorityData, playerData] = await Promise.all([
-        fetchJson("/hq/priorities"),
-        fetchJson("/hd-players"),
-      ]);
+      const priorityData = await fetchJson("/hq/priorities");
       setItems(priorityData.items || []);
-      setPlayerCount((playerData.items || []).length);
       setError("");
     } catch (err) {
       setError(err.message);
@@ -97,24 +113,28 @@ export default function Home() {
   }, []);
 
   const visibleItems = useMemo(() => {
-    if (agentFilter === "all") return items;
-    return items.filter((item) => (item.agent_name || "Yannis") === agentFilter);
-  }, [agentFilter, items]);
+    return items.filter((item) => {
+      const agentOk = agentFilter === "all" || (item.agent_name || "Yannis") === agentFilter;
+      const priorityOk = priorityFilter === "all" || (item.priority || "medium") === priorityFilter;
+      return agentOk && priorityOk;
+    });
+  }, [agentFilter, items, priorityFilter]);
 
   const byStatus = useMemo(() => {
     const groups = Object.fromEntries(KANBAN_COLUMNS.map((column) => [column.value, []]));
     visibleItems.forEach((item) => {
       groups[normalizeStatus(item.status)].push(item);
     });
+    Object.values(groups).forEach((group) => {
+      group.sort((a, b) => {
+        const priorityWeight = { urgent: 0, high: 1, medium: 2, low: 3 };
+        const priorityDelta = (priorityWeight[a.priority] ?? 2) - (priorityWeight[b.priority] ?? 2);
+        if (priorityDelta !== 0) return priorityDelta;
+        return String(a.end_date || "9999-12-31").localeCompare(String(b.end_date || "9999-12-31"));
+      });
+    });
     return groups;
   }, [visibleItems]);
-
-  const activeCount = useMemo(
-    () => items.filter((item) => !["done", "completed"].includes(normalizeStatus(item.status))).length,
-    [items]
-  );
-
-  const urgentCount = useMemo(() => items.filter((item) => item.priority === "urgent").length, [items]);
 
   const statusSummary = useMemo(
     () => KANBAN_COLUMNS.map((column) => ({
@@ -124,7 +144,31 @@ export default function Home() {
     [items]
   );
 
+  const summary = useMemo(() => {
+    const openItems = items.filter(isOpenIssue);
+    const urgentItems = openItems.filter((item) => item.priority === "urgent");
+    const highItems = openItems.filter((item) => item.priority === "high");
+    const reviewItems = openItems.filter((item) => normalizeStatus(item.status) === "review");
+    const overdueItems = openItems.filter((item) => dueState(item.end_date).tone === "danger");
+    const nextActions = [...urgentItems, ...highItems, ...reviewItems]
+      .filter((item, index, source) => source.findIndex((entry) => entry.id === item.id) === index)
+      .slice(0, 4);
+    const ownerLoad = AGENTS.map((agent) => ({
+      agent,
+      count: openItems.filter((item) => (item.agent_name || "Yannis") === agent).length,
+    })).sort((a, b) => b.count - a.count);
+    return { openItems, urgentItems, highItems, reviewItems, overdueItems, nextActions, ownerLoad };
+  }, [items]);
+
+  const openNewIssue = (status = "todo") => {
+    setError("");
+    setEditingId(null);
+    setForm({ ...emptyForm, status, start_date: today() });
+    setIssueModalOpen(true);
+  };
+
   const startEdit = (item) => {
+    setError("");
     setEditingId(item.id);
     setForm({
       title: item.title || "",
@@ -132,15 +176,21 @@ export default function Home() {
       agent_name: item.agent_name || "Yannis",
       priority: item.priority || "medium",
       status: normalizeStatus(item.status),
-      start_date: item.start_date || new Date().toISOString().slice(0, 10),
+      start_date: item.start_date || today(),
       end_date: item.end_date || "",
       related_page: item.related_page || "/",
     });
+    setIssueModalOpen(true);
   };
 
   const resetForm = () => {
     setEditingId(null);
-    setForm({ ...emptyForm, start_date: new Date().toISOString().slice(0, 10) });
+    setForm({ ...emptyForm, start_date: today() });
+  };
+
+  const closeIssueModal = () => {
+    setIssueModalOpen(false);
+    resetForm();
   };
 
   const saveItem = async () => {
@@ -155,7 +205,7 @@ export default function Home() {
       } else {
         await postJson("/hq/priorities", form);
       }
-      resetForm();
+      closeIssueModal();
       await loadItems();
     } catch (err) {
       setError(err.message);
@@ -196,47 +246,138 @@ export default function Home() {
       <div className="mx-auto max-w-[1500px] space-y-6">
         <PageHeader
           eyebrow="HQ"
-          title="HD Sports command room."
-          description="Next Legend brings the agency portfolio, network and scouting intelligence into one operating workspace."
+          title="Agency operating room."
+          description="Priority actions, ownership and decisions for the HD Sports team."
+          actions={
+            <button type="button" className="nl-button-primary" onClick={() => openNewIssue("todo")}>
+              New issue
+            </button>
+          }
         />
 
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Active tasks" value={activeCount} sub="Open workstreams" tone="success" />
-            <MetricCard label="Urgent" value={urgentCount} sub="Needs attention" tone="danger" />
-            <MetricCard label="Agents" value={AGENTS.length} sub="Owners available" />
-            <MetricCard label="Players" value={playerCount} sub="Portfolio rooms" />
-          </div>
-          <Panel className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="nl-kicker">Flow</p>
-                <h2 className="mt-1 text-lg font-semibold text-slate-950">Execution health</h2>
-              </div>
-              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-2.5 py-1 text-xs font-semibold text-[#8CC7A7]">
-                {items.length} total
-              </span>
-            </div>
-            <div className="mt-4 space-y-3">
-              {statusSummary.map((column) => (
-                <div key={column.value}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-500">{column.label}</span>
-                    <span className="font-semibold text-slate-950">{column.count}</span>
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
+          <Panel className="overflow-hidden p-0">
+            <div className="border-b border-white/10 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="nl-kicker">Priority briefing</p>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                    {summary.nextActions.length ? `${summary.nextActions.length} actions need attention` : "No critical action pending"}
+                  </h2>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2">
+                    <p className="text-lg font-semibold text-slate-950">{summary.urgentItems.length}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Urgent</p>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-                    <div
-                      className="h-full rounded-full bg-[#3A8967]"
-                      style={{ width: `${items.length ? Math.max(6, (column.count / items.length) * 100) : 0}%` }}
-                    />
+                  <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2">
+                    <p className="text-lg font-semibold text-slate-950">{summary.reviewItems.length}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Review</p>
+                  </div>
+                  <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2">
+                    <p className="text-lg font-semibold text-slate-950">{summary.overdueItems.length}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Late</p>
                   </div>
                 </div>
-              ))}
+              </div>
+            </div>
+            <div className="divide-y divide-white/10">
+              {summary.nextActions.length ? (
+                summary.nextActions.map((item) => {
+                  const due = dueState(item.end_date);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => startEdit(item)}
+                      className="grid w-full gap-3 px-5 py-4 text-left transition hover:bg-white/[0.045] md:grid-cols-[minmax(0,1fr)_120px_96px]"
+                    >
+                      <span className="min-w-0">
+                        <span className="mb-1 flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-[#8CC7A7]">{issueKey(item)}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityClass(item.priority)}`}>
+                            {item.priority || "medium"}
+                          </span>
+                        </span>
+                        <span className="block truncate text-sm font-semibold text-slate-950">{item.title}</span>
+                        {item.description ? <span className="mt-1 block truncate text-xs text-slate-500">{item.description}</span> : null}
+                      </span>
+                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[10px] text-slate-950">
+                          {agentInitials(item.agent_name)}
+                        </span>
+                        {item.agent_name || "Yannis"}
+                      </span>
+                      <span className={`text-xs font-semibold ${due.tone === "danger" ? "text-rose-700" : due.tone === "warning" ? "text-amber-700" : "text-slate-500"}`}>
+                        {due.label}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="p-5">
+                  <EmptyState
+                    title="Board is under control"
+                    description="No urgent, high-priority or review item is currently blocking the team."
+                    action={
+                      <button type="button" className="nl-button-secondary" onClick={() => openNewIssue("todo")}>
+                        Create next action
+                      </button>
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          </Panel>
+
+          <Panel className="p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="nl-kicker">Ownership</p>
+                <h2 className="mt-1 text-xl font-semibold text-slate-950">Team load</h2>
+              </div>
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-2.5 py-1 text-xs font-semibold text-[#8CC7A7]">
+                {summary.openItems.length} open
+              </span>
+            </div>
+            <div className="mt-5 space-y-4">
+              {summary.ownerLoad.map((owner) => {
+                const width = summary.openItems.length ? Math.max(8, (owner.count / summary.openItems.length) * 100) : 0;
+                return (
+                  <button
+                    key={owner.agent}
+                    type="button"
+                    onClick={() => setAgentFilter(owner.agent)}
+                    className="block w-full rounded-md border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-[#3A8967]/40 hover:bg-white/[0.05]"
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[10px]">
+                          {agentInitials(owner.agent)}
+                        </span>
+                        {owner.agent}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500">{owner.count} open</span>
+                    </span>
+                    <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                      <span className="block h-full rounded-full bg-[#3A8967]" style={{ width: `${width}%` }} />
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="pt-1">
+                {statusSummary.map((column) => (
+                  <div key={column.value} className="mt-2 flex items-center justify-between text-xs">
+                    <span className="text-slate-500">{column.label}</span>
+                    <span className="font-semibold text-slate-950">{column.count}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </Panel>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-3">
           {MODULES.map((module) => (
             <Link key={module.title} href={module.href} className="surface-panel group rounded-lg p-5 transition hover:-translate-y-0.5 hover:border-[#3A8967]/40 hover:bg-white/[0.06]">
               <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#8CC7A7]">{module.metric}</span>
@@ -247,79 +388,75 @@ export default function Home() {
           ))}
         </section>
 
-        <section className="surface-panel rounded-lg p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="nl-kicker">Agent priorities</p>
-              <h2 className="mt-2 text-2xl font-extrabold text-slate-950">Execution board</h2>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Create, assign, filter and move the actions that drive HD Sports decisions each week.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 sm:items-end">
-              <div className="flex flex-wrap gap-2">
-                {["all", ...AGENTS].map((agent) => {
-                  const active = agentFilter === agent;
-                  return (
-                    <button
-                      key={agent}
-                      type="button"
-                      className={`rounded-full border px-3 py-1 text-xs font-extrabold transition ${
-                        active
-                          ? "border-teal-600 bg-teal-600 text-white shadow-sm"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-teal-400"
-                      }`}
-                      onClick={() => setAgentFilter(agent)}
-                    >
-                      {agent === "all" ? "All agents" : agent}
-                    </button>
-                  );
-                })}
+        <section className="surface-panel overflow-hidden rounded-lg">
+          <div className="border-b border-white/10 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="nl-kicker">Agency board</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Issues</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  Jira-style execution board for weekly priorities, ownership and decisions.
+                </p>
               </div>
-              <p className="text-xs font-bold text-slate-500">
-                Showing {visibleItems.length} of {items.length} tasks
-              </p>
+              <button type="button" className="nl-button-primary" onClick={() => openNewIssue("todo")}>
+                New issue
+              </button>
             </div>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {["all", ...AGENTS].map((agent) => {
+                const active = agentFilter === agent;
+                return (
+                  <button
+                    key={agent}
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+                      active
+                        ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8]"
+                        : "border-white/10 bg-white/[0.035] text-white/60 hover:border-white/20 hover:text-white"
+                    }`}
+                    onClick={() => setAgentFilter(agent)}
+                  >
+                    {agent === "all" ? "All owners" : agent}
+                  </button>
+                );
+              })}
+              <span className="mx-1 h-5 w-px bg-white/10" />
+              {["all", ...PRIORITIES.map((priority) => priority.value)].map((priority) => {
+                const active = priorityFilter === priority;
+                return (
+                  <button
+                    key={priority}
+                    type="button"
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold capitalize transition ${
+                      active
+                        ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8]"
+                        : "border-white/10 bg-white/[0.035] text-white/60 hover:border-white/20 hover:text-white"
+                    }`}
+                    onClick={() => setPriorityFilter(priority)}
+                  >
+                    {priority === "all" ? "All priority" : priority}
+                  </button>
+                );
+              })}
+              <span className="ml-auto text-xs font-semibold text-slate-500">
+                Showing {visibleItems.length} of {items.length}
+              </span>
+            </div>
+            {error ? <p className="mt-3 rounded-md border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
           </div>
 
-          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.4fr)_150px_150px_150px_150px]">
-              <input className="nl-field" name="task_title" aria-label="Task title" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="Task title" />
-              <select className="nl-field" name="task_agent" aria-label="Agent" value={form.agent_name} onChange={(e) => setForm((p) => ({ ...p, agent_name: e.target.value }))}>
-                {AGENTS.map((agent) => <option key={agent}>{agent}</option>)}
-              </select>
-              <select className="nl-field" name="task_priority" aria-label="Priority" value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}>
-                {PRIORITIES.map((priority) => <option key={priority.value} value={priority.value}>{priority.label}</option>)}
-              </select>
-              <select className="nl-field" name="task_status" aria-label="Status" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}>
-                {KANBAN_COLUMNS.map((column) => <option key={column.value} value={column.value}>{column.label}</option>)}
-              </select>
-              <input className="nl-field" name="task_due_date" aria-label="Due date" type="date" value={form.end_date} onChange={(e) => setForm((p) => ({ ...p, end_date: e.target.value }))} />
-            </div>
-            <div className="mt-3 grid gap-3 lg:grid-cols-[170px_minmax(180px,260px)_minmax(260px,1fr)_auto] lg:items-start">
-              <input className="nl-field" name="task_start_date" aria-label="Start date" type="date" value={form.start_date} onChange={(e) => setForm((p) => ({ ...p, start_date: e.target.value }))} />
-              <input className="nl-field" name="task_related_page" aria-label="Linked page" value={form.related_page} onChange={(e) => setForm((p) => ({ ...p, related_page: e.target.value }))} placeholder="/scouting-lab" />
-              <textarea className="nl-field min-h-[46px]" name="task_description" aria-label="Task notes" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} placeholder="Task notes, club context or next action" />
-              <div className="flex gap-2">
-                <button type="button" className="nl-button-primary whitespace-nowrap" onClick={saveItem} disabled={saving}>
-                  {saving ? "Saving..." : editingId ? "Update task" : "Create task"}
-                </button>
-                {editingId ? <button type="button" className="nl-button-secondary" onClick={resetForm}>Cancel</button> : null}
-              </div>
-            </div>
-            {error ? <p className="mt-3 text-sm font-semibold text-rose-700">{error}</p> : null}
-          </div>
-
-          <div className="mt-5 grid gap-4 xl:grid-cols-5">
+          <div className="overflow-x-auto">
+          <div className="grid min-w-[1180px] grid-cols-5 gap-3 p-4">
             {KANBAN_COLUMNS.map((column) => {
               const columnItems = byStatus[column.value] || [];
               return (
                 <div
                   key={column.value}
-                  className={`min-h-[360px] rounded-lg border p-3 transition ${
+                  className={`flex min-h-[520px] flex-col rounded-md border transition ${
                     dragOverStatus === column.value
-                      ? "border-teal-500 bg-teal-50 shadow-[inset_0_0_0_2px_rgba(20,184,166,0.22)]"
-                      : "border-slate-200 bg-slate-50/80"
+                      ? "border-[#3A8967] bg-[#2F7D5C]/15 shadow-[inset_0_0_0_1px_rgba(85,154,120,0.25)]"
+                      : "border-white/10 bg-black/20"
                   }`}
                   onDragOver={(event) => {
                     event.preventDefault();
@@ -332,26 +469,44 @@ export default function Home() {
                   }}
                   onDrop={() => handleDrop(column.value)}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-extrabold uppercase tracking-[0.14em] text-slate-950">{column.label}</h3>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">{column.helper}</p>
+                  <div className="sticky top-[64px] z-10 border-b border-white/10 bg-[#070807]/95 p-3 backdrop-blur">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="truncate text-xs font-bold uppercase tracking-[0.14em] text-slate-950">{column.label}</h3>
+                          <span className="rounded-full border border-white/10 bg-white/[0.045] px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                            {columnItems.length}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-slate-500">{column.helper}</p>
+                      </div>
+                      <button type="button" className="nl-icon-button h-8 w-8" onClick={() => openNewIssue(column.value)} aria-label={`Create issue in ${column.label}`}>
+                        +
+                      </button>
                     </div>
-                    <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-extrabold text-slate-700">{columnItems.length}</span>
                   </div>
-                  <div className="mt-3 space-y-3">
+
+                  <div className="flex flex-1 flex-col gap-3 p-3">
                     {columnItems.length === 0 ? (
                       draggedId ? (
-                        <EmptyState title="Drop here" description="Move the selected priority into this lane." />
+                        <EmptyState title="Drop here" description="Move the selected issue into this lane." />
                       ) : (
-                        <EmptyState title="No priority" description="This lane is clear." />
+                        <button
+                          type="button"
+                          onClick={() => openNewIssue(column.value)}
+                          className="rounded-md border border-dashed border-white/15 bg-white/[0.025] px-3 py-8 text-center text-sm font-semibold text-white/55 transition hover:border-[#3A8967]/40 hover:bg-[#2F7D5C]/10 hover:text-white"
+                        >
+                          Add issue
+                        </button>
                       )
                     ) : null}
                     {columnItems.map((item) => (
                       <article
                         key={item.id}
-                        className={`cursor-grab rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition active:cursor-grabbing ${
-                          String(draggedId) === String(item.id) ? "scale-[0.99] opacity-60 ring-2 ring-teal-300" : "hover:-translate-y-0.5 hover:border-teal-300"
+                        className={`group cursor-grab rounded-md border border-white/10 bg-white/[0.045] p-3 shadow-[0_18px_36px_rgba(0,0,0,0.22)] transition active:cursor-grabbing ${
+                          String(draggedId) === String(item.id)
+                            ? "scale-[0.99] opacity-60 ring-2 ring-[#3A8967]/40"
+                            : "hover:-translate-y-0.5 hover:border-[#3A8967]/40 hover:bg-white/[0.065]"
                         }`}
                         draggable
                         onDragStart={(event) => {
@@ -364,36 +519,47 @@ export default function Home() {
                           setDragOverStatus("");
                         }}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="text-sm font-extrabold leading-5 text-slate-950">{item.title}</h4>
-                          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-extrabold uppercase ${priorityClass(item.priority)}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-[#8CC7A7]">{issueKey(item)}</span>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityClass(item.priority)}`}>
                             {item.priority || "medium"}
                           </span>
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(item)}
+                          className="mt-2 line-clamp-2 text-left text-sm font-semibold leading-5 text-slate-950 transition group-hover:text-white"
+                        >
+                          {item.title}
+                        </button>
+                        {item.description ? <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500">{item.description}</p> : null}
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[10px] text-slate-950">
+                              {agentInitials(item.agent_name)}
+                            </span>
                             {item.agent_name || "Yannis"}
                           </span>
-                          {item.end_date ? (
-                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700">
-                              Due {item.end_date}
-                            </span>
-                          ) : null}
+                          <span className={`text-[11px] font-semibold ${dueState(item.end_date).tone === "danger" ? "text-rose-700" : dueState(item.end_date).tone === "warning" ? "text-amber-700" : "text-slate-500"}`}>
+                            {dueState(item.end_date).label}
+                          </span>
                         </div>
-                        {item.description ? <p className="mt-3 text-sm leading-5 text-slate-600">{item.description}</p> : null}
-                        <select
-                          className="nl-field mt-3 h-9 text-xs font-bold"
-                          name={`task_status_${item.id}`}
-                          aria-label={`Move ${item.title}`}
-                          value={normalizeStatus(item.status)}
-                          onChange={(event) => moveItem(item, event.target.value)}
-                        >
-                          {KANBAN_COLUMNS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button type="button" className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-extrabold text-slate-700 hover:border-teal-400" onClick={() => startEdit(item)}>Edit</button>
-                          <button type="button" className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-extrabold text-slate-700 hover:border-rose-300" onClick={() => removeItem(item.id)}>Delete</button>
-                          {item.related_page ? <Link href={item.related_page} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-extrabold text-slate-700 hover:border-teal-400">Open</Link> : null}
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-white/10 pt-3">
+                          {item.related_page ? (
+                            <Link href={item.related_page} className="text-xs font-semibold text-[#8CC7A7] hover:text-white">
+                              Open
+                            </Link>
+                          ) : (
+                            <span />
+                          )}
+                          <div className="flex gap-1 opacity-0 transition group-hover:opacity-100">
+                            <button type="button" className="rounded border border-white/10 bg-white/[0.035] px-2 py-1 text-xs font-semibold text-white/70 hover:text-white" onClick={() => startEdit(item)}>
+                              Edit
+                            </button>
+                            <button type="button" className="rounded border border-rose-400/25 bg-rose-400/10 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-400/15" onClick={() => removeItem(item.id)}>
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       </article>
                     ))}
@@ -402,8 +568,96 @@ export default function Home() {
               );
             })}
           </div>
+          </div>
         </section>
       </div>
+
+      {issueModalOpen ? (
+        <div className="fixed inset-0 z-[8000] flex items-start justify-center overflow-auto bg-black/75 px-4 py-10 backdrop-blur-md" role="dialog" aria-modal="true">
+          <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-white/10 bg-[#080B0A] shadow-[0_42px_120px_rgba(0,0,0,0.62)]">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+              <div>
+                <p className="nl-kicker">{editingId ? issueKey({ id: editingId }) : "New issue"}</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                  {editingId ? "Edit priority issue" : "Create priority issue"}
+                </h2>
+              </div>
+              <button type="button" className="nl-icon-button" onClick={closeIssueModal} aria-label="Close issue form">
+                x
+              </button>
+            </div>
+
+            <div className="space-y-5 p-5">
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Summary</span>
+                <input
+                  className="nl-field h-11"
+                  name="task_title"
+                  aria-label="Task title"
+                  value={form.title}
+                  onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                  placeholder="Example: Send shortlist to Sporting Director"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Description</span>
+                <textarea
+                  className="nl-field min-h-[112px]"
+                  name="task_description"
+                  aria-label="Task notes"
+                  value={form.description}
+                  onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Decision context, club constraints, next action..."
+                />
+              </label>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Owner</span>
+                  <select className="nl-field" name="task_agent" aria-label="Agent" value={form.agent_name} onChange={(event) => setForm((current) => ({ ...current, agent_name: event.target.value }))}>
+                    {AGENTS.map((agent) => <option key={agent}>{agent}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Priority</span>
+                  <select className="nl-field" name="task_priority" aria-label="Priority" value={form.priority} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}>
+                    {PRIORITIES.map((priority) => <option key={priority.value} value={priority.value}>{priority.label}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Status</span>
+                  <select className="nl-field" name="task_status" aria-label="Status" value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}>
+                    {KANBAN_COLUMNS.map((column) => <option key={column.value} value={column.value}>{column.label}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Linked page</span>
+                  <input className="nl-field" name="task_related_page" aria-label="Linked page" value={form.related_page} onChange={(event) => setForm((current) => ({ ...current, related_page: event.target.value }))} placeholder="/scouting-lab" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Start</span>
+                  <input className="nl-field" name="task_start_date" aria-label="Start date" type="date" value={form.start_date} onChange={(event) => setForm((current) => ({ ...current, start_date: event.target.value }))} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Due</span>
+                  <input className="nl-field" name="task_due_date" aria-label="Due date" type="date" value={form.end_date} onChange={(event) => setForm((current) => ({ ...current, end_date: event.target.value }))} />
+                </label>
+              </div>
+              {error ? <p className="rounded-md border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-white/[0.025] p-5">
+              <button type="button" className="nl-button-secondary" onClick={closeIssueModal}>
+                Cancel
+              </button>
+              <button type="button" className="nl-button-primary" onClick={saveItem} disabled={saving}>
+                {saving ? "Saving..." : editingId ? "Update issue" : "Create issue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
