@@ -4,6 +4,16 @@ import dynamic from "next/dynamic";
 import { fetchJson, fetchJsonCached } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
 import { POSITIONS_GLOSSARY } from "@/lib/positionsGlossary";
+import {
+  DEFAULT_MIN_MINUTES,
+  DEFAULT_SCOUTING_COMPETITION,
+  DEFAULT_SCOUTING_SEASON,
+  formatFilterValue,
+  parseIntegerInput,
+  sortCompetitionNames,
+  sortPositions,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -19,9 +29,12 @@ const Label = ({ children }) => (
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -59,47 +72,18 @@ const percentile = (values, p) => {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * weight;
 };
 
-const seasonSortKey = (value) => {
-  if (!value) return -Infinity;
-  const raw = String(value).trim();
-  if (!raw) return -Infinity;
-  const range = raw.match(/^(\d{4})\s*[\/-]\s*(\d{2,4})$/);
-  if (range) {
-    const start = Number(range[1]);
-    const endRaw = range[2];
-    let end = Number(endRaw.length === 2 ? `${range[1].slice(0, 2)}${endRaw}` : endRaw.slice(-4));
-    if (end < start) end += 100;
-    return start * 10000 + end;
-  }
-  const single = raw.match(/^(\d{4})$/);
-  if (single) {
-    const year = Number(single[1]);
-    return year * 10000 + year;
-  }
-  const digits = raw.match(/(\d{4})/g);
-  if (digits?.length) return Number(digits[0]) * 10000 + Number(digits[digits.length - 1]);
-  return -Infinity;
-};
-
-const sortSeasonValues = (values) =>
-  [...(values || [])].sort((a, b) => {
-    const diff = seasonSortKey(b) - seasonSortKey(a);
-    if (diff !== 0) return diff;
-    return String(b || "").localeCompare(String(a || ""), undefined, { sensitivity: "base" });
-  });
-
 export default function StatsResearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [leagueOptions, setLeagueOptions] = useState(["All leagues"]);
-  const [selectedLeague, setSelectedLeague] = useState("All leagues");
+  const [leagueOptions, setLeagueOptions] = useState([DEFAULT_SCOUTING_COMPETITION, "All leagues"]);
+  const [selectedLeague, setSelectedLeague] = useState(DEFAULT_SCOUTING_COMPETITION);
   const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [positions, setPositions] = useState([]);
   const [positionsOpen, setPositionsOpen] = useState(false);
   const [positionsAll, setPositionsAll] = useState(true);
   const [selectedPositions, setSelectedPositions] = useState([]);
-  const [minMinutes, setMinMinutes] = useState(270);
+  const [minMinutes, setMinMinutes] = useState(DEFAULT_MIN_MINUTES);
   const [metrics, setMetrics] = useState([]);
   const [lowerIsBetter, setLowerIsBetter] = useState(new Set());
   const [metricX, setMetricX] = useState("");
@@ -121,26 +105,12 @@ export default function StatsResearchPage() {
           fetchJsonCached("/meta/stats-research/metrics"),
         ]);
         const compNames = (competitions || []).map((item) => item.name).filter(Boolean);
-        const unique = [];
-        const seen = new Set();
-        compNames.forEach((name) => {
-          if (seen.has(name)) return;
-          seen.add(name);
-          if (name === "Big 5 Leagues" || name === "Big 10 Competitions" || name === "First Divisions Only" || name === "Second Divisions Only") {
-            if ((competitions || []).find((item) => item.name === name)?.seasons?.length) {
-              unique.push(name);
-            }
-            return;
-          }
-          unique.push(name);
-        });
-        setLeagueOptions(["All leagues", ...unique]);
-        setSeasons(sortSeasonValues((seasonsData || []).filter(Boolean)));
-        const positionList = (positionsData || []).map((code) => ({
+        setLeagueOptions([...sortCompetitionNames(compNames), "All leagues"]);
+        setSeasons(withDefaultSeason(seasonsData || []));
+        const positionList = sortPositions(positionsData || []).map((code) => ({
           code,
           label: POSITIONS_GLOSSARY[code] || code,
         }));
-        positionList.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
         setPositions(positionList);
         const metricList = Array.from(
           new Set((metricsData?.metrics || []).filter(Boolean))
@@ -431,6 +401,25 @@ export default function StatsResearchPage() {
     ? "All"
     : selectedPositions.map((code) => POSITIONS_GLOSSARY[code] || code).join(", ");
 
+  const activeFilterCount = [
+    selectedLeague !== DEFAULT_SCOUTING_COMPETITION,
+    selectedSeason !== DEFAULT_SCOUTING_SEASON,
+    !positionsAll,
+    minMinutes !== DEFAULT_MIN_MINUTES,
+  ].filter(Boolean).length;
+
+  const resetFilters = () => {
+    setSelectedLeague(DEFAULT_SCOUTING_COMPETITION);
+    setSelectedSeason(DEFAULT_SCOUTING_SEASON);
+    setPositionsAll(true);
+    setSelectedPositions([]);
+    setMinMinutes(DEFAULT_MIN_MINUTES);
+  };
+
+  const updateMinMinutes = (value) => {
+    setMinMinutes(parseIntegerInput(value, 0));
+  };
+
   const handleTableSort = (key) => {
     setTableSort((prev) => {
       if (prev.key === key) {
@@ -500,11 +489,30 @@ export default function StatsResearchPage() {
           </p>
         </header>
 
-        <Card>
+        <Card className="nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Research filters</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Define the analytical cohort</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                {normalizedRows.length} players
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+                {activeFilterCount} custom filters
+              </span>
+              <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetFilters}>
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <Label>League</Label>
-              <Select value={selectedLeague} onChange={(e) => setSelectedLeague(e.target.value)}>
+              <Select id="stats-research-league" value={selectedLeague} onChange={(e) => setSelectedLeague(e.target.value)}>
                 {leagueOptions.map((league) => (
                   <option key={league} value={league}>
                     {league}
@@ -514,7 +522,7 @@ export default function StatsResearchPage() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Season</Label>
-              <Select value={selectedSeason} onChange={(e) => setSelectedSeason(e.target.value)}>
+              <Select id="stats-research-season" value={selectedSeason} onChange={(e) => setSelectedSeason(e.target.value)}>
                 <option value="">All seasons</option>
                 {seasons.map((season) => (
                   <option key={season} value={season}>
@@ -539,11 +547,13 @@ export default function StatsResearchPage() {
               <Label>Minimum minutes</Label>
               <input
                 type="number"
+                inputMode="numeric"
                 min="0"
-                step="30"
+                max="10000"
+                step="1"
                 value={minMinutes}
-                onChange={(e) => setMinMinutes(Number(e.target.value))}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                onChange={(e) => updateMinMinutes(e.target.value)}
+                className="nl-field tabular-nums"
               />
             </div>
           </div>
@@ -579,10 +589,23 @@ export default function StatsResearchPage() {
                 setMetricX(metricY);
                 setMetricY(metricX);
               }}
-              className="px-3 py-2 rounded-md text-xs uppercase tracking-[0.2em] border border-slate-700 text-slate-200 hover:border-slate-500"
+              className="nl-button-secondary px-3 py-2 text-xs"
             >
               Inverse Axis
             </button>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {[
+              ["League", formatFilterValue(selectedLeague, "All leagues")],
+              ["Season", formatFilterValue(selectedSeason, "All seasons")],
+              ["Positions", positionsSummary || "All"],
+              ["Minutes", `${minMinutes}+`],
+            ].map(([label, value]) => (
+              <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+              </span>
+            ))}
+          </div>
           </div>
         </Card>
 

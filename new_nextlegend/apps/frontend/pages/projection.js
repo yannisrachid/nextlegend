@@ -10,6 +10,10 @@ import {
 } from "recharts";
 import { fetchJson, fetchJsonCached } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
+import {
+  DEFAULT_SCOUTING_SEASON,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 
 const DEFAULT_RADAR_METRICS = [
   "goals_per_90",
@@ -83,30 +87,6 @@ const normalizeMetric = (value, maxValue) => {
   return (value / maxValue) * 100;
 };
 
-const seasonSortKey = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return 0;
-  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
-  if (matchRange) {
-    const start = Number(matchRange[1]);
-    const rawEnd = matchRange[2];
-    const end =
-      rawEnd.length === 2
-        ? Math.floor(start / 100) * 100 + Number(rawEnd)
-        : Number(rawEnd.slice(-4));
-    return end * 10000 + start;
-  }
-  const matchYear = text.match(/20\d{2}/);
-  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
-};
-
-const sortSeasonsDesc = (items) =>
-  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
-    const diff = seasonSortKey(b) - seasonSortKey(a);
-    if (diff !== 0) return diff;
-    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
-  });
-
 const ProjectionRadarTooltip = ({ active, payload, label, isPercentile, valueKey, rawKey }) => {
   if (!active || !payload || payload.length === 0) return null;
   const point = payload[0]?.payload;
@@ -139,7 +119,7 @@ export default function ProjectionPage() {
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
   const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [showResults, setShowResults] = useState(false);
   const [report, setReport] = useState(null);
   const [translationLeagues, setTranslationLeagues] = useState([]);
@@ -155,7 +135,7 @@ export default function ProjectionPage() {
 
   useEffect(() => {
     fetchJsonCached("/meta/seasons")
-      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .then((data) => setSeasons(withDefaultSeason(data || [])))
       .catch(() => setSeasons([]));
   }, []);
 
@@ -335,11 +315,22 @@ export default function ProjectionPage() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="relative z-30 lg:col-span-2">
-            <div className="relative">
-              <div className="flex flex-col gap-2 mb-3 max-w-xs">
-                <Label>Season Filter</Label>
+          <Card className="relative z-30 lg:col-span-2 nl-filter-bar p-0">
+            <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="nl-kicker">Projection setup</p>
+                <h2 className="mt-1 text-lg font-semibold text-white">Select the player baseline</h2>
+              </div>
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                {selectedSeason || "All seasons"}
+              </span>
+            </div>
+            <div className="relative space-y-4 p-4">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="flex flex-col gap-2">
+                <Label>Season</Label>
                 <Select
+                  id="projection-season"
                   value={selectedSeason}
                   onChange={(e) => {
                     setSelectedSeason(e.target.value);
@@ -390,6 +381,7 @@ export default function ProjectionPage() {
                   }}
                   onBlur={() => setTimeout(() => setShowResults(false), 150)}
                 />
+              </div>
               </div>
               {showResults && playerQuery.trim().length >= 2 ? (
                 <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl">

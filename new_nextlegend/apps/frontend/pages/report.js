@@ -9,9 +9,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { apiUrl, fetchJson } from "@/lib/api";
+import { apiUrl, fetchJson, fetchJsonCached } from "@/lib/api";
 import ClubLogo from "@/components/ClubLogo";
 import { getMetricConfig, getPositionMeta, getRadarMetricKeys, normalizePositionGroup, POSITION_GROUPS } from "@/lib/reportMetrics";
+import {
+  DEFAULT_SCOUTING_SEASON,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 import {
   AdvancedCharacteristics,
   availableMetricsSummary,
@@ -797,6 +801,8 @@ export default function ReportPage() {
   const [playerQuery, setPlayerQuery] = useState("");
   const [playerResults, setPlayerResults] = useState([]);
   const [showPlayerResults, setShowPlayerResults] = useState(false);
+  const [searchSeasons, setSearchSeasons] = useState([]);
+  const [selectedSearchSeason, setSelectedSearchSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
   const [report, setReport] = useState(null);
@@ -825,20 +831,30 @@ export default function ReportPage() {
   }, [router.isReady, router.query]);
 
   useEffect(() => {
+    fetchJsonCached("/meta/seasons")
+      .then((data) => setSearchSeasons(withDefaultSeason(data || [])))
+      .catch(() => setSearchSeasons([]));
+  }, []);
+
+  useEffect(() => {
     if (playerQuery.trim().length < 2 || selectedPlayerId) {
       setPlayerResults([]);
       return;
     }
     const handle = setTimeout(async () => {
       try {
-        const rows = await fetchJson("/players", { q: playerQuery.trim(), limit: 12 });
+        const rows = await fetchJson("/players", {
+          q: playerQuery.trim(),
+          limit: 12,
+          season: selectedSearchSeason || undefined,
+        });
         setPlayerResults(rows || []);
       } catch (err) {
         console.error(err);
       }
     }, 180);
     return () => clearTimeout(handle);
-  }, [playerQuery, selectedPlayerId]);
+  }, [playerQuery, selectedPlayerId, selectedSearchSeason]);
 
   useEffect(() => {
     if (!selectedPlayerId) {
@@ -1106,7 +1122,31 @@ export default function ReportPage() {
               </div>
             </div>
 
-            <div className="relative z-[9999] 2xl:pt-2">
+            <div className="relative z-[9999] space-y-3 2xl:pt-2">
+              <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+                <label htmlFor="report-search-season" className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  Search season
+                </label>
+                <select
+                  id="report-search-season"
+                  className="nl-field mt-2"
+                  value={selectedSearchSeason}
+                  onChange={(event) => {
+                    setSelectedSearchSeason(event.target.value);
+                    setPlayerResults([]);
+                    if (!selectedPlayerId) {
+                      setShowPlayerResults(playerQuery.trim().length >= 2);
+                    }
+                  }}
+                >
+                  <option value="">All seasons</option>
+                  {searchSeasons.map((season) => (
+                    <option key={season} value={season}>
+                      {season}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <PlayerSearch
                 query={playerQuery}
                 results={playerResults}

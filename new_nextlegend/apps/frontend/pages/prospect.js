@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { deleteJson, fetchJson, fetchJsonCached, patchJson, postJson } from "@/lib/api";
+import {
+  DEFAULT_AGE_MAX,
+  DEFAULT_AGE_MIN,
+  DEFAULT_LIMIT,
+  DEFAULT_MIN_MINUTES,
+  DEFAULT_SCOUTING_COMPETITION,
+  DEFAULT_SCOUTING_SEASON,
+  formatFilterValue,
+  parseIntegerInput,
+  sortCompetitionNames,
+  sortPositions,
+  sortRoles,
+  withDefaultSeason,
+  uniqueOptions,
+} from "@/lib/scoutingFilters";
 
 const STAGES = ["Priority 1", "Priority 2", "Priority 3", "Completed"];
 const TM_BASE_URL = "https://www.transfermarkt.com";
@@ -26,9 +41,12 @@ const Label = ({ children }) => (
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -165,15 +183,15 @@ export default function ProspectPage() {
   const [teams, setTeams] = useState([]);
 
   const [filters, setFilters] = useState({
-    competition: "",
-    season: "",
+    competition: DEFAULT_SCOUTING_COMPETITION,
+    season: DEFAULT_SCOUTING_SEASON,
     role: "",
     position: "",
     team: "",
-    min_minutes: 0,
-    age_min: "",
-    age_max: "",
-    limit: 30,
+    min_minutes: DEFAULT_MIN_MINUTES,
+    age_min: DEFAULT_AGE_MIN,
+    age_max: DEFAULT_AGE_MAX,
+    limit: DEFAULT_LIMIT,
   });
 
   const [clubs, setClubs] = useState([]);
@@ -215,9 +233,9 @@ export default function ProspectPage() {
           fetchJsonCached("/meta/seasons"),
           fetchJsonCached("/meta/roles"),
         ]);
-        setCompetitions(comps);
-        setSeasons(seasonsData);
-        setRoles(rolesData);
+        setCompetitions(comps || []);
+        setSeasons(withDefaultSeason(seasonsData || []));
+        setRoles(sortRoles(rolesData || []));
       } catch (err) {
         console.error(err);
       }
@@ -238,8 +256,8 @@ export default function ProspectPage() {
             season: filters.season,
           }),
         ]);
-        setPositions(positionsData);
-        setTeams(teamsData);
+        setPositions(sortPositions(positionsData || []));
+        setTeams(uniqueOptions(teamsData || []).sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" })));
       } catch (err) {
         console.error(err);
       }
@@ -305,7 +323,10 @@ export default function ProspectPage() {
     }
     const handle = setTimeout(async () => {
       try {
-        const res = await fetchJson("/players", { q: playerQuery.trim() });
+        const res = await fetchJson("/players", {
+          q: playerQuery.trim(),
+          season: filters.season || undefined,
+        });
         const unique = new Map();
         (res || []).forEach((item) => {
           const normalize = (value) =>
@@ -328,7 +349,7 @@ export default function ProspectPage() {
       }
     }, 200);
     return () => clearTimeout(handle);
-  }, [addPlayerNeedId, playerQuery]);
+  }, [addPlayerNeedId, playerQuery, filters.season]);
 
   useEffect(() => {
     if (!showAddProspectResults || !addProspectAnchorRef.current) {
@@ -382,7 +403,10 @@ export default function ProspectPage() {
     }
     const handle = setTimeout(async () => {
       try {
-        const res = await fetchJson("/players", { q: addProspectQuery.trim() });
+        const res = await fetchJson("/players", {
+          q: addProspectQuery.trim(),
+          season: filters.season || undefined,
+        });
         const unique = new Map();
         (res || []).forEach((item) => {
           const normalize = (value) =>
@@ -405,29 +429,80 @@ export default function ProspectPage() {
       }
     }, 200);
     return () => clearTimeout(handle);
-  }, [activeTab, addProspectQuery]);
+  }, [activeTab, addProspectQuery, filters.season]);
 
   const competitionOptions = useMemo(
-    () => ["", ...competitions.map((c) => c.name)],
+    () => ["", ...sortCompetitionNames(competitions.map((c) => c.name))],
     [competitions]
   );
 
   const seasonOptions = useMemo(() => {
+    const allSeasons = withDefaultSeason([filters.season, ...seasons]);
     if (!filters.competition) {
-      return ["", ...seasons];
+      return ["", ...allSeasons];
     }
     const found = competitions.find((c) => c.name === filters.competition);
     if (!found || !found.seasons) {
-      return ["", ...seasons];
+      return ["", ...allSeasons];
     }
-    return ["", ...found.seasons];
-  }, [competitions, seasons, filters.competition]);
+    return ["", ...withDefaultSeason([filters.season, ...found.seasons, ...seasons])];
+  }, [competitions, seasons, filters.competition, filters.season]);
 
-  const totalPages = Math.ceil(total / filters.limit) || 1;
-  const pageLabel = `${page * filters.limit + 1}-${Math.min(
+  const roleOptions = useMemo(() => ["", ...sortRoles([filters.role, ...roles])], [filters.role, roles]);
+  const positionOptions = useMemo(() => ["", ...sortPositions([filters.position, ...positions])], [filters.position, positions]);
+  const teamOptions = useMemo(() => ["", ...uniqueOptions([filters.team, ...teams]).sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" }))], [filters.team, teams]);
+
+  const totalPages = Math.max(1, Math.ceil(total / filters.limit));
+  const pageLabel = `${items.length ? page * filters.limit + 1 : 0}-${Math.min(
     total,
     (page + 1) * filters.limit
   )}`;
+
+  const updateFilter = (patch) => {
+    setFilters((prev) => ({ ...prev, ...patch }));
+    setPage(0);
+  };
+
+  const updateNumericFilter = (key, value, fallback = 0) => {
+    const parsed = parseIntegerInput(value, fallback);
+    setFilters((prev) => {
+      const next = { ...prev, [key]: parsed };
+      if (key === "age_min" && parsed > Number(prev.age_max || parsed)) {
+        next.age_max = parsed;
+      }
+      if (key === "age_max" && parsed < Number(prev.age_min || parsed)) {
+        next.age_min = parsed;
+      }
+      return next;
+    });
+    setPage(0);
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      competition: DEFAULT_SCOUTING_COMPETITION,
+      season: DEFAULT_SCOUTING_SEASON,
+      role: "",
+      position: "",
+      team: "",
+      min_minutes: DEFAULT_MIN_MINUTES,
+      age_min: DEFAULT_AGE_MIN,
+      age_max: DEFAULT_AGE_MAX,
+      limit: filters.limit,
+    });
+    setPage(0);
+  };
+
+  const activeFilterCount = [
+    filters.competition !== DEFAULT_SCOUTING_COMPETITION,
+    filters.season !== DEFAULT_SCOUTING_SEASON,
+    filters.role,
+    filters.position,
+    filters.team,
+    filters.min_minutes !== DEFAULT_MIN_MINUTES,
+    filters.age_min !== DEFAULT_AGE_MIN,
+    filters.age_max !== DEFAULT_AGE_MAX,
+  ].filter(Boolean).length;
 
   const clubOptions = useMemo(() => {
     const items = clubs.map((club) => {
@@ -668,18 +743,35 @@ export default function ProspectPage() {
 
         {activeTab === "players" ? (
           <>
-            <Card>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="nl-filter-bar p-0">
+              <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="nl-kicker">Prospect filters</p>
+                  <h2 className="mt-1 text-lg font-semibold text-white">Control the watched-player cohort</h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                    {total} prospects
+                  </span>
+                  <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+                    {activeFilterCount} custom filters
+                  </span>
+                  <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetFilters}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-4 p-4">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(260px,1.2fr)_minmax(180px,0.8fr)_minmax(220px,1fr)]">
                 <div className="flex flex-col gap-2">
                   <Label>Competition</Label>
                   <Select
+                    id="prospect-competition"
                     value={filters.competition}
                     onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
+                      updateFilter({
                         competition: e.target.value,
-                        season: "",
-                      }))
+                      })
                     }
                   >
                     {competitionOptions.map((opt) => (
@@ -692,9 +784,10 @@ export default function ProspectPage() {
                 <div className="flex flex-col gap-2">
                   <Label>Season</Label>
                   <Select
+                    id="prospect-season"
                     value={filters.season}
                     onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, season: e.target.value }))
+                      updateFilter({ season: e.target.value })
                     }
                   >
                     {seasonOptions.map((opt) => (
@@ -705,17 +798,35 @@ export default function ProspectPage() {
                   </Select>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label>Role</Label>
+                  <Label>Team</Label>
                   <Select
-                    value={filters.role}
+                    id="prospect-team"
+                    value={filters.team}
                     onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, role: e.target.value }))
+                      updateFilter({ team: e.target.value })
                     }
                   >
-                    <option value="">All</option>
-                    {roles.map((role) => (
+                    {teamOptions.map((team) => (
+                      <option key={team} value={team}>
+                        {team || "All teams"}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_repeat(3,minmax(120px,0.55fr))]">
+                <div className="flex flex-col gap-2">
+                  <Label>Position group</Label>
+                  <Select
+                    id="prospect-role"
+                    value={filters.role}
+                    onChange={(e) =>
+                      updateFilter({ role: e.target.value })
+                    }
+                  >
+                    {roleOptions.map((role) => (
                       <option key={role} value={role}>
-                        {role}
+                        {role || "All position groups"}
                       </option>
                     ))}
                   </Select>
@@ -723,31 +834,15 @@ export default function ProspectPage() {
                 <div className="flex flex-col gap-2">
                   <Label>Position</Label>
                   <Select
+                    id="prospect-position"
                     value={filters.position}
                     onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, position: e.target.value }))
+                      updateFilter({ position: e.target.value })
                     }
                   >
-                    <option value="">All</option>
-                    {positions.map((pos) => (
+                    {positionOptions.map((pos) => (
                       <option key={pos} value={pos}>
-                        {pos}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Team</Label>
-                  <Select
-                    value={filters.team}
-                    onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, team: e.target.value }))
-                    }
-                  >
-                    <option value="">All</option>
-                    {teams.map((team) => (
-                      <option key={team} value={team}>
-                        {team}
+                        {pos || "All positions"}
                       </option>
                     ))}
                   </Select>
@@ -756,77 +851,57 @@ export default function ProspectPage() {
                   <Label>Min minutes</Label>
                   <input
                     type="number"
-                    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                    inputMode="numeric"
+                    min={0}
+                    max={10000}
+                    step={1}
+                    className="nl-field tabular-nums"
                     value={filters.min_minutes}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        min_minutes: Number(e.target.value),
-                      }))
-                    }
+                    onChange={(e) => updateNumericFilter("min_minutes", e.target.value, 0)}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Age min</Label>
                   <input
                     type="number"
-                    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                    inputMode="numeric"
+                    min={0}
+                    max={filters.age_max || undefined}
+                    step={1}
+                    className="nl-field tabular-nums"
                     value={filters.age_min}
-                    onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, age_min: e.target.value }))
-                    }
+                    onChange={(e) => updateNumericFilter("age_min", e.target.value, DEFAULT_AGE_MIN)}
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Age max</Label>
                   <input
                     type="number"
-                    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                    inputMode="numeric"
+                    min={filters.age_min || 0}
+                    max={80}
+                    step={1}
+                    className="nl-field tabular-nums"
                     value={filters.age_max}
-                    onChange={(e) =>
-                      setFilters((prev) => ({ ...prev, age_max: e.target.value }))
-                    }
+                    onChange={(e) => updateNumericFilter("age_max", e.target.value, DEFAULT_AGE_MAX)}
                   />
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Results per page</Label>
-                  <Select
-                    value={filters.limit}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        limit: Number(e.target.value),
-                      }))
-                    }
-                  >
-                    {[20, 30, 50, 100].map((val) => (
-                      <option key={val} value={val}>
-                        {val}
-                      </option>
-                    ))}
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Pagination</Label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
-                      disabled={page === 0 || loading}
-                      onClick={() => setPage((p) => Math.max(0, p - 1))}
-                    >
-                      Prev
-                    </button>
-                    <span className="text-xs text-slate-300">{pageLabel}</span>
-                    <button
-                      className="px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 disabled:opacity-50"
-                      disabled={page + 1 >= totalPages || loading}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                  <p className="text-xs text-slate-500">{total} prospects</p>
-                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {[
+                  ["Competition", formatFilterValue(filters.competition, "All competitions")],
+                  ["Season", formatFilterValue(filters.season, "All seasons")],
+                  ["Group", formatFilterValue(filters.role, "All groups")],
+                  ["Position", formatFilterValue(filters.position, "All positions")],
+                  ["Team", formatFilterValue(filters.team, "All teams")],
+                  ["Minutes", `${filters.min_minutes}+`],
+                  ["Age", `${filters.age_min}-${filters.age_max}`],
+                ].map(([label, value]) => (
+                  <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                    <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+                  </span>
+                ))}
+              </div>
               </div>
             </Card>
             <Card>
@@ -999,6 +1074,46 @@ export default function ProspectPage() {
                 ))
               )}
             </section>
+            <Card className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <p className="text-xs font-semibold text-slate-500">
+                Showing {pageLabel} of {total}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Label>Rows per page</Label>
+                <div className="w-24">
+                  <Select
+                    id="prospect-limit"
+                    value={filters.limit}
+                    onChange={(e) => updateFilter({ limit: Number(e.target.value) })}
+                  >
+                    {[20, 30, 50, 100].map((val) => (
+                      <option key={val} value={val}>
+                        {val}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <button
+                  type="button"
+                  className="nl-button-secondary px-3"
+                  disabled={page === 0 || loading}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  Prev
+                </button>
+                <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+                  {page + 1} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="nl-button-secondary px-3"
+                  disabled={page + 1 >= totalPages || loading}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </Card>
           </>
         ) : (
           <>

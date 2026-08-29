@@ -10,6 +10,10 @@ import {
 } from "recharts";
 import { fetchJson, fetchJsonCached } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
+import {
+  DEFAULT_SCOUTING_SEASON,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 
 const DEFAULT_RADAR_METRICS = [
   "goals_per_90",
@@ -28,6 +32,7 @@ const PLAYER_STYLES = [
   { label: "Player 1", color: "#559A78" },
   { label: "Player 2", color: "#C3A56B" },
   { label: "Player 3", color: "#A0A8A3" },
+  { label: "Player 4", color: "#6EA5B8" },
 ];
 
 const EXCLUDED_METRIC_PREFIXES = [
@@ -145,30 +150,6 @@ const makeSortIndicator = (sortConfig, key) => {
   if (sortConfig.key !== key) return "";
   return sortConfig.dir === "asc" ? "^" : "v";
 };
-
-const seasonSortKey = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return 0;
-  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
-  if (matchRange) {
-    const start = Number(matchRange[1]);
-    const rawEnd = matchRange[2];
-    const end =
-      rawEnd.length === 2
-        ? Math.floor(start / 100) * 100 + Number(rawEnd)
-        : Number(rawEnd.slice(-4));
-    return end * 10000 + start;
-  }
-  const matchYear = text.match(/20\d{2}/);
-  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
-};
-
-const sortSeasonsDesc = (items) =>
-  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
-    const diff = seasonSortKey(b) - seasonSortKey(a);
-    if (diff !== 0) return diff;
-    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
-  });
 
 const selectRadarMetrics = (reports, maxCount = 10) => {
   const fallback = DEFAULT_RADAR_METRICS;
@@ -334,30 +315,36 @@ export default function ComparisonPage() {
   const [compareLoading, setCompareLoading] = useState(false);
   const [comparison, setComparison] = useState([]);
   const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [radarContext, setRadarContext] = useState("global");
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   const [radarSort, setRadarSort] = useState({ key: "metric", dir: "asc" });
   const [allMetricsSort, setAllMetricsSort] = useState({ key: "metric", dir: "asc" });
   const [summarySort, setSummarySort] = useState({ key: "metric", dir: "asc" });
 
-  const [selectedPlayers, setSelectedPlayers] = useState([null, null, null]);
+  const [visibleSlots, setVisibleSlots] = useState(2);
+  const [selectedPlayers, setSelectedPlayers] = useState([null, null, null, null]);
 
   useEffect(() => {
     fetchJsonCached("/meta/seasons")
-      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .then((data) => setSeasons(withDefaultSeason(data || [])))
       .catch(() => setSeasons([]));
   }, []);
 
   const search1 = usePlayerSearch((player) => {
-    setSelectedPlayers((prev) => [player, prev[1], prev[2]]);
+    setSelectedPlayers((prev) => [player, prev[1], prev[2], prev[3]]);
   }, selectedSeason);
   const search2 = usePlayerSearch((player) => {
-    setSelectedPlayers((prev) => [prev[0], player, prev[2]]);
+    setSelectedPlayers((prev) => [prev[0], player, prev[2], prev[3]]);
   }, selectedSeason);
   const search3 = usePlayerSearch((player) => {
-    setSelectedPlayers((prev) => [prev[0], prev[1], player]);
+    setSelectedPlayers((prev) => [prev[0], prev[1], player, prev[3]]);
   }, selectedSeason);
+  const search4 = usePlayerSearch((player) => {
+    setSelectedPlayers((prev) => [prev[0], prev[1], prev[2], player]);
+  }, selectedSeason);
+
+  const searches = [search1, search2, search3, search4];
 
   const activeSelections = useMemo(() => {
     return selectedPlayers
@@ -525,6 +512,23 @@ export default function ComparisonPage() {
   const comparisonContextLabel =
     radarContext === "league" ? "League percentile" : "Global percentile";
 
+  const clearSearchSlot = (search) => {
+    search.setQuery("");
+    search.clearSelection();
+    search.setShowResults(false);
+  };
+
+  const addPlayerSlot = () => {
+    setVisibleSlots((count) => Math.min(4, count + 1));
+  };
+
+  const removeOptionalSlot = (index) => {
+    searches.slice(index).forEach(clearSearchSlot);
+    setSelectedPlayers((prev) => prev.map((player, playerIndex) => (playerIndex >= index ? null : player)));
+    setComparison([]);
+    setVisibleSlots(index);
+  };
+
   return (
     <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -536,24 +540,37 @@ export default function ComparisonPage() {
             Player comparison board
           </h1>
           <p className="text-slate-300 max-w-3xl">
-            Compare two or three profiles with shared radars, role context and a complete metric table for recruitment discussions.
+            Compare two to four profiles with shared radars, role context and a complete metric table for recruitment discussions.
           </p>
         </header>
 
-        <Card className="relative z-30">
-          <div className="mb-4 max-w-xs">
+        <Card className="relative z-30 nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Comparison setup</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Build a shared seasonal context</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                {activeSelections.length}/4 selected
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+                {selectedSeason || "All seasons"}
+              </span>
+            </div>
+          </div>
+          <div className="space-y-4 p-4">
+          <div className="max-w-xs">
             <div className="flex flex-col gap-2">
-              <Label>Season Filter</Label>
+              <Label>Season</Label>
               <select
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                className="nl-field"
                 value={selectedSeason}
                 onChange={(e) => {
                   setSelectedSeason(e.target.value);
-                  setSelectedPlayers([null, null, null]);
-                  [search1, search2, search3].forEach((search) => {
-                    search.setQuery("");
-                    search.clearSelection();
-                  });
+                  setSelectedPlayers([null, null, null, null]);
+                  searches.forEach(clearSearchSlot);
+                  setVisibleSlots(2);
                   setComparison([]);
                 }}
               >
@@ -566,14 +583,28 @@ export default function ComparisonPage() {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {[search1, search2, search3].map((search, index) => (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {searches.slice(0, visibleSlots).map((search, index) => (
               <div key={`search-${index}`} className="relative">
                 <div className="flex flex-col gap-2">
-                  <Label>{PLAYER_STYLES[index].label}</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>{PLAYER_STYLES[index].label}</Label>
+                    {index >= 2 ? (
+                      <button
+                        type="button"
+                        className="nl-icon-button h-7 w-7 text-sm"
+                        onClick={() => removeOptionalSlot(index)}
+                        aria-label={`Remove ${PLAYER_STYLES[index].label}`}
+                        title={`Remove ${PLAYER_STYLES[index].label}`}
+                      >
+                        -
+                      </button>
+                    ) : null}
+                  </div>
                   <input
-                    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                    className="nl-field"
                     placeholder="Start typing a player name..."
+                    autoComplete="off"
                     value={search.query}
                     onChange={(e) => {
                       search.setQuery(e.target.value);
@@ -623,20 +654,34 @@ export default function ComparisonPage() {
           </div>
           <div className="flex items-center justify-between flex-wrap gap-3 mt-4">
             <p className="text-sm text-slate-400">
-              Select at least two players, then compare.
+              Select at least two players, then compare. Add up to four when the benchmark requires it.
             </p>
-            <button
-              type="button"
-              onClick={handleCompare}
-              disabled={activeSelections.length < 2 || compareLoading}
-              className={`px-5 py-2 rounded-md text-sm font-semibold uppercase tracking-[0.2em] border transition ${
-                activeSelections.length < 2 || compareLoading
-                  ? "border-slate-700 text-slate-500 cursor-not-allowed"
-                  : "border-emerald-400/60 text-emerald-200 hover:bg-emerald-400/10"
-              }`}
-            >
-              {compareLoading ? "Comparing..." : "Compare"}
-            </button>
+            <div className="flex items-center gap-2">
+              {visibleSlots < 4 ? (
+                <button
+                  type="button"
+                  className="nl-icon-button h-10 w-10 text-lg"
+                  onClick={addPlayerSlot}
+                  aria-label="Add another player"
+                  title="Add another player"
+                >
+                  +
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleCompare}
+                disabled={activeSelections.length < 2 || compareLoading}
+                className={`px-5 py-2 rounded-md text-sm font-semibold uppercase tracking-[0.2em] border transition ${
+                  activeSelections.length < 2 || compareLoading
+                    ? "border-slate-700 text-slate-500 cursor-not-allowed"
+                    : "border-emerald-400/60 text-emerald-200 hover:bg-emerald-400/10"
+                }`}
+              >
+                {compareLoading ? "Comparing..." : "Compare"}
+              </button>
+            </div>
+          </div>
           </div>
         </Card>
 
@@ -649,7 +694,7 @@ export default function ComparisonPage() {
         {comparison.length === 0 ? (
           <Card>
             <p className="text-slate-400">
-              Select two or three players to build a side-by-side recruitment view.
+              Select two to four players to build a side-by-side recruitment view.
             </p>
           </Card>
         ) : (
@@ -687,7 +732,7 @@ export default function ComparisonPage() {
                         <span>{formatScore(item.report.player.assigned_role_pct_league)}</span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Score v2</span>
+                        <span>Score</span>
                         <span>{formatScore(item.report.player.assigned_role_pct_global)}</span>
                       </div>
                     </div>

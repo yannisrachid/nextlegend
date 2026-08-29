@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchJson, fetchJsonCached, postJson, patchJson } from "@/lib/api";
+import {
+  DEFAULT_SCOUTING_SEASON,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 
 const TM_BASE_URL = "https://www.transfermarkt.com";
 
@@ -28,9 +32,12 @@ const Input = ({ value, onChange, placeholder, ...rest }) => (
   />
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-full"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -93,30 +100,6 @@ const getInitials = (value) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
-const seasonSortKey = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return 0;
-  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
-  if (matchRange) {
-    const start = Number(matchRange[1]);
-    const rawEnd = matchRange[2];
-    const end =
-      rawEnd.length === 2
-        ? Math.floor(start / 100) * 100 + Number(rawEnd)
-        : Number(rawEnd.slice(-4));
-    return end * 10000 + start;
-  }
-  const matchYear = text.match(/20\d{2}/);
-  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
-};
-
-const sortSeasonsDesc = (items) =>
-  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
-    const diff = seasonSortKey(b) - seasonSortKey(a);
-    if (diff !== 0) return diff;
-    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
-  });
-
 const extractTmFields = (row) => {
   const tmFields = {};
   Object.entries(row || {}).forEach(([key, value]) => {
@@ -162,7 +145,7 @@ export default function AIPage() {
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
   const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [usageTotal, setUsageTotal] = useState(null);
   const [usageConversation, setUsageConversation] = useState(null);
   const [usageError, setUsageError] = useState("");
@@ -257,7 +240,7 @@ export default function AIPage() {
 
   useEffect(() => {
     fetchJsonCached("/meta/seasons")
-      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .then((data) => setSeasons(withDefaultSeason(data || [])))
       .catch(() => setSeasons([]));
   }, []);
 
@@ -621,11 +604,21 @@ export default function AIPage() {
           </aside>
 
           <section className="space-y-4">
-            <Card>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Card className="nl-filter-bar p-0">
+              <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="nl-kicker">Assistant context</p>
+                  <h2 className="mt-1 text-lg font-semibold text-white">Frame the scouting brief</h2>
+                </div>
+                <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                  {selectedSeason || "All seasons"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-3">
                 <div>
                   <Label>Mode</Label>
                   <Select
+                    id="ai-mode"
                     value={mode}
                     onChange={(e) => setMode(e.target.value)}
                   >
@@ -636,6 +629,7 @@ export default function AIPage() {
                 <div>
                   <Label>Language</Label>
                   <Select
+                    id="ai-language"
                     value={language}
                     onChange={(e) => setLanguage(e.target.value)}
                   >
@@ -645,8 +639,9 @@ export default function AIPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label>Season Filter</Label>
+                  <Label>Season</Label>
                   <Select
+                    id="ai-season"
                     value={selectedSeason}
                     onChange={(e) => {
                       setSelectedSeason(e.target.value);

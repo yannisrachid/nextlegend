@@ -9,6 +9,10 @@ const PRIMARY_NAV = [
   { href: "/scouting-lab", label: "Scouting", icon: "radar" },
 ];
 
+const UTILITY_NAV = [
+  { href: "/settings", label: "Settings", icon: "settings" },
+];
+
 const SCOUTING_NAV = [
   { href: "/ranking", label: "Ranking", icon: "list" },
   { href: "/report", label: "Reports", icon: "file" },
@@ -18,7 +22,10 @@ const SCOUTING_NAV = [
   { href: "/vizualisation", label: "Visuals", icon: "chart" },
   { href: "/prospect", label: "Prospect", icon: "target" },
   { href: "/ai", label: "AI Assistant", icon: "spark" },
-  { href: "/admin", label: "Admin", icon: "shield", adminOnly: true },
+];
+
+const ADMIN_NAV = [
+  { href: "/admin", label: "Admin", icon: "shield", primaryAdminOnly: true },
 ];
 
 const ROUTE_META = [
@@ -35,6 +42,7 @@ const ROUTE_META = [
   { match: /^\/prospect/, title: "Prospect", eyebrow: "Scouting", desc: "Watchlists and scouting pipelines." },
   { match: /^\/ai/, title: "AI Assistant", eyebrow: "Scouting", desc: "Structured scouting briefs." },
   { match: /^\/admin/, title: "Access Control", eyebrow: "Admin", desc: "Users and permissions." },
+  { match: /^\/settings/, title: "Settings", eyebrow: "Workspace", desc: "Profile and security." },
 ];
 
 const iconPaths = {
@@ -51,8 +59,11 @@ const iconPaths = {
   target: ["M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8", "M12 12h.01"],
   spark: ["M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z", "M19 3v4", "M21 5h-4", "M5 17v4", "M7 19H3"],
   shield: ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10", "M9 12l2 2 4-4"],
+  settings: ["M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.52a2 2 0 0 1-1 1.72l-.15.1a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.52a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6"],
   menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
   close: ["m6 6 12 12", "m18 6-12 12"],
+  chevronLeft: ["m15 18-6-6 6-6"],
+  chevronRight: ["m9 18 6-6-6-6"],
   command: ["M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6", "M6 9a3 3 0 1 1 0-6 3 3 0 0 1 0 6", "M18 21a3 3 0 1 1 0-6 3 3 0 0 1 0 6", "M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6", "M9 6h6", "M9 18h6", "M6 9v6", "M18 9v6"],
 };
 
@@ -68,23 +79,33 @@ function useRouteMeta(pathname) {
   return ROUTE_META.find((item) => item.match.test(pathname)) || ROUTE_META[0];
 }
 
-function NavLink({ item, active, onClick }) {
+const initials = (name = "HD") =>
+  String(name || "HD")
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+function NavLink({ item, active, onClick, collapsed = false }) {
   return (
     <Link
       href={item.href}
       onClick={onClick}
-      className={`group flex items-center gap-3 rounded-md border px-3 py-2.5 text-sm font-medium transition ${
+      title={collapsed ? item.label : undefined}
+      aria-label={collapsed ? item.label : undefined}
+      className={`group flex items-center rounded-md border text-sm font-medium transition ${
         active
           ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8]"
           : "border-transparent text-[#A0A8A3] hover:border-white/10 hover:bg-white/[0.045] hover:text-[#F3F5F4]"
-      }`}
+      } ${collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5"}`}
     >
       <span className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
         active ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#7BC39B]" : "border-white/10 bg-white/[0.03] text-[#6F7772] group-hover:text-[#A0A8A3]"
       }`}>
         <Icon name={item.icon} className="h-3.5 w-3.5" />
       </span>
-      <span className="min-w-0 truncate">{item.label}</span>
+      {collapsed ? null : <span className="min-w-0 truncate">{item.label}</span>}
     </Link>
   );
 }
@@ -166,45 +187,91 @@ function CommandPalette({ open, onClose, items }) {
   );
 }
 
-function RightNavigation({ items, scoutingItems, me, onLogout, activeFor, onNavigate }) {
+function MainNavigation({ items, scoutingItems, adminItems = [], utilityItems = [], me, onLogout, activeFor, onNavigate, collapsed = false, onToggleCollapse }) {
   return (
-    <aside className="flex h-full flex-col gap-5 overflow-auto border-l border-white/10 bg-[#060807]/95 px-4 py-4 text-[#F3F5F4] shadow-[inset_1px_0_0_rgba(255,255,255,0.035)]">
-      <Link href="/" onClick={onNavigate} className="flex items-center gap-3 rounded-md border border-white/10 bg-white/[0.035] p-3 transition hover:bg-white/[0.055]">
-        <span className="flex h-10 w-10 items-center justify-center rounded-md bg-white">
+    <aside className={`relative flex h-full flex-col overflow-auto border-r border-white/10 bg-[#060807]/95 py-4 text-[#F3F5F4] shadow-[inset_-1px_0_0_rgba(255,255,255,0.035)] transition-all duration-200 ${collapsed ? "gap-4 px-3" : "gap-5 px-4"}`}>
+      {onToggleCollapse ? (
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="absolute right-2 top-1/2 z-20 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#0A0C0B] text-[#A0A8A3] shadow-[0_12px_28px_rgba(0,0,0,0.35)] transition hover:border-[#3A8967]/45 hover:bg-[#101311] hover:text-white lg:flex"
+          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+          title={collapsed ? "Expand navigation" : "Collapse navigation"}
+        >
+          <Icon name={collapsed ? "chevronRight" : "chevronLeft"} className="h-5 w-5" />
+        </button>
+      ) : null}
+
+      <Link href="/" onClick={onNavigate} className={`flex items-center rounded-md border border-white/10 bg-white/[0.035] transition hover:bg-white/[0.055] ${collapsed ? "justify-center p-2" : "gap-3 p-3"}`}>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white">
           <img src="/logo_nl.png" alt="Next Legend" className="h-7 w-7 object-contain" />
         </span>
-        <span>
-          <span className="block text-sm font-semibold text-[#F3F5F4]">Next Legend</span>
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6F7772]">HD Sports</span>
-        </span>
+        {collapsed ? null : (
+          <span>
+            <span className="block text-sm font-semibold text-[#F3F5F4]">Next Legend</span>
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6F7772]">HD Sports</span>
+          </span>
+        )}
       </Link>
 
       <div className="space-y-2">
-        <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Main</p>
+        {collapsed ? null : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Main</p>}
         <nav className="space-y-1">
           {items.map((item) => (
-            <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} />
+            <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
           ))}
         </nav>
       </div>
 
       <div className="space-y-2">
-        <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Scouting modules</p>
+        {collapsed ? <div className="mx-auto h-px w-8 bg-white/10" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Scouting modules</p>}
         <nav className="space-y-1">
           {scoutingItems.map((item) => (
-            <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} />
+            <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
           ))}
         </nav>
       </div>
 
-      <div className="mt-auto space-y-3 border-t border-white/10 pt-4">
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
-          <p className="text-sm font-medium text-[#F3F5F4]">{me?.display_name || me?.username || "HD Sports"}</p>
-          <p className="mt-1 truncate text-xs text-[#6F7772]">{me?.email || me?.role || "Workspace user"}</p>
+      {adminItems.length ? (
+        <div className="space-y-2">
+          {collapsed ? <div className="mx-auto h-px w-8 bg-white/10" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Administration</p>}
+          <nav className="space-y-1">
+            {adminItems.map((item) => (
+              <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
+            ))}
+          </nav>
         </div>
-        <button type="button" onClick={onLogout} className="nl-button-secondary w-full justify-center">
-          Logout
-        </button>
+      ) : null}
+
+      <div className="mt-auto space-y-3 border-t border-white/10 pt-4">
+        {utilityItems.length ? (
+          <nav className="space-y-1">
+            {utilityItems.map((item) => (
+              <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
+            ))}
+          </nav>
+        ) : null}
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="flex h-10 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-xs font-semibold text-[#A0A8A3] transition hover:bg-white/[0.06] hover:text-white"
+            title="Logout"
+            aria-label="Logout"
+          >
+            {initials(me?.display_name || me?.username || "HD")}
+          </button>
+        ) : (
+          <>
+            <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-sm font-medium text-[#F3F5F4]">{me?.display_name || me?.username || "HD Sports"}</p>
+              <p className="mt-1 truncate text-xs text-[#6F7772]">{me?.email || me?.role || "Workspace user"}</p>
+            </div>
+            <button type="button" onClick={onLogout} className="nl-button-secondary w-full justify-center">
+              Logout
+            </button>
+          </>
+        )}
       </div>
     </aside>
   );
@@ -214,19 +281,32 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const meta = useRouteMeta(router.pathname);
 
   const scoutingItems = useMemo(
-    () => SCOUTING_NAV.filter((item) => !item.adminOnly || me?.role === "admin"),
-    [me?.role]
+    () => SCOUTING_NAV,
+    []
+  );
+
+  const adminItems = useMemo(
+    () => ADMIN_NAV.filter((item) => !item.primaryAdminOnly || me?.username === "yrachid"),
+    [me?.username]
+  );
+
+  const utilityItems = useMemo(
+    () => UTILITY_NAV,
+    []
   );
 
   const commandItems = useMemo(
     () => [
       ...PRIMARY_NAV.map((item) => ({ ...item, section: "Workspace" })),
       ...scoutingItems.map((item) => ({ ...item, section: "Scouting module" })),
+      ...adminItems.map((item) => ({ ...item, section: "Administration" })),
+      ...utilityItems.map((item) => ({ ...item, section: "Account" })),
     ],
-    [scoutingItems]
+    [adminItems, scoutingItems, utilityItems]
   );
 
   useEffect(() => {
@@ -240,6 +320,26 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    try {
+      setNavCollapsed(window.localStorage.getItem("nl_nav_collapsed") === "true");
+    } catch {
+      setNavCollapsed(false);
+    }
+  }, []);
+
+  const toggleNavCollapsed = () => {
+    setNavCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem("nl_nav_collapsed", String(next));
+      } catch {
+        // Ignore storage failures; the UI can still update for this session.
+      }
+      return next;
+    });
+  };
+
   const isActiveItem = (item) => {
     if (item.href === "/scouting-lab") return shouldUseScoutingLab && router.pathname === "/scouting-lab";
     return router.pathname === item.href || (item.href !== "/" && router.pathname.startsWith(item.href));
@@ -247,14 +347,19 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
 
   return (
     <div className="min-h-screen bg-[#050706]">
-      <div className="lg:pr-[292px]">
+      <div className={`transition-[padding] duration-200 ${navCollapsed ? "lg:pl-[88px]" : "lg:pl-[292px]"}`}>
         <header className="sticky top-0 z-50 border-b border-white/10 bg-[#050706]/90 backdrop-blur-xl">
           <div className="flex min-h-[64px] items-center justify-between gap-3 px-4 md:px-6">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">{meta.eyebrow}</p>
-              <div className="flex min-w-0 items-baseline gap-3">
-                <h1 className="truncate text-base font-semibold text-[#F3F5F4] md:text-lg">{meta.title}</h1>
-                <p className="hidden max-w-[540px] truncate text-xs text-[#A0A8A3] xl:block">{meta.desc}</p>
+            <div className="flex min-w-0 items-center gap-3">
+              <button type="button" className="nl-icon-button lg:hidden" onClick={() => setMobileMenuOpen(true)} aria-label="Open navigation">
+                <Icon name="menu" className="h-4 w-4" />
+              </button>
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">{meta.eyebrow}</p>
+                <div className="flex min-w-0 items-baseline gap-3">
+                  <h1 className="truncate text-base font-semibold text-[#F3F5F4] md:text-lg">{meta.title}</h1>
+                  <p className="hidden max-w-[540px] truncate text-xs text-[#A0A8A3] xl:block">{meta.desc}</p>
+                </div>
               </div>
             </div>
 
@@ -264,9 +369,6 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
                 Search
                 <span className="ml-2 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-[#6F7772]">Cmd K</span>
               </button>
-              <button type="button" className="nl-icon-button lg:hidden" onClick={() => setMobileMenuOpen(true)} aria-label="Open navigation">
-                <Icon name="menu" className="h-4 w-4" />
-              </button>
             </div>
           </div>
         </header>
@@ -274,28 +376,34 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
         <div className="min-h-[calc(100vh-64px)]">{children}</div>
       </div>
 
-      <div className="fixed bottom-0 right-0 top-0 z-[60] hidden w-[292px] lg:block">
-        <RightNavigation
+      <div className={`fixed bottom-0 left-0 top-0 z-[60] hidden transition-[width] duration-200 lg:block ${navCollapsed ? "w-[88px]" : "w-[292px]"}`}>
+        <MainNavigation
           items={PRIMARY_NAV}
           scoutingItems={scoutingItems}
+          adminItems={adminItems}
+          utilityItems={utilityItems}
           me={me}
           onLogout={onLogout}
           activeFor={isActiveItem}
           onNavigate={() => setMobileMenuOpen(false)}
+          collapsed={navCollapsed}
+          onToggleCollapse={toggleNavCollapsed}
         />
       </div>
 
       {mobileMenuOpen ? (
         <div className="fixed inset-0 z-[6500] bg-black/70 backdrop-blur-md lg:hidden">
-          <div className="absolute inset-y-0 right-0 w-[min(86vw,330px)]">
-            <div className="absolute left-3 top-3 z-10">
+          <div className="absolute inset-y-0 left-0 w-[min(86vw,330px)]">
+            <div className="absolute right-3 top-3 z-10">
               <button type="button" className="nl-icon-button" onClick={() => setMobileMenuOpen(false)} aria-label="Close navigation">
                 <Icon name="close" className="h-4 w-4" />
               </button>
             </div>
-            <RightNavigation
+            <MainNavigation
               items={PRIMARY_NAV}
               scoutingItems={scoutingItems}
+              adminItems={adminItems}
+              utilityItems={utilityItems}
               me={me}
               onLogout={onLogout}
               activeFor={isActiveItem}

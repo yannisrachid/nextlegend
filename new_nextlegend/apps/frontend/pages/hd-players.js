@@ -15,7 +15,7 @@ const emptyPlayer = {
   demanded_transfer_fee: "",
   next_step: "",
   assigned_agent: "Yannis",
-  photo_url: "",
+  birth_date: "",
 };
 
 const money = (value) => {
@@ -25,6 +25,24 @@ const money = (value) => {
   if (Math.abs(numeric) >= 1000000) return `${Math.round((numeric / 1000000) * 10) / 10}M`;
   if (Math.abs(numeric) >= 1000) return `${Math.round(numeric / 1000)}K`;
   return `${Math.round(numeric)}`;
+};
+
+const storageHref = (url) => {
+  const clean = String(url || "").trim();
+  if (!clean) return "";
+  try {
+    const parsed = new URL(clean);
+    if (parsed.hostname === "api" && parsed.port === "8000") {
+      if (typeof window !== "undefined") {
+        const host = window.location.hostname === "0.0.0.0" ? "localhost" : window.location.hostname;
+        return `${window.location.protocol}//${host}:8000${parsed.pathname}${parsed.search}`;
+      }
+      return `http://localhost:8000${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    return clean;
+  }
+  return clean;
 };
 
 const priorityClass = (priority) => {
@@ -84,8 +102,9 @@ export default function HdPlayersPage() {
       <div className="mx-auto max-w-[1500px] space-y-6">
         <header className="surface-panel relative overflow-hidden rounded-lg p-6 md:p-8">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/50 to-transparent" />
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div>
+          <div className="flex flex-col gap-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
               <p className="nl-kicker">HD Sports portfolio</p>
               <h1 className="mt-2 text-3xl font-semibold text-slate-950 md:text-5xl">
                 Player rooms built for representation.
@@ -93,6 +112,10 @@ export default function HdPlayersPage() {
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
                 Manage every represented player with market strategy, documents, scouting evidence and next actions in one place.
               </p>
+              </div>
+              <button type="button" className="nl-button-primary w-full shrink-0 lg:w-auto" onClick={() => setShowCreate((value) => !value)}>
+                New Player
+              </button>
             </div>
             <div className="flex flex-wrap gap-2">
               <input className="nl-field w-full sm:w-64" name="hd_search" aria-label="Search player or club" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search player or club" />
@@ -100,9 +123,6 @@ export default function HdPlayersPage() {
                 <option value="">All agents</option>
                 {AGENTS.map((name) => <option key={name}>{name}</option>)}
               </select>
-              <button type="button" className="nl-button-primary" onClick={() => setShowCreate((value) => !value)}>
-                New player
-              </button>
             </div>
           </div>
         </header>
@@ -122,8 +142,8 @@ export default function HdPlayersPage() {
                 {AGENTS.map((name) => <option key={name}>{name}</option>)}
               </select>
               <input className="nl-field" name="hd_transfer_fee" aria-label="Demanded transfer fee" value={form.demanded_transfer_fee} onChange={(e) => setForm((p) => ({ ...p, demanded_transfer_fee: e.target.value }))} placeholder="Demanded transfer fee" />
+              <input className="nl-field" name="hd_birth_date" aria-label="Birth date" type="date" value={form.birth_date} onChange={(e) => setForm((p) => ({ ...p, birth_date: e.target.value }))} />
               <input className="nl-field md:col-span-2" name="hd_next_step" aria-label="Next step" value={form.next_step} onChange={(e) => setForm((p) => ({ ...p, next_step: e.target.value }))} placeholder="Next step" />
-              <input className="nl-field md:col-span-2" name="hd_photo_url" aria-label="Photo URL" value={form.photo_url} onChange={(e) => setForm((p) => ({ ...p, photo_url: e.target.value }))} placeholder="Photo URL" />
             </div>
             <button type="button" className="nl-button-primary mt-4" onClick={createPlayer} disabled={saving}>
               {saving ? "Creating..." : "Create player room"}
@@ -140,7 +160,7 @@ export default function HdPlayersPage() {
             >
               <div className="relative h-64 bg-[linear-gradient(135deg,#0b0f18,#151923)]">
                 {item.photo_url ? (
-                  <img src={item.photo_url} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
+                  <img src={storageHref(item.photo_url)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
                 ) : (
                   <div className="flex h-full items-center justify-center text-6xl font-black text-white/[0.22]">
                     {initials(item.display_name)}

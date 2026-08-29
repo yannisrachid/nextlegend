@@ -12,10 +12,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:pointer-events-none disabled:opacity-50";
 
     const variants = {
-      default: "bg-white text-black hover:bg-gray-100",
+      default: "bg-white text-[#050706] hover:bg-gray-100",
       secondary: "bg-gray-800 text-white hover:bg-gray-700",
       ghost: "text-white hover:bg-white/10",
-      gradient: "bg-gradient-to-b from-white via-white/95 to-white/60 text-black hover:scale-[1.02] active:scale-[0.98]",
+      gradient: "bg-gradient-to-b from-white via-white/95 to-white/60 text-[#050706] hover:scale-[1.02] active:scale-[0.98]",
     };
 
     const sizes = {
@@ -61,7 +61,7 @@ const DashboardPreview = React.memo(() => (
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/50">Next Legend</p>
           <h2 className="mt-2 text-xl font-semibold text-white">Scouting command room</h2>
         </div>
-        <div className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-black">Live</div>
+        <div className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-[#050706]">Live</div>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         {[

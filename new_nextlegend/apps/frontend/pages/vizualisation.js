@@ -4,6 +4,14 @@ import { createPortal } from "react-dom";
 import { fetchJson, fetchJsonCached, postJson } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
 import { POSITIONS_GLOSSARY } from "@/lib/positionsGlossary";
+import {
+  DEFAULT_MIN_MINUTES,
+  DEFAULT_SCOUTING_SEASON,
+  formatFilterValue,
+  parseIntegerInput,
+  sortPositions,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -116,9 +124,12 @@ const Label = ({ children }) => (
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -130,30 +141,6 @@ const formatMetricLabel = (key) => {
   if (METRIC_LABELS[key]) return METRIC_LABELS[key];
   return key.replace(/_/g, " ");
 };
-
-const seasonSortKey = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return 0;
-  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
-  if (matchRange) {
-    const start = Number(matchRange[1]);
-    const rawEnd = matchRange[2];
-    const end =
-      rawEnd.length === 2
-        ? Math.floor(start / 100) * 100 + Number(rawEnd)
-        : Number(rawEnd.slice(-4));
-    return end * 10000 + start;
-  }
-  const matchYear = text.match(/20\d{2}/);
-  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
-};
-
-const sortSeasonsDesc = (items) =>
-  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
-    const diff = seasonSortKey(b) - seasonSortKey(a);
-    if (diff !== 0) return diff;
-    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
-  });
 
 const buildDynamicSections = (percentiles, enforceTop) => {
   if (!enforceTop) return { sections: SECTIONS, reason: "Full analytical breakdown retained." };
@@ -190,7 +177,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
   const [copyStatus, setCopyStatus] = useState("");
   const [showZoom, setShowZoom] = useState(false);
   const rounded = values.map((value) => Math.round(value));
-  const colors = rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#01ca0a" : "#4ecc54"));
+  const colors = rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#559A78" : "#3A8967"));
   const sliceCount = Math.max(labels.length, 1);
   const sliceWidth = 360 / sliceCount;
   const angles = labels.map((_, index) => index * sliceWidth + sliceWidth / 2);
@@ -479,7 +466,7 @@ export default function VizualisationPage() {
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
   const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [showResults, setShowResults] = useState(false);
   const [vizData, setVizData] = useState(null);
   const [context, setContext] = useState("League");
@@ -487,7 +474,7 @@ export default function VizualisationPage() {
   const [positionsOpen, setPositionsOpen] = useState(false);
   const [positionsAll, setPositionsAll] = useState(true);
   const [selectedPositions, setSelectedPositions] = useState([]);
-  const [minMinutes, setMinMinutes] = useState(270);
+  const [minMinutes, setMinMinutes] = useState(DEFAULT_MIN_MINUTES);
   const [showOnlyTopGlobal, setShowOnlyTopGlobal] = useState(false);
   const [sectionSelections, setSectionSelections] = useState({});
   const [sectionShowTop, setSectionShowTop] = useState({});
@@ -503,11 +490,10 @@ export default function VizualisationPage() {
   useEffect(() => {
     fetchJsonCached("/meta/positions")
       .then((data) => {
-        const list = (data || []).map((code) => ({
+        const list = sortPositions(data || []).map((code) => ({
           code,
           label: POSITIONS_GLOSSARY[code] || code,
         }));
-        list.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
         setPositions(list);
       })
       .catch((err) => console.error(err));
@@ -515,7 +501,7 @@ export default function VizualisationPage() {
 
   useEffect(() => {
     fetchJsonCached("/meta/seasons")
-      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .then((data) => setSeasons(withDefaultSeason(data || [])))
       .catch(() => setSeasons([]));
   }, []);
 
@@ -661,6 +647,27 @@ export default function VizualisationPage() {
     ? "All"
     : selectedPositions.map((code) => POSITIONS_GLOSSARY[code] || code).join(", ");
 
+  const activeFilterCount = [
+    selectedSeason !== DEFAULT_SCOUTING_SEASON,
+    context !== "League",
+    !positionsAll,
+    minMinutes !== DEFAULT_MIN_MINUTES,
+    showOnlyTopGlobal,
+  ].filter(Boolean).length;
+
+  const resetVisualFilters = () => {
+    setSelectedSeason(DEFAULT_SCOUTING_SEASON);
+    setContext("League");
+    setPositionsAll(true);
+    setSelectedPositions([]);
+    setMinMinutes(DEFAULT_MIN_MINUTES);
+    setShowOnlyTopGlobal(false);
+  };
+
+  const updateMinMinutes = (value) => {
+    setMinMinutes(parseIntegerInput(value, 0));
+  };
+
   const renderPositionsMenu = () => {
     if (!positionsOpen || !isClient) return null;
     return createPortal(
@@ -716,11 +723,27 @@ export default function VizualisationPage() {
           </p>
         </header>
 
-        <Card className="relative z-30">
-          <div className="relative">
-            <div className="flex flex-col gap-2 mb-3 max-w-xs">
-              <Label>Season Filter</Label>
+        <Card className="relative z-30 nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Visual setup</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Select a player and season context</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                {selectedSeason || "All seasons"}
+              </span>
+              <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetVisualFilters}>
+                Reset
+              </button>
+            </div>
+          </div>
+          <div className="relative space-y-4 p-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+            <div className="flex flex-col gap-2">
+              <Label>Season</Label>
               <Select
+                id="visual-season"
                 value={selectedSeason}
                 onChange={(e) => {
                   setSelectedSeason(e.target.value);
@@ -772,6 +795,7 @@ export default function VizualisationPage() {
                 onBlur={() => setTimeout(() => setShowResults(false), 150)}
               />
             </div>
+            </div>
             {showResults && playerQuery.trim().length >= 2 ? (
               <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl">
                 {playerOptions.length === 0 ? (
@@ -794,11 +818,21 @@ export default function VizualisationPage() {
           </div>
         </Card>
 
-        <Card>
+        <Card className="nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Output filters</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Tune the visual reference group</h2>
+            </div>
+            <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+              {activeFilterCount} custom filters
+            </span>
+          </div>
+          <div className="space-y-4 p-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <Label>Context</Label>
-              <Select value={context} onChange={(e) => setContext(e.target.value)}>
+              <Select id="visual-context" value={context} onChange={(e) => setContext(e.target.value)}>
                 <option value="League">League</option>
                 <option value="Global">Global</option>
               </Select>
@@ -819,11 +853,13 @@ export default function VizualisationPage() {
               <Label>Minimum minutes played</Label>
               <input
                 type="number"
+                inputMode="numeric"
                 min="0"
-                step="30"
+                max="10000"
+                step="1"
                 value={minMinutes}
-                onChange={(e) => setMinMinutes(Number(e.target.value))}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                onChange={(e) => updateMinMinutes(e.target.value)}
+                className="nl-field tabular-nums"
               />
             </div>
             <div className="flex flex-col gap-2">
@@ -844,6 +880,19 @@ export default function VizualisationPage() {
             Scout Analyst Engine: {reason}
           </p>
           ) : null}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {[
+              ["Season", formatFilterValue(selectedSeason, "All seasons")],
+              ["Context", context],
+              ["Positions", positionsSummary || "All"],
+              ["Minutes", `${minMinutes}+`],
+            ].map(([label, value]) => (
+              <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+              </span>
+            ))}
+          </div>
+          </div>
         </Card>
 
         {error && (

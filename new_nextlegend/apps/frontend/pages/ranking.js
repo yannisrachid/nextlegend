@@ -3,6 +3,67 @@ import ClubLogo from "@/components/ClubLogo";
 import { fetchJson, fetchJsonCached } from "@/lib/api";
 
 const TM_BASE_URL = "https://www.transfermarkt.com";
+const DEFAULT_COMPETITION = "Big 5 Leagues";
+const DEFAULT_SEASON = "2026/2027";
+const DEFAULT_MIN_MINUTES = 90;
+const DEFAULT_AGE_MIN = 15;
+const DEFAULT_AGE_MAX = 45;
+const DEFAULT_LIMIT = 30;
+
+const DEFAULT_FILTERS = {
+  competition: DEFAULT_COMPETITION,
+  season: DEFAULT_SEASON,
+  role: "",
+  position: "",
+  team: "",
+  min_minutes: DEFAULT_MIN_MINUTES,
+  age_min: DEFAULT_AGE_MIN,
+  age_max: DEFAULT_AGE_MAX,
+  limit: DEFAULT_LIMIT,
+};
+
+const POSITION_ORDER = [
+  "GK",
+  "RB",
+  "RCB",
+  "CB",
+  "LCB",
+  "LB",
+  "RWB",
+  "LWB",
+  "DMF",
+  "RDMF",
+  "LDMF",
+  "RMF",
+  "RCMF",
+  "CMF",
+  "LCMF",
+  "LMF",
+  "RAMF",
+  "AMF",
+  "LAMF",
+  "RW",
+  "LW",
+  "RWF",
+  "LWF",
+  "SS",
+  "CF",
+];
+
+const ROLE_ORDER_HINTS = [
+  ["goalkeeper", "keeper"],
+  ["centre back", "center back", "central defender", "ball-playing centre back", "ball playing centre back"],
+  ["right back", "right backs", "right fullback", "right fullbacks", "full-back right", "rwb"],
+  ["left back", "left backs", "left fullback", "left fullbacks", "full-back left", "lwb"],
+  ["defensive midfielder", "defensive midfielders", "holding midfielder", "dmf"],
+  ["central midfielder", "central midfielders", "centre midfielder", "centre midfielders", "cmf", "box-to-box"],
+  ["attacking midfielder", "attacking midfielders", "amf", "playmaker"],
+  ["right winger", "right wingers", "right midfielder", "right midfielders", "rw", "rmf"],
+  ["left winger", "left wingers", "left midfielder", "left midfielders", "lw", "lmf"],
+  ["forward", "forwards", "striker", "strikers", "centre forward", "centre forwards", "center forward", "center forwards", "cf"],
+];
+
+const EXCLUDED_POSITION_VALUES = new Set(["NA", "<NA>", "N/A", "NONE", "NULL", "-", "--"]);
 
 const Card = ({ children, className = "", ...props }) => (
   <div
@@ -37,6 +98,86 @@ const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
     {children}
   </select>
 );
+
+const normalizeSelectValue = (value) => String(value || "").trim();
+
+const isValidPositionValue = (value) => {
+  const normalized = normalizeSelectValue(value).toUpperCase();
+  return Boolean(normalized) && !EXCLUDED_POSITION_VALUES.has(normalized);
+};
+
+const seasonSortKey = (value) => {
+  const raw = String(value || "");
+  const match = raw.match(/\d{4}/g);
+  if (!match?.length) return 0;
+  return Number(match[0]) || 0;
+};
+
+const sortSeasonsDesc = (values = []) =>
+  uniqueOptions(values)
+    .sort((a, b) => {
+      const diff = seasonSortKey(b) - seasonSortKey(a);
+      return diff || String(b).localeCompare(String(a));
+    });
+
+const uniqueOptions = (values = []) => {
+  const seen = new Set();
+  return values.filter((value) => {
+    const normalized = normalizeSelectValue(value);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+};
+
+const positionSortValue = (value) => {
+  const normalized = normalizeSelectValue(value).toUpperCase();
+  const index = POSITION_ORDER.indexOf(normalized);
+  if (index >= 0) return index;
+  if (normalized.includes("GK")) return 0;
+  if (normalized.includes("CB")) return 3;
+  if (normalized.includes("RB")) return 1;
+  if (normalized.includes("LB")) return 5;
+  if (normalized.includes("WB")) return 6;
+  if (normalized.includes("DM")) return 8;
+  if (normalized.includes("CM")) return 12;
+  if (normalized.includes("AM")) return 17;
+  if (normalized.includes("RW")) return 19;
+  if (normalized.includes("LW")) return 20;
+  if (normalized.includes("CF") || normalized.includes("ST")) return 24;
+  return 99;
+};
+
+const sortPositions = (values = []) =>
+  uniqueOptions(values)
+    .filter(isValidPositionValue)
+    .sort((a, b) => {
+      const diff = positionSortValue(a) - positionSortValue(b);
+      return diff || String(a).localeCompare(String(b));
+    });
+
+const roleSortValue = (value) => {
+  const normalized = normalizeSelectValue(value).toLowerCase();
+  const index = ROLE_ORDER_HINTS.findIndex((hints) =>
+    hints.some((hint) => (hint.length <= 3 ? normalized === hint : normalized.includes(hint)))
+  );
+  return index >= 0 ? index : 99;
+};
+
+const sortRoles = (values = []) =>
+  uniqueOptions(values).sort((a, b) => {
+    const diff = roleSortValue(a) - roleSortValue(b);
+    return diff || String(a).localeCompare(String(b));
+  });
+
+const parseIntegerInput = (value, fallback = 0) => {
+  const raw = String(value ?? "").replace(/[^\d]/g, "");
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatFilterValue = (value, fallback) => normalizeSelectValue(value) || fallback;
 
 const toAbsoluteUrl = (value) => {
   if (!value) return "";
@@ -107,17 +248,7 @@ export default function RankingPage() {
   const [positions, setPositions] = useState([]);
   const [teams, setTeams] = useState([]);
 
-  const [filters, setFilters] = useState({
-    competition: "",
-    season: "",
-    role: "",
-    position: "",
-    team: "",
-    min_minutes: 270,
-    age_min: "",
-    age_max: "",
-    limit: 30,
-  });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -194,25 +325,29 @@ export default function RankingPage() {
     loadData();
   }, [filters, page]);
 
-  const competitionOptions = useMemo(
-    () => ["", ...competitions.map((c) => c.name)],
-    [competitions]
-  );
+  const competitionOptions = useMemo(() => {
+    const aggregateNames = ["Big 5 Leagues", "Big 8 Leagues", "First Divisions Only", "Lower Divisions Only"];
+    const names = uniqueOptions([DEFAULT_COMPETITION, ...competitions.map((c) => c.name)]);
+    const aggregates = aggregateNames.filter((name) => names.includes(name));
+    const regular = names.filter((name) => !aggregateNames.includes(name)).sort((a, b) => String(a).localeCompare(String(b)));
+    return ["", ...aggregates, ...regular];
+  }, [competitions]);
 
   const seasonOptions = useMemo(() => {
+    const allSeasons = sortSeasonsDesc([DEFAULT_SEASON, filters.season, ...seasons]);
     if (!filters.competition) {
-      return ["", ...seasons];
+      return ["", ...allSeasons];
     }
     const found = competitions.find((c) => c.name === filters.competition);
     if (!found || !found.seasons) {
-      return ["", ...seasons];
+      return ["", ...allSeasons];
     }
-    return ["", ...found.seasons];
-  }, [competitions, seasons, filters.competition]);
+    return ["", ...sortSeasonsDesc([DEFAULT_SEASON, filters.season, ...found.seasons, ...seasons])];
+  }, [competitions, seasons, filters.competition, filters.season]);
 
-  const roleOptions = useMemo(() => ["", ...roles], [roles]);
-  const positionOptions = useMemo(() => ["", ...positions], [positions]);
-  const teamOptions = useMemo(() => ["", ...teams], [teams]);
+  const roleOptions = useMemo(() => ["", ...sortRoles([filters.role, ...roles])], [roles, filters.role]);
+  const positionOptions = useMemo(() => ["", ...sortPositions([filters.position, ...positions])], [positions, filters.position]);
+  const teamOptions = useMemo(() => ["", ...uniqueOptions([filters.team, ...teams]).sort((a, b) => String(a).localeCompare(String(b)))], [teams, filters.team]);
 
   const totalPages = Math.max(1, Math.ceil(total / filters.limit));
   const pageLabel = `Page ${page + 1} / ${totalPages}`;
@@ -221,6 +356,37 @@ export default function RankingPage() {
     setFilters((prev) => ({ ...prev, ...patch }));
     setPage(0);
   };
+
+  const updateNumericFilter = (key, value, fallback = 0) => {
+    const parsed = parseIntegerInput(value, fallback);
+    setFilters((prev) => {
+      const next = { ...prev, [key]: parsed };
+      if (key === "age_min" && parsed > Number(prev.age_max || parsed)) {
+        next.age_max = parsed;
+      }
+      if (key === "age_max" && parsed < Number(prev.age_min || parsed)) {
+        next.age_min = parsed;
+      }
+      return next;
+    });
+    setPage(0);
+  };
+
+  const resetFilters = () => {
+    setFilters(DEFAULT_FILTERS);
+    setPage(0);
+  };
+
+  const activeFilterCount = [
+    filters.competition && filters.competition !== DEFAULT_COMPETITION,
+    filters.season && filters.season !== DEFAULT_SEASON,
+    filters.role,
+    filters.position,
+    filters.team,
+    filters.min_minutes !== DEFAULT_MIN_MINUTES,
+    filters.age_min !== DEFAULT_AGE_MIN,
+    filters.age_max !== DEFAULT_AGE_MAX,
+  ].filter(Boolean).length;
 
   return (
     <main className="nl-page px-4 py-8">
@@ -237,15 +403,34 @@ export default function RankingPage() {
           </p>
         </header>
 
-        <Card className="nl-filter-bar">
-          <div className="grid grid-cols-1 lg:grid-cols-6 gap-4">
-            <div className="flex flex-col gap-2">
+        <Card className="nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Cohort builder</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Filter the player universe</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                {total} players
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+                {activeFilterCount} custom filters
+              </span>
+              <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetFilters}>
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(260px,1.2fr)_minmax(180px,0.8fr)_minmax(220px,1fr)]">
+              <div className="flex flex-col gap-2">
               <Label htmlFor="ranking-competition">Competition</Label>
               <Select
                 id="ranking-competition"
                 value={filters.competition}
                 onChange={(e) =>
-                  updateFilter({ competition: e.target.value, season: "", team: "" })
+                  updateFilter({ competition: e.target.value })
                 }
               >
                 {competitionOptions.map((c) => (
@@ -255,7 +440,7 @@ export default function RankingPage() {
                 ))}
               </Select>
             </div>
-            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
               <Label htmlFor="ranking-season">Season</Label>
               <Select
                 id="ranking-season"
@@ -269,35 +454,7 @@ export default function RankingPage() {
                 ))}
               </Select>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ranking-role">Position group</Label>
-              <Select
-                id="ranking-role"
-                value={filters.role}
-                onChange={(e) => updateFilter({ role: e.target.value })}
-              >
-                {roleOptions.map((r) => (
-                  <option key={r} value={r}>
-                    {r || "All position groups"}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ranking-position">Position</Label>
-              <Select
-                id="ranking-position"
-                value={filters.position}
-                onChange={(e) => updateFilter({ position: e.target.value })}
-              >
-                {positionOptions.map((p) => (
-                  <option key={p} value={p}>
-                    {p || "All positions"}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
               <Label htmlFor="ranking-team">Team</Label>
               <Select
                 id="ranking-team"
@@ -311,88 +468,115 @@ export default function RankingPage() {
                 ))}
               </Select>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ranking-min-minutes">Min minutes</Label>
-              <input
-                id="ranking-min-minutes"
-                name="min_minutes"
-                aria-label="Minimum minutes"
-                type="number"
-                min={0}
-                className="nl-field"
-                value={filters.min_minutes}
-                onChange={(e) =>
-                  updateFilter({
-                    min_minutes: Number(e.target.value || 0),
-                  })
-                }
-              />
             </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ranking-age-min">Age min</Label>
-              <input
-                id="ranking-age-min"
-                name="age_min"
-                aria-label="Minimum age"
-                type="number"
-                min={0}
-                className="nl-field"
-                value={filters.age_min}
-                onChange={(e) => updateFilter({ age_min: e.target.value })}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ranking-age-max">Age max</Label>
-              <input
-                id="ranking-age-max"
-                name="age_max"
-                aria-label="Maximum age"
-                type="number"
-                min={0}
-                className="nl-field"
-                value={filters.age_max}
-                onChange={(e) => updateFilter({ age_max: e.target.value })}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ranking-limit">Rows per page</Label>
-              <Select
-                id="ranking-limit"
-                value={filters.limit}
-                onChange={(e) => updateFilter({ limit: Number(e.target.value) })}
-              >
-                {[20, 30, 50, 100].map((val) => (
-                  <option key={val} value={val}>
-                    {val}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>Pagination</Label>
-              <div className="flex items-center gap-2">
-                <button
-                  className="nl-button-secondary px-3"
-                  disabled={page === 0 || loading}
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.8fr)_repeat(3,minmax(120px,0.55fr))]">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ranking-role">Position group</Label>
+                <Select
+                  id="ranking-role"
+                  value={filters.role}
+                  onChange={(e) => updateFilter({ role: e.target.value })}
                 >
-                  Prev
-                </button>
-                <span className="text-xs font-semibold text-slate-600">{pageLabel}</span>
-                <button
-                  className="nl-button-secondary px-3"
-                  disabled={page + 1 >= totalPages || loading}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </button>
+                  {roleOptions.map((r) => (
+                    <option key={r} value={r}>
+                      {r || "All position groups"}
+                    </option>
+                  ))}
+                </Select>
               </div>
-              <p className="text-xs font-semibold text-slate-500">{total} players</p>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ranking-position">Position</Label>
+                <Select
+                  id="ranking-position"
+                  value={filters.position}
+                  onChange={(e) => updateFilter({ position: e.target.value })}
+                >
+                  {positionOptions.map((p) => (
+                    <option key={p} value={p}>
+                      {p || "All positions"}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ranking-min-minutes">Min minutes</Label>
+                <input
+                  id="ranking-min-minutes"
+                  name="min_minutes"
+                  aria-label="Minimum minutes"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={10000}
+                  step={1}
+                  className="nl-field tabular-nums"
+                  value={filters.min_minutes}
+                  onChange={(e) => updateNumericFilter("min_minutes", e.target.value, 0)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ranking-age-min">Age min</Label>
+                <input
+                  id="ranking-age-min"
+                  name="age_min"
+                  aria-label="Minimum age"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={filters.age_max || undefined}
+                  step={1}
+                  className="nl-field tabular-nums"
+                  value={filters.age_min}
+                  onChange={(e) => updateNumericFilter("age_min", e.target.value, DEFAULT_AGE_MIN)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="ranking-age-max">Age max</Label>
+                <input
+                  id="ranking-age-max"
+                  name="age_max"
+                  aria-label="Maximum age"
+                  type="number"
+                  inputMode="numeric"
+                  min={filters.age_min || 0}
+                  max={80}
+                  step={1}
+                  className="nl-field tabular-nums"
+                  value={filters.age_max}
+                  onChange={(e) => updateNumericFilter("age_max", e.target.value, DEFAULT_AGE_MAX)}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {[
+                ["Competition", formatFilterValue(filters.competition, "All competitions")],
+                ["Season", formatFilterValue(filters.season, "All seasons")],
+                ["Group", formatFilterValue(filters.role, "All groups")],
+                ["Position", formatFilterValue(filters.position, "All positions")],
+                ["Team", formatFilterValue(filters.team, "All teams")],
+                ["Minutes", `${filters.min_minutes}+`],
+                ["Age", `${filters.age_min}-${filters.age_max}`],
+              ].map(([label, value]) => (
+                <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                  <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+                </span>
+              ))}
             </div>
           </div>
         </Card>
+
+        <Card className="overflow-hidden p-0">
+          <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white">Ranking results</p>
+              <p className="mt-0.5 text-xs font-semibold text-slate-500">{pageLabel} · {total} players</p>
+            </div>
+            <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+              Sorted by Score
+            </div>
+          </div>
 
         {error && (
           <Card>
@@ -400,7 +584,6 @@ export default function RankingPage() {
           </Card>
         )}
 
-        <Card className="overflow-hidden p-0">
           {loading ? (
             <div className="space-y-3 p-4">
               {Array.from({ length: 8 }).map((_, index) => (
@@ -514,7 +697,7 @@ export default function RankingPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <p className="text-xl font-semibold text-[#8CC7A7]">{row.global_score_adjusted?.toFixed(1) ?? "—"}</p>
-                          <p className="text-[11px] text-slate-500">Score v2</p>
+                          <p className="text-[11px] text-slate-500">Score</p>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <p className="font-semibold text-slate-950">
@@ -529,6 +712,44 @@ export default function RankingPage() {
               </table>
             </div>
           )}
+          <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs font-semibold text-slate-500">
+              Showing {items.length ? page * filters.limit + 1 : 0}-{Math.min(total, (page + 1) * filters.limit)} of {total}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor="ranking-limit">Rows per page</Label>
+              <div className="w-24">
+                <Select
+                  id="ranking-limit"
+                  value={filters.limit}
+                  onChange={(e) => updateFilter({ limit: Number(e.target.value) })}
+                >
+                  {[20, 30, 50, 100].map((val) => (
+                    <option key={val} value={val}>
+                      {val}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <button
+                type="button"
+                className="nl-button-secondary px-3"
+                disabled={page === 0 || loading}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                Prev
+              </button>
+              <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">{page + 1} / {totalPages}</span>
+              <button
+                type="button"
+                className="nl-button-secondary px-3"
+                disabled={page + 1 >= totalPages || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </Card>
       </div>
     </main>

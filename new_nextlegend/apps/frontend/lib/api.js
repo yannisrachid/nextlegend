@@ -106,6 +106,26 @@ export async function patchJson(path, body = {}) {
   return res.json();
 }
 
+export async function postForm(path, formData, params = {}) {
+  const res = await fetch(apiUrl(path, params), {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    if (
+      res.status === 401 &&
+      typeof window !== "undefined" &&
+      !path.startsWith("/auth")
+    ) {
+      window.location.href = "/login";
+    }
+    throw new Error(`API error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 export async function fetchJsonCached(
   path,
   params = {},

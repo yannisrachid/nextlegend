@@ -11,21 +11,23 @@ const LAB_ITEMS = [
   { href: "/vizualisation", label: "Visuals", desc: "Export assets" },
   { href: "/prospect", label: "Prospect", desc: "Watchlists" },
   { href: "/ai", label: "AI", desc: "Scouting briefs" },
-  { href: "/admin", label: "Admin", desc: "Access control", adminOnly: true },
 ];
 
 export default function ScoutingLabShell({ children, me }) {
   const router = useRouter();
-  const items = LAB_ITEMS.filter((item) => !item.adminOnly || me?.role === "admin");
+  const isLabHome = router.pathname === "/scouting-lab";
+  const items = LAB_ITEMS;
 
   return (
     <div className="scouting-lab-shell">
       <aside className="scouting-lab-sidebar">
-        <div className="min-w-[180px]">
-          <p className="nl-kicker">Scouting Lab</p>
-          <h2 className="mt-1 text-lg font-semibold text-white">Research desk</h2>
-        </div>
-        <nav className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        {isLabHome ? (
+          <div className="min-w-0 shrink-0 xl:w-[180px]">
+            <p className="nl-kicker">Scouting Lab</p>
+            <h2 className="mt-1 text-lg font-semibold text-white">Research desk</h2>
+          </div>
+        ) : null}
+        <nav className="flex w-full min-w-0 flex-1 gap-1 overflow-x-auto xl:w-auto">
           {items.map((item) => {
             const isActive =
               router.pathname === item.href ||

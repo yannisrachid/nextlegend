@@ -18,7 +18,6 @@ const SCOUTING_LAB_PATHS = [
   "/vizualisation",
   "/prospect",
   "/ai",
-  "/admin",
 ];
 
 export default function App({ Component, pageProps }) {
@@ -57,8 +56,13 @@ export default function App({ Component, pageProps }) {
   }, []);
 
   useEffect(() => {
+    if (isLogin) {
+      setMe(null);
+      setAuthStatus("unauthenticated");
+      return;
+    }
     refreshAuth();
-  }, [refreshAuth]);
+  }, [isLogin, refreshAuth]);
 
   useEffect(() => {
     if (authStatus === "loading") return;
