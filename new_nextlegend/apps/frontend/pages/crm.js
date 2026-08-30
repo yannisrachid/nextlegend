@@ -155,7 +155,7 @@ function Logo({ src, name, onClick, size = "h-12 w-12" }) {
 
 function StatCard({ label, value, sub }) {
   return (
-    <div className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-[0_18px_45px_rgba(15,23,42,0.08)] backdrop-blur">
+    <div className="surface-subtle rounded-lg p-4">
       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{value ?? 0}</p>
       {sub ? <p className="mt-1 text-xs font-bold text-slate-500">{sub}</p> : null}
@@ -205,7 +205,7 @@ function Tag({ children, tone = "slate" }) {
 }
 
 function EmptyState({ label }) {
-  return <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">{label}</div>;
+  return <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.035] p-8 text-center text-sm font-bold text-slate-500">{label}</div>;
 }
 
 export default function CRM() {
@@ -421,15 +421,15 @@ export default function CRM() {
   return (
     <main className="nl-page px-4 py-8 md:py-10">
       <div className="mx-auto max-w-[1560px] space-y-6">
-        <section className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-[radial-gradient(circle_at_10%_10%,rgba(20,184,166,0.22),transparent_30%),linear-gradient(135deg,#f8fafc,#e2e8f0_55%,#f8fafc)] p-6 shadow-[0_28px_90px_rgba(15,23,42,0.12)] md:p-8">
-          <div className="absolute right-[-120px] top-[-160px] h-80 w-80 rounded-full bg-teal-300/20 blur-3xl" />
+        <section className="surface-panel relative overflow-hidden rounded-lg p-6 md:p-8">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/50 to-transparent" />
           <div className="relative grid gap-8 xl:grid-cols-[minmax(0,1fr)_620px] xl:items-end">
             <div>
               <p className="nl-kicker">Network CRM</p>
-              <h1 className="mt-3 max-w-4xl text-5xl font-black tracking-tight text-slate-950 md:text-7xl">
+              <h1 className="mt-3 max-w-4xl text-3xl font-semibold tracking-tight text-slate-950 md:text-5xl">
                 Football relationship OS.
               </h1>
-              <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-slate-600">
+              <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-slate-600 md:text-base">
                 Clubs, players, free-role contacts and prospecting in one operational workspace. Click any club, logo or player to inspect the relationship graph.
               </p>
             </div>
@@ -442,15 +442,17 @@ export default function CRM() {
           </div>
         </section>
 
-        <section className="sticky top-[76px] z-20 rounded-2xl border border-slate-200/80 bg-white/85 p-2 shadow-lg backdrop-blur-xl">
+        <section className="sticky top-[76px] z-20 rounded-lg border border-white/10 bg-black/75 p-1.5 shadow-[0_16px_44px_rgba(0,0,0,0.30)] backdrop-blur-xl">
           <nav className="flex gap-1 overflow-x-auto">
             {TABS.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setTab(item.id)}
-                className={`whitespace-nowrap rounded-xl px-5 py-3 text-sm font-black transition ${
-                  tab === item.id ? "bg-slate-950 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                className={`whitespace-nowrap rounded-md px-4 py-2.5 text-sm font-semibold transition ${
+                  tab === item.id
+                    ? "border border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8] shadow-[inset_0_0_0_1px_rgba(85,154,120,0.12)]"
+                    : "border border-transparent text-white/60 hover:border-white/10 hover:bg-white/[0.07] hover:text-white"
                 }`}
               >
                 {item.label}
@@ -1131,7 +1133,7 @@ function clusterPopupHtml(cluster, logoData) {
 
 function FormPanel({ title, subtitle, children }) {
   return (
-    <aside className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur">
+    <aside className="surface-panel rounded-lg p-5">
       <p className="nl-kicker">Workspace</p>
       <h2 className="mt-1 text-2xl font-black text-slate-950">{title}</h2>
       <p className="mt-1 text-sm font-semibold text-slate-500">{subtitle}</p>
@@ -1141,14 +1143,14 @@ function FormPanel({ title, subtitle, children }) {
 }
 
 function ListPanel({ children }) {
-  return <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm backdrop-blur">{children}</section>;
+  return <section className="surface-panel rounded-lg p-5">{children}</section>;
 }
 
 function ModalShell({ title, eyebrow = "Network CRM", children, close, size = "max-w-4xl" }) {
   return (
-    <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-md md:p-6" role="dialog" aria-modal="true">
-      <div className={`max-h-[92vh] w-full ${size} overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-[0_40px_120px_rgba(15,23,42,0.35)]`}>
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-[radial-gradient(circle_at_10%_0%,rgba(20,184,166,0.16),transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-5 md:p-6">
+    <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-md md:p-6" role="dialog" aria-modal="true">
+      <div className={`max-h-[92vh] w-full ${size} overflow-hidden rounded-lg border border-white/10 bg-[#080b12] shadow-[0_40px_120px_rgba(0,0,0,0.55)]`}>
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-white/[0.035] p-5 md:p-6">
           <div>
             <p className="nl-kicker">{eyebrow}</p>
             <h2 className="mt-1 text-3xl font-black tracking-tight text-slate-950">{title}</h2>

@@ -1517,8 +1517,10 @@ export default function MercatoPage() {
                 <button
                   key={tab.id}
                   type="button"
-                  className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-extrabold ${
-                    activeSheet === tab.id ? "bg-white text-teal-800 shadow-sm" : "text-slate-600 hover:bg-white"
+                  className={`whitespace-nowrap rounded-md border px-4 py-2 text-sm font-extrabold transition ${
+                    activeSheet === tab.id
+                      ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8] shadow-[inset_0_0_0_1px_rgba(85,154,120,0.12)]"
+                      : "border-transparent text-slate-600 hover:border-white/10 hover:bg-white/[0.07] hover:text-white"
                   }`}
                   onClick={() => setActiveSheet(tab.id)}
                 >
