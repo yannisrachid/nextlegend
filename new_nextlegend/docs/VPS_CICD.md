@@ -232,7 +232,16 @@ PRD loader rules:
 - use `PIPELINE_REPLACE_SIMILARITY=0`; similarity is merged by unique edge then pruned to `SIM_TOPK`;
 - keep `SIM_TOPK=10`;
 - enforce freshness with `DATA_FRESHNESS_EXPECT_CALENDARS='2026/2027 2026'` for current-season loads;
+- keep `SCORE_SNAPSHOT_ENABLED=1` for current-season loads;
+- keep `SCORE_SNAPSHOT_SEASONS='2026/2027,2026'` unless the active competitions change;
+- default snapshot cadence is `SCORE_SNAPSHOT_CADENCE=biweekly`; use `monthly` only if product decides to reduce granularity;
 - preserve historical seasons.
+
+Score snapshot behavior:
+- snapshots store the visible score plus the scoring metrics/percentiles used by the model;
+- each snapshot stores the scoring model version and hash;
+- rerunning a job inside the same biweekly/monthly bucket updates that bucket instead of creating duplicates;
+- full fact-table replacement truncates snapshot tables because player-season IDs are rebuilt.
 
 PRD current-season enriched load:
 

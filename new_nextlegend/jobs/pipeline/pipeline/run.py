@@ -428,6 +428,17 @@ def upsert_db(cfg: PipelineConfig, artifacts: dict[str, pd.DataFrame]):
         replace=replace_tables or replace_similarity,
         use_copy=copy_similarity,
     )
+    db.snapshot_current_season_scores(
+        engine,
+        run_id=cfg.run_id,
+        source_uri=cfg.input_uri,
+        fact=fact,
+        metrics=metrics,
+        metric_percentiles_global=metric_percentiles_global,
+        metric_percentiles_league=metric_percentiles_league,
+        season_index=season_index,
+        ids=ids,
+    )
     db.insert_pipeline_run(engine, cfg.run_id, status="success", source_uri=cfg.input_uri, rows_processed=len(fact))
 
 

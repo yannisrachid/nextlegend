@@ -58,11 +58,17 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Keep fuzzy matching conservative: reject ambiguous weak-token matches.
 - Similarities are top-k per position group; default `SIM_TOPK=10`.
 - Use `PIPELINE_REPLACE_SIMILARITY=1` when rebuilding `player_similarity`.
+- Current-season score snapshots are pipeline-owned and enabled through `SCORE_SNAPSHOT_ENABLED=1`.
+- Snapshot default scope is seasons `2026/2027` and `2026`, controlled by `SCORE_SNAPSHOT_SEASONS`.
+- Snapshot default cadence is biweekly, controlled by `SCORE_SNAPSHOT_CADENCE=biweekly`; monthly is allowed if the product decision changes.
+- Store both the visible score and the important scoring metrics in snapshot tables so future scoring-model changes remain auditable.
+- Each snapshot stores `scoring_model_version` and a scoring model hash; do not remove those fields when editing scoring.
 - In production, do not run the full raw pipeline on the current VPS. Use local-compute then PRD-load.
 
 ## Data Model Rules
 - Keep `player_seasons` as the central fact table.
 - Keep metrics in `player_metrics` and role fits in `role_scores`.
+- Keep in-season score tracking in `scoring_snapshot_runs`, `player_score_snapshots`, and `player_metric_snapshots`.
 - Store Transfermarkt fields on `player_seasons` as `tm_*`; keep stable TM IDs/URLs on `players`.
 - Add indexes for new API query paths.
 - Prefer idempotent schema changes and additive migrations.

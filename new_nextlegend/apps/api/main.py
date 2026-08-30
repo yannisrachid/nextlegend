@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, Query, HTTPException, Request, UploadFile,
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 from typing import Any, Optional, List
 from pathlib import Path
@@ -48,6 +48,8 @@ from models import (
     ReportSeasonOption,
     RoleScore,
     ScoreHistoryPoint,
+    ScoreSnapshotMetric,
+    ScoreSnapshotPoint,
     TransferHistoryItem,
 )
 from agentic import (
@@ -814,6 +816,100 @@ def _build_season_metric_history(session: Session, score_history: list[ScoreHist
             }
         )
     return items
+
+
+def _load_score_snapshots(
+    session: Session,
+    *,
+    player_id: int,
+    player_season_id: Optional[int] = None,
+) -> list[ScoreSnapshotPoint]:
+    try:
+        if not (
+            _table_exists(session, "scoring_snapshot_runs")
+            and _table_exists(session, "player_score_snapshots")
+            and _table_exists(session, "player_metric_snapshots")
+        ):
+            return []
+        sql = """
+        SELECT
+          ss.id AS score_snapshot_id,
+          sr.snapshot_key,
+          sr.snapshot_date,
+          sr.snapshot_at,
+          sr.season_label AS calendar,
+          c.name AS competition_name,
+          cl.name AS team,
+          ss.position,
+          ss.position_group,
+          ss.minutes_played,
+          ss.matches_played,
+          ss.minutes_possible,
+          ss.minutes_ratio,
+          ss.global_score_adjusted,
+          ss.assigned_role_pct_league,
+          ss.assigned_role_pct_global,
+          ss.league_strength_factor,
+          ss.team_strength_z,
+          ss.club_strength_modifier,
+          ss.minutes_regularity_modifier,
+          sr.scoring_model_version
+        FROM player_score_snapshots ss
+        JOIN scoring_snapshot_runs sr ON sr.id = ss.snapshot_run_id
+        JOIN player_seasons ps ON ps.id = ss.player_season_id
+        JOIN competitions c ON c.id = ss.competition_id
+        LEFT JOIN clubs cl ON cl.id = ss.club_id
+        WHERE ss.player_id = :player_id
+        """
+        params: dict[str, Any] = {"player_id": player_id}
+        if player_season_id is not None:
+            sql += " AND ss.player_season_id = :player_season_id"
+            params["player_season_id"] = player_season_id
+        sql += " ORDER BY sr.snapshot_date ASC, sr.snapshot_at ASC"
+        rows = [_row_to_dict(row) for row in session.execute(text(sql), params).fetchall()]
+        if not rows:
+            return []
+
+        snapshot_ids = [int(row["score_snapshot_id"]) for row in rows]
+        metrics_sql = (
+            text(
+                """
+                SELECT
+                  score_snapshot_id,
+                  metric_key,
+                  raw_value,
+                  percentile_global,
+                  percentile_league,
+                  metric_weight,
+                  metric_family,
+                  lower_is_better
+                FROM player_metric_snapshots
+                WHERE score_snapshot_id IN :snapshot_ids
+                ORDER BY score_snapshot_id, metric_weight DESC NULLS LAST, metric_key ASC
+                """
+            )
+            .bindparams(bindparam("snapshot_ids", expanding=True))
+        )
+        metric_rows = session.execute(metrics_sql, {"snapshot_ids": snapshot_ids}).fetchall()
+        metrics_by_snapshot: dict[int, list[ScoreSnapshotMetric]] = {snapshot_id: [] for snapshot_id in snapshot_ids}
+        for metric_row in metric_rows:
+            item = _row_to_dict(metric_row)
+            snapshot_id = int(item.pop("score_snapshot_id"))
+            metrics_by_snapshot.setdefault(snapshot_id, []).append(ScoreSnapshotMetric(**item))
+
+        snapshots = []
+        for row in rows:
+            snapshot_id = int(row["score_snapshot_id"])
+            snapshots.append(
+                ScoreSnapshotPoint(
+                    **row,
+                    metrics=metrics_by_snapshot.get(snapshot_id, []),
+                )
+            )
+        return snapshots
+    except Exception:
+        session.rollback()
+        return []
 
 
 def _ensure_prospect_schema(session: Session) -> None:
@@ -7815,12 +7911,22 @@ def player_report(
         summary=summary,
         available_seasons=available_seasons,
         score_history=score_history,
+        score_snapshots=_load_score_snapshots(session, player_id=player_id, player_season_id=int(ps["id"])),
         season_metric_history=_build_season_metric_history(session, score_history),
         transfer_history=[TransferHistoryItem(**item) for item in transfer_history],
         similarities_enabled=similarities_enabled,
         current_season_label=CURRENT_SEASON_LABEL,
         average_contexts=_build_report_average_contexts(session, ps),
     )
+
+
+@app.get("/players/{player_id}/score-snapshots", response_model=List[ScoreSnapshotPoint])
+def player_score_snapshots(
+    player_id: int,
+    player_season_id: Optional[int] = Query(None, ge=1),
+    session: Session = Depends(get_session),
+):
+    return _load_score_snapshots(session, player_id=player_id, player_season_id=player_season_id)
 
 
 @app.get("/players/{player_id}/similarities", response_model=List[SimilarityRow])

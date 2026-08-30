@@ -6,6 +6,9 @@ uses psycopg2 execute_values for ON CONFLICT upserts.
 
 from __future__ import annotations
 
+import datetime as dt
+import hashlib
+import json
 import os
 from typing import Iterable, Sequence
 
@@ -15,6 +18,8 @@ from io import StringIO
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+from . import scoring_v2
 
 
 RESERVED_PLAYER_METRIC_COLUMNS = {"player_season_id", "created_at", "updated_at"}
@@ -194,6 +199,76 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     git_sha TEXT
 );
 
+CREATE TABLE IF NOT EXISTS scoring_snapshot_runs (
+    id SERIAL PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    snapshot_key TEXT NOT NULL,
+    snapshot_date DATE NOT NULL,
+    snapshot_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    season_id INT NOT NULL REFERENCES seasons(id),
+    season_label TEXT NOT NULL,
+    cadence TEXT NOT NULL DEFAULT 'biweekly',
+    source_uri TEXT,
+    scoring_model_version TEXT,
+    scoring_model_hash TEXT,
+    rows_snapshotted INT NOT NULL DEFAULT 0,
+    metric_rows_snapshotted INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(season_id, snapshot_key, scoring_model_hash)
+);
+CREATE INDEX IF NOT EXISTS scoring_snapshot_runs_season_date_idx
+    ON scoring_snapshot_runs(season_id, snapshot_date);
+CREATE INDEX IF NOT EXISTS scoring_snapshot_runs_run_idx
+    ON scoring_snapshot_runs(run_id);
+
+CREATE TABLE IF NOT EXISTS player_score_snapshots (
+    id SERIAL PRIMARY KEY,
+    snapshot_run_id INT NOT NULL REFERENCES scoring_snapshot_runs(id) ON DELETE CASCADE,
+    player_season_id INT NOT NULL REFERENCES player_seasons(id) ON DELETE CASCADE,
+    player_id INT NOT NULL REFERENCES players(id),
+    competition_id INT REFERENCES competitions(id),
+    club_id INT REFERENCES clubs(id),
+    position TEXT,
+    position_group TEXT,
+    minutes_played DOUBLE PRECISION,
+    matches_played DOUBLE PRECISION,
+    minutes_possible DOUBLE PRECISION,
+    minutes_ratio DOUBLE PRECISION,
+    global_score_adjusted DOUBLE PRECISION,
+    assigned_role_pct_league DOUBLE PRECISION,
+    assigned_role_pct_global DOUBLE PRECISION,
+    league_strength_factor DOUBLE PRECISION,
+    team_strength_z DOUBLE PRECISION,
+    club_strength_modifier DOUBLE PRECISION,
+    minutes_regularity_modifier DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(snapshot_run_id, player_season_id)
+);
+CREATE INDEX IF NOT EXISTS player_score_snapshots_player_season_idx
+    ON player_score_snapshots(player_season_id);
+CREATE INDEX IF NOT EXISTS player_score_snapshots_player_idx
+    ON player_score_snapshots(player_id, snapshot_run_id);
+
+CREATE TABLE IF NOT EXISTS player_metric_snapshots (
+    id SERIAL PRIMARY KEY,
+    score_snapshot_id INT NOT NULL REFERENCES player_score_snapshots(id) ON DELETE CASCADE,
+    metric_key TEXT NOT NULL,
+    raw_value DOUBLE PRECISION,
+    percentile_global DOUBLE PRECISION,
+    percentile_league DOUBLE PRECISION,
+    metric_weight DOUBLE PRECISION,
+    metric_family TEXT,
+    lower_is_better BOOLEAN NOT NULL DEFAULT FALSE,
+    scoring_model_version TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(score_snapshot_id, metric_key)
+);
+CREATE INDEX IF NOT EXISTS player_metric_snapshots_metric_idx
+    ON player_metric_snapshots(metric_key);
+
 CREATE TABLE IF NOT EXISTS prospects (
     id SERIAL PRIMARY KEY,
     player_id INT UNIQUE REFERENCES players(id) ON DELETE CASCADE,
@@ -241,7 +316,7 @@ def truncate_fact_tables(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE player_similarity, role_scores, player_metric_percentiles_global, player_metric_percentiles_league, player_metrics, player_seasons"
+                "TRUNCATE TABLE player_metric_snapshots, player_score_snapshots, scoring_snapshot_runs, player_similarity, role_scores, player_metric_percentiles_global, player_metric_percentiles_league, player_metrics, player_seasons"
             )
         )
 
@@ -1067,6 +1142,404 @@ def upsert_similarity(
                 print(f"[DB] player_similarity pruned rows above topk={topk}: {deleted}")
         total = conn.execute(text("SELECT COUNT(*) FROM player_similarity")).scalar()
         print(f"[DB] player_similarity total rows={total}")
+
+
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def _split_env_values(value: str | None) -> list[str]:
+    if not value:
+        return []
+    normalized = value.replace(";", ",").replace("|", ",")
+    items: list[str] = []
+    for chunk in normalized.split(","):
+        for item in chunk.split():
+            item = item.strip()
+            if item:
+                items.append(item)
+    return items
+
+
+def _snapshot_target_seasons() -> set[str]:
+    raw = os.getenv("SCORE_SNAPSHOT_SEASONS") or os.getenv("DATA_FRESHNESS_EXPECT_CALENDARS")
+    values = _split_env_values(raw)
+    if not values:
+        values = ["2026/2027", "2026"]
+    return set(values)
+
+
+def _snapshot_bucket(snapshot_date: dt.date, cadence: str) -> tuple[str, dt.date]:
+    cadence = (cadence or "biweekly").strip().lower()
+    if cadence == "monthly":
+        return (snapshot_date.strftime("%Y-%m"), snapshot_date.replace(day=1))
+    if cadence == "daily":
+        return (snapshot_date.isoformat(), snapshot_date)
+    if cadence == "run":
+        return (snapshot_date.isoformat(), snapshot_date)
+
+    iso_year, iso_week, _ = snapshot_date.isocalendar()
+    bucket_week = int(iso_week) - ((int(iso_week) - 1) % 2)
+    bucket_start = dt.date.fromisocalendar(int(iso_year), bucket_week, 1)
+    return (f"{iso_year}-W{bucket_week:02d}", bucket_start)
+
+
+def _snapshot_date() -> dt.date:
+    raw = os.getenv("SCORE_SNAPSHOT_DATE", "").strip()
+    if raw:
+        return dt.date.fromisoformat(raw)
+    return dt.datetime.now(dt.timezone.utc).date()
+
+
+def _scoring_model_payload() -> dict:
+    return {
+        "version": scoring_v2.SCORE_VERSION,
+        "position_groups": [
+            {
+                "key": group.key,
+                "display_name": group.display_name,
+                "positions": list(group.positions),
+                "metrics": [
+                    {
+                        "key": spec.key,
+                        "weight": spec.weight,
+                        "metrics": list(spec.metrics),
+                        "family": spec.family,
+                        "lower_is_better": spec.lower_is_better,
+                    }
+                    for spec in group.metrics
+                ],
+            }
+            for group in scoring_v2.POSITION_GROUPS
+        ],
+    }
+
+
+def _scoring_model_hash() -> str:
+    payload = json.dumps(_scoring_model_payload(), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _snapshot_metric_specs() -> dict[str, dict[str, dict[str, object]]]:
+    specs: dict[str, dict[str, dict[str, object]]] = {}
+    for group in scoring_v2.POSITION_GROUPS:
+        group_specs: dict[str, dict[str, object]] = {}
+        for spec in group.metrics:
+            per_metric_weight = float(spec.weight) / max(1, len(spec.metrics))
+            for metric_key in spec.metrics:
+                current = group_specs.get(metric_key)
+                if current:
+                    current["metric_weight"] = float(current["metric_weight"]) + per_metric_weight
+                    continue
+                group_specs[metric_key] = {
+                    "metric_weight": per_metric_weight,
+                    "metric_family": spec.family,
+                    "lower_is_better": bool(spec.lower_is_better),
+                }
+        specs[group.display_name] = group_specs
+        specs[group.key] = group_specs
+    return specs
+
+
+def _with_player_season_ids(frame: pd.DataFrame, season_index: dict, ids: dict) -> pd.DataFrame:
+    if frame.empty:
+        return frame.copy()
+    mapped = frame.copy()
+    mapped["player_id"] = mapped["wyscout_id"].astype(str).map(ids["players"])
+    mapped["competition_id"] = mapped["competition_name"].map(ids["competitions"])
+    mapped["season_id"] = mapped["calendar"].map(ids["seasons"])
+    mapped["club_id"] = _map_club_ids(
+        mapped,
+        team_col="team_in_selected_period",
+        competition_col="competition_name",
+        clubs_by_competition=ids.get("clubs_by_competition", {}),
+        clubs_by_name=ids.get("clubs", {}),
+        default_value=-1,
+    )
+    mapped["player_season_id"] = list(
+        zip(
+            mapped["player_id"],
+            mapped["competition_id"],
+            mapped["season_id"],
+            mapped["club_id"].fillna(-1),
+        )
+    )
+    mapped["player_season_id"] = mapped["player_season_id"].map(season_index)
+    mapped = mapped.dropna(subset=["player_id", "competition_id", "season_id", "player_season_id"])
+    for col in ("player_id", "competition_id", "season_id", "player_season_id"):
+        mapped[col] = pd.to_numeric(mapped[col], errors="coerce")
+    mapped = mapped.dropna(subset=["player_id", "competition_id", "season_id", "player_season_id"])
+    for col in ("player_id", "competition_id", "season_id", "player_season_id"):
+        mapped[col] = mapped[col].astype("Int64")
+    mapped["club_id"] = pd.to_numeric(mapped["club_id"].replace(-1, pd.NA), errors="coerce").astype("Int64")
+    return mapped
+
+
+def _percentile_lookup(percentiles: pd.DataFrame, season_index: dict, ids: dict) -> dict[tuple[int, str], float]:
+    if percentiles.empty or "metric_key" not in percentiles.columns or "percentile" not in percentiles.columns:
+        return {}
+    mapped = _with_player_season_ids(percentiles, season_index, ids)
+    if mapped.empty:
+        return {}
+    mapped = mapped.dropna(subset=["player_season_id", "metric_key"])
+    return {
+        (int(row.player_season_id), str(row.metric_key)): float(row.percentile)
+        for row in mapped.itertuples(index=False)
+        if pd.notna(row.percentile)
+    }
+
+
+def snapshot_current_season_scores(
+    engine: Engine,
+    *,
+    run_id: str,
+    source_uri: str,
+    fact: pd.DataFrame,
+    metrics: pd.DataFrame,
+    metric_percentiles_global: pd.DataFrame,
+    metric_percentiles_league: pd.DataFrame,
+    season_index: dict,
+    ids: dict,
+) -> None:
+    if not _env_flag("SCORE_SNAPSHOT_ENABLED", "0"):
+        print("[DB] score snapshots disabled; skip.")
+        return
+    if fact.empty or "calendar" not in fact.columns:
+        print("[DB] score snapshots empty fact; skip.")
+        return
+
+    target_seasons = _snapshot_target_seasons()
+    fact_target = fact[fact["calendar"].astype(str).isin(target_seasons)].copy()
+    if fact_target.empty:
+        print(f"[DB] score snapshots no target seasons found targets={sorted(target_seasons)}")
+        return
+
+    cadence = os.getenv("SCORE_SNAPSHOT_CADENCE", "biweekly").strip().lower() or "biweekly"
+    bucket_key, bucket_date = _snapshot_bucket(_snapshot_date(), cadence)
+    if cadence == "run":
+        bucket_key = f"{bucket_key}-{run_id}"
+    model_hash = _scoring_model_hash()
+    model_version = scoring_v2.SCORE_VERSION
+    metric_specs = _snapshot_metric_specs()
+
+    fact_target = _with_player_season_ids(fact_target, season_index, ids)
+    if fact_target.empty:
+        print("[DB] score snapshots no rows after id mapping; skip.")
+        return
+
+    metrics_target = _with_player_season_ids(metrics, season_index, ids) if not metrics.empty else pd.DataFrame()
+    score_extra = pd.DataFrame()
+    if not metrics_target.empty:
+        extra_cols = [
+            col
+            for col in ("team_strength_z", "club_strength_modifier", "minutes_regularity_modifier")
+            if col in metrics_target.columns
+        ]
+        if extra_cols:
+            score_extra = (
+                metrics_target[["player_season_id", *extra_cols]]
+                .drop_duplicates(subset=["player_season_id"], keep="last")
+                .set_index("player_season_id")
+            )
+
+    if "matches_played" in fact_target.columns:
+        max_matches = pd.to_numeric(fact_target["matches_played"], errors="coerce").groupby(
+            [fact_target["competition_name"], fact_target["calendar"]], dropna=False
+        ).transform("max")
+        minutes_possible = max_matches * 90
+    else:
+        minutes_possible = pd.Series(np.nan, index=fact_target.index)
+    fallback_possible = pd.to_numeric(fact_target.get("minutes_played", pd.Series(np.nan, index=fact_target.index)), errors="coerce").groupby(
+        [fact_target["competition_name"], fact_target["calendar"]], dropna=False
+    ).transform("max")
+    minutes_possible = minutes_possible.where(minutes_possible > 0, fallback_possible)
+    fact_target["minutes_possible"] = minutes_possible
+    minutes_played = pd.to_numeric(fact_target.get("minutes_played", pd.Series(np.nan, index=fact_target.index)), errors="coerce")
+    fact_target["minutes_ratio"] = (minutes_played / fact_target["minutes_possible"]).where(fact_target["minutes_possible"] > 0)
+
+    global_pct = _percentile_lookup(metric_percentiles_global, season_index, ids)
+    league_pct = _percentile_lookup(metric_percentiles_league, season_index, ids)
+
+    metric_values = pd.DataFrame()
+    if not metrics_target.empty:
+        metric_values = metrics_target.drop_duplicates(subset=["player_season_id"], keep="last").set_index("player_season_id")
+
+    for season_label, season_rows in fact_target.groupby("calendar", dropna=False):
+        season_label = str(season_label)
+        season_id = ids.get("seasons", {}).get(season_label)
+        if season_id is None:
+            continue
+
+        score_rows = season_rows.copy()
+        if not score_extra.empty:
+            score_rows = score_rows.join(score_extra, on="player_season_id")
+        score_rows["position_group"] = score_rows.get("assigned_role")
+        score_rows = score_rows.drop_duplicates(subset=["player_season_id"], keep="last")
+
+        with engine.begin() as conn:
+            snapshot_run_id = conn.execute(
+                text(
+                    """
+                    INSERT INTO scoring_snapshot_runs (
+                        run_id, snapshot_key, snapshot_date, season_id, season_label,
+                        cadence, source_uri, scoring_model_version, scoring_model_hash
+                    )
+                    VALUES (
+                        :run_id, :snapshot_key, :snapshot_date, :season_id, :season_label,
+                        :cadence, :source_uri, :scoring_model_version, :scoring_model_hash
+                    )
+                    ON CONFLICT (season_id, snapshot_key, scoring_model_hash) DO UPDATE SET
+                        run_id = EXCLUDED.run_id,
+                        snapshot_at = NOW(),
+                        cadence = EXCLUDED.cadence,
+                        source_uri = EXCLUDED.source_uri,
+                        scoring_model_version = EXCLUDED.scoring_model_version,
+                        updated_at = NOW()
+                    RETURNING id
+                    """
+                ),
+                {
+                    "run_id": run_id,
+                    "snapshot_key": bucket_key,
+                    "snapshot_date": bucket_date,
+                    "season_id": int(season_id),
+                    "season_label": season_label,
+                    "cadence": cadence,
+                    "source_uri": source_uri,
+                    "scoring_model_version": model_version,
+                    "scoring_model_hash": model_hash,
+                },
+            ).scalar_one()
+
+            score_cols = [
+                "snapshot_run_id",
+                "player_season_id",
+                "player_id",
+                "competition_id",
+                "club_id",
+                "position",
+                "position_group",
+                "minutes_played",
+                "matches_played",
+                "minutes_possible",
+                "minutes_ratio",
+                "global_score_adjusted",
+                "assigned_role_pct_league",
+                "assigned_role_pct_global",
+                "league_strength_factor",
+                "team_strength_z",
+                "club_strength_modifier",
+                "minutes_regularity_modifier",
+            ]
+            for col in score_cols:
+                if col not in score_rows.columns:
+                    score_rows[col] = None
+            score_rows["snapshot_run_id"] = int(snapshot_run_id)
+            score_frame = score_rows[score_cols].where(pd.notna(score_rows[score_cols]), None)
+            _copy_upsert_dataframe(
+                conn,
+                "player_score_snapshots",
+                score_frame,
+                score_cols,
+                ["snapshot_run_id", "player_season_id"],
+                [col for col in score_cols if col not in {"snapshot_run_id", "player_season_id"}],
+            )
+
+            snapshot_ids = {
+                int(row.player_season_id): int(row.id)
+                for row in conn.execute(
+                    text(
+                        """
+                        SELECT id, player_season_id
+                        FROM player_score_snapshots
+                        WHERE snapshot_run_id = :snapshot_run_id
+                        """
+                    ),
+                    {"snapshot_run_id": int(snapshot_run_id)},
+                ).fetchall()
+            }
+
+            metric_rows: list[dict[str, object]] = []
+            for row in score_rows.itertuples(index=False):
+                player_season_id = int(getattr(row, "player_season_id"))
+                score_snapshot_id = snapshot_ids.get(player_season_id)
+                if not score_snapshot_id:
+                    continue
+                position_group = str(getattr(row, "position_group", "") or "")
+                specs = metric_specs.get(position_group, {})
+                if not specs:
+                    continue
+                source = metric_values.loc[player_season_id] if player_season_id in metric_values.index else None
+                for metric_key, spec in specs.items():
+                    raw_value = None
+                    if source is not None and metric_key in metric_values.columns:
+                        value = source.get(metric_key)
+                        if pd.notna(value):
+                            raw_value = float(value)
+                    metric_rows.append(
+                        {
+                            "score_snapshot_id": score_snapshot_id,
+                            "metric_key": metric_key,
+                            "raw_value": raw_value,
+                            "percentile_global": global_pct.get((player_season_id, metric_key)),
+                            "percentile_league": league_pct.get((player_season_id, metric_key)),
+                            "metric_weight": spec.get("metric_weight"),
+                            "metric_family": spec.get("metric_family"),
+                            "lower_is_better": spec.get("lower_is_better"),
+                            "scoring_model_version": model_version,
+                        }
+                    )
+
+            metric_frame = pd.DataFrame(metric_rows)
+            metric_count = 0
+            if not metric_frame.empty:
+                metric_cols = [
+                    "score_snapshot_id",
+                    "metric_key",
+                    "raw_value",
+                    "percentile_global",
+                    "percentile_league",
+                    "metric_weight",
+                    "metric_family",
+                    "lower_is_better",
+                    "scoring_model_version",
+                ]
+                metric_frame = metric_frame[metric_cols].drop_duplicates(
+                    subset=["score_snapshot_id", "metric_key"],
+                    keep="last",
+                )
+                metric_frame = metric_frame.where(pd.notna(metric_frame), None)
+                _copy_upsert_dataframe(
+                    conn,
+                    "player_metric_snapshots",
+                    metric_frame,
+                    metric_cols,
+                    ["score_snapshot_id", "metric_key"],
+                    [col for col in metric_cols if col not in {"score_snapshot_id", "metric_key"}],
+                )
+                metric_count = len(metric_frame)
+
+            conn.execute(
+                text(
+                    """
+                    UPDATE scoring_snapshot_runs
+                    SET rows_snapshotted = :rows_snapshotted,
+                        metric_rows_snapshotted = :metric_rows_snapshotted,
+                        updated_at = NOW()
+                    WHERE id = :snapshot_run_id
+                    """
+                ),
+                {
+                    "rows_snapshotted": len(score_frame),
+                    "metric_rows_snapshotted": metric_count,
+                    "snapshot_run_id": int(snapshot_run_id),
+                },
+            )
+        print(
+            "[DB] score snapshots:"
+            f" season={season_label} key={bucket_key} rows={len(score_frame)} metrics={metric_count}"
+            f" model={model_version}/{model_hash}"
+        )
 
 
 def insert_pipeline_run(engine: Engine, run_id: str, status: str, source_uri: str, rows_processed: int, message: str = ""):
