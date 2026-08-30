@@ -4,7 +4,6 @@ import ClubLogo from "@/components/ClubLogo";
 import { fetchJson, postJson } from "@/lib/api";
 
 const AGENTS = ["Steven", "Don", "Yannis", "Lidahi"];
-const PRIORITIES = ["A", "B", "C", "D"];
 
 const emptyPlayer = {
   display_name: "",
@@ -43,13 +42,6 @@ const storageHref = (url) => {
     return clean;
   }
   return clean;
-};
-
-const priorityClass = (priority) => {
-  if (priority === "A") return "border-rose-200 bg-rose-50 text-rose-800";
-  if (priority === "B") return "border-amber-200 bg-amber-50 text-amber-800";
-  if (priority === "C") return "border-teal-200 bg-teal-50 text-teal-800";
-  return "border-slate-200 bg-slate-50 text-slate-700";
 };
 
 const initials = (name) =>
@@ -135,9 +127,6 @@ export default function HdPlayersPage() {
               <input className="nl-field" name="hd_current_club" aria-label="Current club" value={form.current_club} onChange={(e) => setForm((p) => ({ ...p, current_club: e.target.value }))} placeholder="Current club" />
               <input className="nl-field" name="hd_position" aria-label="Position" value={form.position} onChange={(e) => setForm((p) => ({ ...p, position: e.target.value }))} placeholder="Position" />
               <input className="nl-field md:col-span-2" name="hd_plan" aria-label="Plan" value={form.plan} onChange={(e) => setForm((p) => ({ ...p, plan: e.target.value }))} placeholder="Market plan" />
-              <select className="nl-field" name="hd_priority" aria-label="Priority" value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value }))}>
-                {PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}
-              </select>
               <select className="nl-field" name="hd_assigned_agent" aria-label="Assigned agent" value={form.assigned_agent} onChange={(e) => setForm((p) => ({ ...p, assigned_agent: e.target.value }))}>
                 {AGENTS.map((name) => <option key={name}>{name}</option>)}
               </select>
@@ -167,9 +156,6 @@ export default function HdPlayersPage() {
                   </div>
                 )}
                 <div className="absolute left-4 top-4 flex gap-2">
-                  <span className={`rounded-full border px-3 py-1 text-xs font-black ${priorityClass(item.priority)}`}>
-                    Priority {item.priority || "B"}
-                  </span>
                   <span className="rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-black text-white/80 backdrop-blur">
                     {item.assigned_agent || "Unassigned"}
                   </span>

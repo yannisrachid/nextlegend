@@ -163,8 +163,11 @@ PROSPECT_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS prospects (
     id SERIAL PRIMARY KEY,
     player_id INT UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+    player_season_id INT REFERENCES player_seasons(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS player_season_id INT REFERENCES player_seasons(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS club_needs (
     id SERIAL PRIMARY KEY,
@@ -189,6 +192,7 @@ CREATE TABLE IF NOT EXISTS club_need_players (
 );
 
 CREATE INDEX IF NOT EXISTS prospects_player_id_idx ON prospects(player_id);
+CREATE INDEX IF NOT EXISTS prospects_player_season_id_idx ON prospects(player_season_id);
 CREATE INDEX IF NOT EXISTS club_needs_stage_order_idx ON club_needs(priority_stage, sort_order);
 CREATE INDEX IF NOT EXISTS club_need_players_order_idx ON club_need_players(club_need_id, sort_order);
 """
@@ -1348,6 +1352,7 @@ def _get_session_user(session: Session, session_id: str) -> Optional[dict[str, s
 
 class ProspectToggle(BaseModel):
     player_id: int
+    player_season_id: Optional[int] = None
 
 
 class ClubNeedCreate(BaseModel):
@@ -2117,8 +2122,15 @@ def ai_player_report(request: AIPlayerReportRequest, session: Session = Depends(
 
 
 @app.get("/ai/conversations", response_model=AIConversationList)
-def ai_conversations(user_id: str = Query(...), session: Session = Depends(get_session)):
+def ai_conversations(
+    request: Request,
+    user_id: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     rows = session.execute(
         text(
             """
@@ -2128,7 +2140,7 @@ def ai_conversations(user_id: str = Query(...), session: Session = Depends(get_s
             ORDER BY updated_at DESC
             """
         ),
-        {"user_id": user_id},
+        {"user_id": current_user_id},
     ).fetchall()
     items = [AIConversation(**_row_to_dict(row)) for row in rows]
     return AIConversationList(items=items)
@@ -2137,9 +2149,13 @@ def ai_conversations(user_id: str = Query(...), session: Session = Depends(get_s
 @app.post("/ai/conversations", response_model=AIConversation)
 def ai_conversation_create(
     payload: AIConversationCreate,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     row = session.execute(
         text(
             """
@@ -2149,7 +2165,7 @@ def ai_conversation_create(
             """
         ),
         {
-            "user_id": payload.user_id,
+            "user_id": current_user_id,
             "title": payload.title,
             "mode": payload.mode or "scout",
         },
@@ -2161,7 +2177,8 @@ def ai_conversation_create(
 
 
 @app.get("/ai/users")
-def ai_users(session: Session = Depends(get_session)):
+def ai_users(request: Request, session: Session = Depends(get_session)):
+    _require_admin(request)
     _ensure_ai_schema(session)
     rows = session.execute(
         text(
@@ -2187,9 +2204,13 @@ def ai_users(session: Session = Depends(get_session)):
 def ai_conversation_update(
     conversation_id: int,
     payload: AIConversationUpdate,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     row = session.execute(
         text(
             """
@@ -2201,7 +2222,7 @@ def ai_conversation_update(
         ),
         {
             "conversation_id": conversation_id,
-            "user_id": payload.user_id,
+            "user_id": current_user_id,
             "title": payload.title,
         },
     ).fetchone()
@@ -2214,10 +2235,14 @@ def ai_conversation_update(
 @app.get("/ai/conversations/{conversation_id}", response_model=AIConversationDetail)
 def ai_conversation_detail(
     conversation_id: int,
-    user_id: str = Query(...),
+    request: Request,
+    user_id: Optional[str] = Query(None),
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     convo = session.execute(
         text(
             """
@@ -2226,7 +2251,7 @@ def ai_conversation_detail(
             WHERE id = :conversation_id AND user_id = :user_id
             """
         ),
-        {"conversation_id": conversation_id, "user_id": user_id},
+        {"conversation_id": conversation_id, "user_id": current_user_id},
     ).fetchone()
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -2251,10 +2276,12 @@ def ai_conversation_detail(
 
 @app.get("/ai/usage", response_model=AIUsageResponse)
 def ai_usage(
+    request: Request,
     user_id: str = Query(...),
     conversation_id: Optional[int] = Query(None),
     session: Session = Depends(get_session),
 ):
+    _require_admin(request)
     _ensure_ai_schema(session)
     sql = """
     SELECT m.payload
@@ -2284,9 +2311,13 @@ def ai_usage(
 def ai_conversation_message(
     conversation_id: int,
     payload: AIMessageCreate,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     convo = session.execute(
         text(
             """
@@ -2295,7 +2326,7 @@ def ai_conversation_message(
             WHERE id = :conversation_id AND user_id = :user_id
             """
         ),
-        {"conversation_id": conversation_id, "user_id": payload.user_id},
+        {"conversation_id": conversation_id, "user_id": current_user_id},
     ).fetchone()
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -4176,10 +4207,15 @@ def _load_opta_power_rankings() -> tuple[
                 continue
             rating = row.get("rating")
             rank = row.get("rank")
+            parsed_rating = float(rating) if rating else 0.0
+            parsed_rank = int(rank) if rank else 0
+            existing = clubs.get(normalized)
+            if existing and float(existing.get("rating") or 0.0) >= parsed_rating:
+                continue
             clubs[normalized] = {
                 "team": team,
-                "rating": float(rating) if rating else 0.0,
-                "rank": int(rank) if rank else 0,
+                "rating": parsed_rating,
+                "rank": parsed_rank,
             }
 
     sorted_clubs = sorted(
@@ -4202,6 +4238,43 @@ def _resolve_target_club(text: str) -> Optional[dict[str, float | int | str]]:
         if normalized and normalized in normalized_text:
             return data
     return None
+
+
+def _club_power_for_team(team: Optional[str]) -> dict[str, float | int | str | None]:
+    if not team:
+        return {"rating": None, "rank": None, "matched_team": None}
+    clubs, _ = _load_opta_power_rankings()
+    normalized = _normalize_name(team)
+    data = clubs.get(normalized) if normalized else None
+    if data is None:
+        data = _resolve_target_club(team)
+    if not data:
+        return {"rating": None, "rank": None, "matched_team": None}
+    return {
+        "rating": float(data.get("rating") or 0.0),
+        "rank": int(data.get("rank") or 0) or None,
+        "matched_team": data.get("team"),
+    }
+
+
+def _player_search_relevance(item: dict, query: str) -> int:
+    query_norm = _normalize_name(query)
+    name_norm = _normalize_name(str(item.get("name") or ""))
+    if query_norm and name_norm == query_norm:
+        return 5
+    if query_norm and name_norm.startswith(query_norm):
+        return 4
+    query_tokens = [_normalize_name(token) for token in re.split(r"\s+", query) if len(token) >= 2]
+    if query_tokens and all(token and token in name_norm for token in query_tokens):
+        return 3
+    if query_tokens:
+        words = [_normalize_name(part) for part in re.split(r"\s+", str(item.get("name") or "")) if part]
+        if all(any(word.startswith(token) for word in words) for token in query_tokens):
+            return 2
+    haystack = _normalize_name(" ".join(str(item.get(key) or "") for key in ("team", "competition_name", "calendar")))
+    if query_norm and query_norm in haystack:
+        return 1
+    return 0
 
 
 def _club_strength_thresholds(target_rating: float) -> tuple[Optional[float], Optional[float]]:
@@ -5069,37 +5142,62 @@ def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]
         return {"global": {}, "league": {}}
 
     contexts: dict[str, Any] = {"global": {}, "league": {}}
+    max_matches = 0.0
+    if competition_id is not None:
+        try:
+            max_matches = float(
+                session.execute(
+                    text(
+                        """
+                        SELECT COALESCE(MAX(matches_played), 0)
+                        FROM player_seasons
+                        WHERE season_id = :season_id
+                          AND competition_id = :competition_id
+                        """
+                    ),
+                    {"season_id": season_id, "competition_id": competition_id},
+                ).scalar()
+                or 0
+            )
+        except Exception:
+            max_matches = 0.0
+    min_minutes = max(90.0, min(900.0, max_matches * 90.0 * 0.25)) if max_matches > 0 else 90.0
+
     queries = {
         "global": (
             """
             SELECT
                 pmp.position_group,
                 pmp.metric_key,
-                AVG(pmp.raw_value) AS avg_raw,
-                AVG(pmp.percentile) AS avg_percentile,
+                ARRAY_AGG(pmp.raw_value) FILTER (WHERE pmp.raw_value IS NOT NULL) AS raw_values,
+                BOOL_OR(pmp.lower_is_better) AS lower_is_better,
                 COUNT(*) AS sample_size
             FROM player_metric_percentiles_global pmp
+            JOIN player_seasons ps ON ps.id = pmp.player_season_id
             WHERE pmp.season_id = :season_id
               AND pmp.raw_value IS NOT NULL
+              AND COALESCE(ps.minutes_played, 0) >= :min_minutes
             GROUP BY pmp.position_group, pmp.metric_key
             """,
-            {"season_id": season_id},
+            {"season_id": season_id, "min_minutes": min_minutes},
         ),
         "league": (
             """
             SELECT
                 pmp.position_group,
                 pmp.metric_key,
-                AVG(pmp.raw_value) AS avg_raw,
-                AVG(pmp.percentile) AS avg_percentile,
+                ARRAY_AGG(pmp.raw_value) FILTER (WHERE pmp.raw_value IS NOT NULL) AS raw_values,
+                BOOL_OR(pmp.lower_is_better) AS lower_is_better,
                 COUNT(*) AS sample_size
             FROM player_metric_percentiles_league pmp
+            JOIN player_seasons ps ON ps.id = pmp.player_season_id
             WHERE pmp.season_id = :season_id
               AND pmp.competition_id = :competition_id
               AND pmp.raw_value IS NOT NULL
+              AND COALESCE(ps.minutes_played, 0) >= :min_minutes
             GROUP BY pmp.position_group, pmp.metric_key
             """,
-            {"season_id": season_id, "competition_id": competition_id},
+            {"season_id": season_id, "competition_id": competition_id, "min_minutes": min_minutes},
         ),
     }
 
@@ -5118,10 +5216,17 @@ def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]
                 continue
             group = contexts[context].setdefault(str(position_group), {"metrics": {}, "sample_size": 0})
             sample_size = int(item.get("sample_size") or 0)
+            raw_values = [float(value) for value in (item.get("raw_values") or []) if value is not None]
+            avg_raw = sum(raw_values) / len(raw_values) if raw_values else None
+            lower_is_better = bool(item.get("lower_is_better"))
+            avg_percentile = _percentile_rank(raw_values, avg_raw) if avg_raw is not None else None
+            if avg_percentile is not None and lower_is_better:
+                avg_percentile = 100.0 - avg_percentile
             group["sample_size"] = max(int(group.get("sample_size") or 0), sample_size)
+            group["min_minutes"] = min_minutes
             group["metrics"][str(metric_key)] = {
-                "raw": item.get("avg_raw"),
-                "percentile": item.get("avg_percentile"),
+                "raw": avg_raw,
+                "percentile": avg_percentile,
                 "sample_size": sample_size,
             }
     return contexts
@@ -8129,7 +8234,7 @@ def search_players(
         return []
     where_clause = " AND ".join(token_clauses)
 
-    fetch_limit = min(500, max(limit * 20, limit))
+    fetch_limit = min(2500, max(limit * 60, 500))
     params["fetch_limit"] = fetch_limit
     sql = f"""
     SELECT DISTINCT ON (p.id, ps.calendar, c.name, ps.team_in_selected_period)
@@ -8159,8 +8264,16 @@ def search_players(
     """
     rows = session.execute(text(sql), params).fetchall()
     items = [_row_to_dict(row) for row in rows]
+    for item in items:
+        club_power = _club_power_for_team(item.get("team"))
+        item["club_power_rating"] = club_power["rating"]
+        item["club_power_rank"] = club_power["rank"]
+        item["club_power_matched_team"] = club_power["matched_team"]
+        item["_search_relevance"] = _player_search_relevance(item, cleaned)
     items.sort(
         key=lambda item: (
+            float(item.get("club_power_rating") or -1),
+            int(item.get("_search_relevance") or 0),
             _season_sort_key_desc(item.get("calendar")),
             float(item.get("minutes_played") or -1),
             str(item.get("name") or ""),
@@ -8172,6 +8285,7 @@ def search_players(
     trimmed = items[:limit]
     for item in trimmed:
         item.pop("minutes_played", None)
+        item.pop("_search_relevance", None)
     return trimmed
 
 
@@ -8185,12 +8299,33 @@ def prospect_ids(session: Session = Depends(get_session)):
 @app.post("/prospects")
 def add_prospect(payload: ProspectToggle, session: Session = Depends(get_session)):
     _ensure_prospect_schema(session)
+    if payload.player_season_id is not None:
+        season_row = session.execute(
+            text("SELECT player_id FROM player_seasons WHERE id = :player_season_id"),
+            {"player_season_id": payload.player_season_id},
+        ).fetchone()
+        if not season_row:
+            raise HTTPException(status_code=404, detail="Player season not found")
+        if int(season_row.player_id) != int(payload.player_id):
+            raise HTTPException(status_code=400, detail="Player season does not belong to this player")
     result = session.execute(
-        text("INSERT INTO prospects (player_id) VALUES (:player_id) ON CONFLICT DO NOTHING"),
-        {"player_id": payload.player_id},
-    )
+        text(
+            """
+            INSERT INTO prospects (player_id, player_season_id)
+            VALUES (:player_id, :player_season_id)
+            ON CONFLICT (player_id) DO UPDATE
+            SET player_season_id = COALESCE(EXCLUDED.player_season_id, prospects.player_season_id)
+            RETURNING (xmax = 0) AS inserted
+            """
+        ),
+        {"player_id": payload.player_id, "player_season_id": payload.player_season_id},
+    ).fetchone()
     session.commit()
-    return {"player_id": payload.player_id, "added": result.rowcount > 0}
+    return {
+        "player_id": payload.player_id,
+        "player_season_id": payload.player_season_id,
+        "added": bool(result.inserted) if result else False,
+    }
 
 
 @app.get("/prospects/page", response_model=RankingPage)
@@ -8213,6 +8348,7 @@ def prospects_page(
     FROM prospects pr
     JOIN players p ON p.id = pr.player_id
     JOIN player_seasons ps ON ps.player_id = p.id
+      AND (pr.player_season_id IS NULL OR ps.id = pr.player_season_id)
     JOIN competitions c ON c.id = ps.competition_id
     LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
     """ + _ranking_pct_fallback_join() + """

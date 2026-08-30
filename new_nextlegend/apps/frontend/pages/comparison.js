@@ -587,19 +587,21 @@ export default function ComparisonPage() {
             {searches.slice(0, visibleSlots).map((search, index) => (
               <div key={`search-${index}`} className="relative">
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex h-7 items-center justify-between gap-2">
                     <Label>{PLAYER_STYLES[index].label}</Label>
                     {index >= 2 ? (
                       <button
                         type="button"
-                        className="nl-icon-button h-7 w-7 text-sm"
+                        className="nl-icon-button h-7 w-7 text-sm leading-none"
                         onClick={() => removeOptionalSlot(index)}
                         aria-label={`Remove ${PLAYER_STYLES[index].label}`}
                         title={`Remove ${PLAYER_STYLES[index].label}`}
                       >
                         -
                       </button>
-                    ) : null}
+                    ) : (
+                      <span className="h-7 w-7" aria-hidden="true" />
+                    )}
                   </div>
                   <input
                     className="nl-field"

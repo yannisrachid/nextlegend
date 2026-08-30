@@ -9,7 +9,7 @@ const TM_BASE_URL = "https://www.transfermarkt.com";
 
 const Card = ({ children, className = "", ...rest }) => (
   <div
-    className={`glass-panel rounded-xl p-4 border border-white/5 ${className}`}
+    className={`glass-panel min-w-0 rounded-xl border border-white/5 p-4 ${className}`}
     {...rest}
   >
     {children}
@@ -24,7 +24,7 @@ const Label = ({ children }) => (
 
 const Input = ({ value, onChange, placeholder, ...rest }) => (
   <input
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-full"
+    className="nl-field"
     value={value}
     onChange={onChange}
     placeholder={placeholder}
@@ -43,6 +43,64 @@ const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   >
     {children}
   </select>
+);
+
+const iconPaths = {
+  spark: ["M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z", "M19 3v4", "M21 5h-4", "M5 17v4", "M7 19H3"],
+  plus: ["M12 5v14", "M5 12h14"],
+  edit: ["M12 20h9", "M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"],
+  send: ["M22 2 11 13", "M22 2l-7 20-4-9-9-4z"],
+  user: ["M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2", "M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8"],
+  bot: ["M12 8V4", "M8 4h8", "M6 8h12v9a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z", "M9 13h.01", "M15 13h.01", "M10 17h4"],
+  database: ["M4 6c0-2 16-2 16 0s-16 2-16 0", "M4 6v6c0 2 16 2 16 0V6", "M4 12v6c0 2 16 2 16 0v-6"],
+  gauge: ["M4 14a8 8 0 0 1 16 0", "M12 14l4-4", "M8 18h8"],
+  clock: ["M12 7v5l3 2", "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0"],
+  external: ["M14 3h7v7", "M10 14 21 3", "M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"],
+  filter: ["M4 5h16", "M7 12h10", "M10 19h4"],
+};
+
+const Icon = ({ name, className = "h-4 w-4" }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+    aria-hidden="true"
+  >
+    {(iconPaths[name] || iconPaths.spark).map((path) => (
+      <path key={path} d={path} />
+    ))}
+  </svg>
+);
+
+const MetricTile = ({ label, value, tone = "default" }) => (
+  <div
+    className={`min-w-0 rounded-lg border px-3 py-3 ${
+      tone === "green"
+        ? "border-[#3A8967]/35 bg-[#2F7D5C]/15"
+        : "border-white/10 bg-white/[0.025]"
+    }`}
+  >
+    <p className="break-words text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+      {label}
+    </p>
+    <p className={`mt-1 break-words text-sm font-semibold leading-5 ${tone === "green" ? "text-[#8CC7A7]" : "text-slate-100"}`}>
+      {value}
+    </p>
+  </div>
+);
+
+const PromptChip = ({ children, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-xs font-medium text-slate-300 transition hover:border-[#3A8967]/35 hover:bg-[#2F7D5C]/12 hover:text-white"
+  >
+    {children}
+  </button>
 );
 
 const toAbsoluteUrl = (value) => {
@@ -110,21 +168,6 @@ const extractTmFields = (row) => {
   return tmFields;
 };
 
-const PriorityBadge = ({ value }) => {
-  const styles = {
-    1: "bg-emerald-500/20 text-emerald-200 border-emerald-400/40",
-    2: "bg-amber-500/20 text-amber-200 border-amber-400/40",
-    3: "bg-sky-500/20 text-sky-200 border-sky-400/40",
-  };
-  return (
-    <span
-      className={`px-2 py-1 rounded-full border text-xs font-semibold ${styles[value] || "border-slate-600 text-slate-200"}`}
-    >
-      Priority {value}
-    </span>
-  );
-};
-
 export default function AIPage() {
   const [mode, setMode] = useState("scout");
   const [prompt, setPrompt] = useState("");
@@ -133,6 +176,7 @@ export default function AIPage() {
   const [error, setError] = useState("");
 
   const [userId, setUserId] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [activeConversationId, setActiveConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -149,11 +193,13 @@ export default function AIPage() {
   const [usageTotal, setUsageTotal] = useState(null);
   const [usageConversation, setUsageConversation] = useState(null);
   const [usageError, setUsageError] = useState("");
+  const isUsageAdmin = currentUser?.role === "admin" && currentUser?.username === "yrachid";
 
   useEffect(() => {
     fetchJson("/auth/me")
       .then((res) => {
         if (res?.username) {
+          setCurrentUser(res);
           setUserId(res.username);
         }
       })
@@ -235,8 +281,14 @@ export default function AIPage() {
   }, [activeConversationId]);
 
   useEffect(() => {
+    if (!isUsageAdmin) {
+      setUsageTotal(null);
+      setUsageConversation(null);
+      setUsageError("");
+      return;
+    }
     loadUsage(activeConversationId);
-  }, [activeConversationId, messages.length, userId]);
+  }, [activeConversationId, messages.length, userId, isUsageAdmin]);
 
   useEffect(() => {
     fetchJsonCached("/meta/seasons")
@@ -339,7 +391,7 @@ export default function AIPage() {
   };
 
   const loadUsage = async (conversationId) => {
-    if (!userId) return;
+    if (!userId || !isUsageAdmin) return;
     setUsageError("");
     try {
       const [total, current] = await Promise.all([
@@ -474,290 +526,395 @@ export default function AIPage() {
     }
   };
 
-  return (
-    <main className="nl-page py-10 px-4">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-            AI Assistant
-          </p>
-          <h1 className="text-4xl font-bold text-white tracking-tight">
-            Scouting brief assistant
-          </h1>
-          <p className="text-slate-300 max-w-3xl">
-            Ask structured football questions and turn the Next Legend database into clear HD Sports scouting briefs.
-          </p>
-        </header>
-
-        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
-          <aside className="space-y-3">
-            <button
-              className="w-full px-3 py-2 rounded-md border border-slate-700 bg-slate-900/60 text-sm text-slate-200 hover:bg-slate-800/80"
-              onClick={() => createConversation(mode)}
+  const activeConversation = conversations.find((item) => item.id === activeConversationId);
+  const activeModeLabel = mode === "player" ? "Player report" : "Scout advisor";
+  const promptSuggestions = [
+    "Build a shortlist of U23 centre backs ready for a Big 5 move.",
+    "Identify undervalued wide forwards with strong ball progression.",
+    "Summarize the risk profile for a player before a recruitment meeting.",
+  ];
+  const contextPanels = (
+    <>
+      <Card className="space-y-2.5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 text-[#8CC7A7]">
+            <Icon name="database" className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">Context lock</p>
+            <p className="text-xs text-slate-500">Current query scope</p>
+          </div>
+        </div>
+        <div className="overflow-hidden rounded-md border border-white/10 bg-white/[0.025]">
+          {[
+            ["Mode", activeModeLabel],
+            ["Language", language === "auto" ? "Auto" : language.toUpperCase()],
+            ["Selected player", selectedPlayerId ? "Locked" : mode === "player" ? "Required" : "Not needed"],
+          ].map(([label, value], index) => (
+            <div
+              key={label}
+              className={`flex min-w-0 items-center justify-between gap-3 px-3 py-2 ${
+                index === 0 ? "bg-[#2F7D5C]/10" : "border-t border-white/5"
+              }`}
             >
-              + New conversation
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                {label}
+              </span>
+              <span className={`min-w-0 truncate text-right text-xs font-semibold ${index === 0 ? "text-[#8CC7A7]" : "text-slate-200"}`}>
+                {value}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {isUsageAdmin ? (
+        <Card className="space-y-3 text-xs text-slate-300">
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 font-semibold text-white">
+              <Icon name="gauge" className="h-4 w-4 text-[#8CC7A7]" />
+              Usage
+            </span>
+            <span className="truncate text-slate-500">{usageTotal?.model || "gpt-4o"}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <MetricTile label="This chat" value={`${formatTokens(usageConversation?.total_tokens)} tokens`} />
+            <MetricTile label="Chat cost" value={formatUsd(usageConversation?.estimated_cost_usd)} />
+            <MetricTile label="Total" value={`${formatTokens(usageTotal?.total_tokens)} tokens`} />
+            <MetricTile label="Total cost" value={formatUsd(usageTotal?.estimated_cost_usd)} />
+          </div>
+          <div className="rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] leading-5 text-slate-500">
+            Remaining balance is not available via OpenAI API.
+          </div>
+          {usageError ? (
+            <div className="rounded-md border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+              {usageError}
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <Card className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-slate-300">
+            <Icon name="filter" className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">Good brief inputs</p>
+            <p className="text-xs text-slate-500">Keep answers operational.</p>
+          </div>
+        </div>
+        <div className="space-y-2 text-xs leading-5 text-slate-400">
+          <p>Define role, league level, budget, age range and minutes threshold.</p>
+          <p>For player reports, lock one player before asking for tactical or market analysis.</p>
+          <p>Open candidate cards to jump directly to the full player report.</p>
+        </div>
+      </Card>
+    </>
+  );
+
+  return (
+    <main className="nl-page px-4 py-8">
+      <div className="mx-auto max-w-[1760px] space-y-5">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:self-start xl:overflow-auto xl:pr-1">
+            <button
+              type="button"
+              className="nl-button-primary w-full justify-center"
+              onClick={() => createConversation(mode)}
+              disabled={!userId}
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              New conversation
             </button>
-            <Card className="space-y-2 text-xs text-slate-300">
-              <div className="flex items-center justify-between">
-                <span className="uppercase tracking-[0.2em] text-slate-400">
-                  Usage
-                </span>
-                <span className="text-slate-500">
-                  {usageTotal?.model || "gpt-4o"}
-                </span>
+
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-white/10 px-4 py-3">
+                <p className="nl-kicker">Conversation memory</p>
               </div>
-              <div className="flex items-center justify-between">
-                <span>This chat</span>
-                <span>
-                  {formatTokens(usageConversation?.total_tokens)} tokens
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span>Cost</span>
-                <span>{formatUsd(usageConversation?.estimated_cost_usd)}</span>
-              </div>
-              <div className="flex items-center justify-between mt-2">
-                <span>Total</span>
-                <span>{formatTokens(usageTotal?.total_tokens)} tokens</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-400">
-                <span>Cost</span>
-                <span>{formatUsd(usageTotal?.estimated_cost_usd)}</span>
-              </div>
-              <div className="text-[11px] text-slate-500 mt-2">
-                Remaining balance is not available via OpenAI API.
-              </div>
-              {usageError ? (
-                <div className="text-[11px] text-amber-300">{usageError}</div>
-              ) : null}
-            </Card>
-            <div className="space-y-2">
-              {conversations.length === 0 ? (
-                <Card className="text-xs text-slate-400">
-                  No scouting brief has been started yet.
-                </Card>
-              ) : (
-                conversations.map((conv) => {
-                  const isActive = conv.id === activeConversationId;
-                  const isEditing = editingConversationId === conv.id;
-                  return (
-                    <div
-                      key={conv.id}
-                      className={`w-full rounded-md border ${
-                        isActive
-                          ? "border-primary/60 bg-primary/10 text-white"
-                          : "border-slate-800 bg-slate-900/40 text-slate-300"
-                      } px-3 py-2`}
-                    >
-                      {isEditing ? (
-                        <div className="space-y-2">
-                          <Input
-                            value={editingTitle}
-                            onChange={(event) => setEditingTitle(event.target.value)}
-                            placeholder="Conversation title"
-                          />
-                          <div className="flex items-center gap-2">
+              <div className="max-h-[360px] space-y-1 overflow-auto p-2">
+                {conversations.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-white/10 bg-white/[0.025] px-3 py-8 text-center">
+                    <p className="text-sm font-semibold text-slate-200">No conversation yet</p>
+                    <p className="mt-1 text-xs text-slate-500">Start with a brief and it will appear here.</p>
+                  </div>
+                ) : (
+                  conversations.map((conv) => {
+                    const isActive = conv.id === activeConversationId;
+                    const isEditing = editingConversationId === conv.id;
+                    return (
+                      <div
+                        key={conv.id}
+                        className={`rounded-md border p-2 transition ${
+                          isActive
+                            ? "border-[#3A8967]/40 bg-[#2F7D5C]/16"
+                            : "border-transparent bg-transparent hover:border-white/10 hover:bg-white/[0.035]"
+                        }`}
+                      >
+                        {isEditing ? (
+                          <div className="space-y-2">
+                            <Input
+                              value={editingTitle}
+                              onChange={(event) => setEditingTitle(event.target.value)}
+                              placeholder="Conversation title"
+                            />
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="nl-button-primary px-3 py-1.5 text-xs"
+                                onClick={() => saveConversationTitle(conv.id)}
+                              >
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                className="nl-button-secondary px-3 py-1.5 text-xs"
+                                onClick={cancelEditConversation}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-start gap-2">
                             <button
-                              className="px-2 py-1 rounded-md bg-primary text-slate-900 text-xs font-semibold"
-                              onClick={() => saveConversationTitle(conv.id)}
+                              type="button"
+                              onClick={() => setActiveConversationId(conv.id)}
+                              className="min-w-0 flex-1 text-left"
                             >
-                              Save
+                              <div className="truncate text-sm font-semibold text-slate-100">
+                                {conv.title || "New chat"}
+                              </div>
+                              <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-slate-500">
+                                <span>{conv.mode === "player" ? "Player report" : "Scout advisor"}</span>
+                                <span className="h-1 w-1 rounded-full bg-slate-700" />
+                                <span>{conv.message_count ?? "Open"}</span>
+                              </div>
                             </button>
                             <button
-                              className="px-2 py-1 rounded-md border border-slate-700 text-xs text-slate-200"
-                              onClick={cancelEditConversation}
+                              type="button"
+                              className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+                              onClick={() => startEditConversation(conv)}
+                              aria-label="Edit conversation title"
                             >
-                              Cancel
+                              <Icon name="edit" className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-start justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setActiveConversationId(conv.id)}
-                            className="text-left flex-1"
-                          >
-                            <div className="text-sm font-semibold">
-                              {conv.title || "New chat"}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {conv.mode === "player"
-                                ? "Player report"
-                                : "Scout advisor"}
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            className="text-xs text-slate-400 hover:text-slate-200"
-                            onClick={() => startEditConversation(conv)}
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </Card>
+
+            {contextPanels}
           </aside>
 
-          <section className="space-y-4">
-            <Card className="nl-filter-bar p-0">
+          <section className="min-w-0 space-y-4">
+            <header className="overflow-hidden rounded-lg border border-white/10 bg-[#070807]">
+              <div className="relative grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-end">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#559A78]/70 to-transparent" />
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-2 rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-1.5 text-xs font-semibold text-[#8CC7A7]">
+                      <Icon name="spark" className="h-3.5 w-3.5" />
+                      AI Assistant
+                    </span>
+                    <span className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-400">
+                      {activeModeLabel}
+                    </span>
+                  </div>
+                  <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+                    Scouting brief assistant
+                  </h1>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+                    Query the Next Legend database, structure recruitment thinking, and turn player context into usable scouting briefs.
+                  </p>
+                </div>
+                <div className={`grid gap-2 ${isUsageAdmin ? "grid-cols-3 sm:min-w-[420px]" : "grid-cols-2 sm:min-w-[300px]"}`}>
+                  <MetricTile label="Season" value={selectedSeason || "All"} tone="green" />
+                  <MetricTile label="Messages" value={messages.length} />
+                  {isUsageAdmin ? <MetricTile label="Model" value={usageTotal?.model || "gpt-4o"} /> : null}
+                </div>
+              </div>
+            </header>
+
+            <Card className="overflow-visible p-0">
               <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="nl-kicker">Assistant context</p>
-                  <h2 className="mt-1 text-lg font-semibold text-white">Frame the scouting brief</h2>
+                  <h2 className="mt-1 text-lg font-semibold text-white">
+                    {activeConversation?.title || "Untitled scouting brief"}
+                  </h2>
                 </div>
-                <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
-                  {selectedSeason || "All seasons"}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-3">
-                <div>
-                  <Label>Mode</Label>
-                  <Select
-                    id="ai-mode"
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value)}
-                  >
-                    <option value="scout">Scout Advisor</option>
-                    <option value="player">Player Agent / Report</option>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Language</Label>
-                  <Select
-                    id="ai-language"
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
-                  >
-                    <option value="auto">Auto</option>
-                    <option value="en">English</option>
-                    <option value="fr">Francais</option>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Season</Label>
-                  <Select
-                    id="ai-season"
-                    value={selectedSeason}
-                    onChange={(e) => {
-                      setSelectedSeason(e.target.value);
-                      setPlayerResults([]);
-                      setSelectedPlayerId("");
-                      setSelectedPlayerSeasonId("");
-                      if (mode === "player") {
-                        setPlayerQuery("");
-                      }
-                    }}
-                  >
-                    <option value="">All seasons</option>
-                    {seasons.map((season) => (
-                      <option key={season} value={season}>
-                        {season}
-                      </option>
-                    ))}
-                  </Select>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+                  <div>
+                    <Label>Mode</Label>
+                    <Select
+                      id="ai-mode"
+                      value={mode}
+                      onChange={(e) => setMode(e.target.value)}
+                    >
+                      <option value="scout">Scout Advisor</option>
+                      <option value="player">Player Agent / Report</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Language</Label>
+                    <Select
+                      id="ai-language"
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                    >
+                      <option value="auto">Auto</option>
+                      <option value="en">English</option>
+                      <option value="fr">French</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Season</Label>
+                    <Select
+                      id="ai-season"
+                      value={selectedSeason}
+                      onChange={(e) => {
+                        setSelectedSeason(e.target.value);
+                        setPlayerResults([]);
+                        setSelectedPlayerId("");
+                        setSelectedPlayerSeasonId("");
+                        if (mode === "player") {
+                          setPlayerQuery("");
+                        }
+                      }}
+                    >
+                      <option value="">All seasons</option>
+                      {seasons.map((season) => (
+                        <option key={season} value={season}>
+                          {season}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
                 </div>
               </div>
             </Card>
 
-            <div className="space-y-4">
-              {messages.length === 0 ? (
-                <Card className="text-sm text-slate-400">
-                  Start the conversation by sending a scouting brief.
-                </Card>
-              ) : (
-                messages.map((message, idx) => {
-                  const isUser = message.role === "user";
-                  const isPending = message.pending;
-                  const payload = message.payload || {};
-                  const mergedCandidates = payload?.candidates
-                    ? mergeCandidates(payload)
-                    : [];
-                  return (
-                    <div
-                      key={message.id || idx}
-                      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-                    >
+            <Card className="min-h-[520px] overflow-hidden p-0">
+              <div className="border-b border-white/10 bg-white/[0.018] px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Conversation</p>
+                    <p className="mt-1 text-xs text-slate-500">Chat history, candidate cards and database context.</p>
+                  </div>
+                  <span className="rounded-md border border-white/10 bg-black/20 px-2.5 py-1 text-xs font-semibold text-slate-400">
+                    {messages.length || 0} messages
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-6 p-4 md:p-5">
+                {messages.length === 0 ? (
+                  <div className="grid min-h-[360px] place-items-center rounded-lg border border-dashed border-white/10 bg-black/[0.16] px-4 py-10 text-center">
+                    <div className="max-w-xl">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-[#3A8967]/35 bg-[#2F7D5C]/15 text-[#8CC7A7]">
+                        <Icon name="spark" className="h-5 w-5" />
+                      </div>
+                      <h3 className="mt-4 text-lg font-semibold text-white">Start a structured scouting brief</h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-400">
+                        Use a focused prompt, select the right context, and the assistant will answer from the scouting database.
+                      </p>
+                      <div className="mt-5 grid gap-2 text-left sm:grid-cols-3">
+                        {promptSuggestions.map((suggestion) => (
+                          <PromptChip key={suggestion} onClick={() => setPrompt(suggestion)}>
+                            {suggestion}
+                          </PromptChip>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  messages.map((message, idx) => {
+                    const isUser = message.role === "user";
+                    const isPending = message.pending;
+                    const payload = message.payload || {};
+                    const mergedCandidates = payload?.candidates
+                      ? mergeCandidates(payload)
+                      : [];
+                    return (
                       <div
-                        className={`max-w-[85%] rounded-2xl px-4 py-3 border ${
-                          isUser
-                            ? "bg-primary/20 border-primary/40 text-slate-100"
-                            : "bg-slate-900/70 border-slate-800 text-slate-200"
-                        }`}
+                        key={message.id || idx}
+                        className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}
                       >
-                        {isPending ? (
-                          <div className="typing-dots" aria-label="Loading">
-                            <span />
-                            <span />
-                            <span />
-                          </div>
-                        ) : (
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                            {message.content}
-                          </p>
-                        )}
-
-                        {payload?.filters && !isPending ? (
-                          <details className="mt-3 text-xs text-slate-400">
-                            <summary className="cursor-pointer">
-                              Applied filters
-                            </summary>
-                            <pre className="mt-2 whitespace-pre-wrap">
-                              {JSON.stringify(payload.filters, null, 2)}
-                            </pre>
-                          </details>
+                        {!isUser ? (
+                        <div
+                          className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-slate-300"
+                        >
+                          <Icon name="bot" className="h-4 w-4" />
+                        </div>
                         ) : null}
+                        <div
+                          className={`min-w-0 rounded-lg border px-4 py-3 ${
+                            isUser
+                              ? "max-w-[min(760px,82%)] border-[#3A8967]/35 bg-[#2F7D5C]/16 text-slate-100"
+                              : "w-full max-w-[1180px] border-white/10 bg-[#0A0C0B]/80 text-slate-200"
+                          }`}
+                        >
+                          {isPending ? (
+                            <div className="flex items-center gap-3 text-sm text-slate-400" aria-label="Loading">
+                              <div className="typing-dots">
+                                <span />
+                                <span />
+                                <span />
+                              </div>
+                              <span>Composing answer</span>
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap text-sm leading-7">
+                              {message.content}
+                            </p>
+                          )}
 
-                        {mergedCandidates.length > 0 && !isPending ? (
-                          <div className="mt-4 space-y-3">
-                            {mergedCandidates.map((candidate, cardIndex) => {
-                              const tmFields = extractTmFields(candidate);
-                              const tmPhotoUrl = toAbsoluteUrl(
-                                tmFields.tm_profile_image_url ||
-                                  tmFields.profile_image_url
-                              );
-                              const tmProfileUrl = toAbsoluteUrl(
-                                tmFields.tm_profile_url || candidate.tm_profile_url
-                              );
-                              const tmMarketValue = formatCompactNumber(
-                                tmFields.tm_market_value
-                              );
-                              const tmAgentName = tmFields.tm_agent_name;
-                              const reportHref =
-                                candidate.player_id !== null &&
-                                candidate.player_id !== undefined
-                                  ? `/report?player_id=${candidate.player_id}${
-                                      candidate.player_season_id != null
-                                        ? `&player_season_id=${candidate.player_season_id}`
-                                        : ""
-                                    }`
-                                  : null;
-                              const cardContent = (
-                                <Card
-                                  key={`${candidate.player_id || candidate.player_name}-${cardIndex}`}
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => {
-                                    if (reportHref) {
-                                      window.open(
-                                        reportHref,
-                                        "_blank",
-                                        "noopener,noreferrer"
-                                      );
-                                    } else {
-                                      handleOpenReport(candidate);
-                                    }
-                                  }}
-                                  onKeyDown={(event) => {
-                                    if (
-                                      (event.key === "Enter" || event.key === " ") &&
-                                      (candidate.player_id || candidate.player_name)
-                                    ) {
-                                      event.preventDefault();
+                          {payload?.filters && !isPending ? (
+                            <details className="mt-4 rounded-md border border-white/10 bg-black/[0.22] px-3 py-2 text-xs text-slate-400">
+                              <summary className="cursor-pointer font-semibold text-slate-300">
+                                Applied filters
+                              </summary>
+                              <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-slate-500">
+                                {JSON.stringify(payload.filters, null, 2)}
+                              </pre>
+                            </details>
+                          ) : null}
+
+                          {mergedCandidates.length > 0 && !isPending ? (
+                            <div className="mt-4 space-y-3">
+                              {mergedCandidates.map((candidate, cardIndex) => {
+                                const tmFields = extractTmFields(candidate);
+                                const tmPhotoUrl = toAbsoluteUrl(
+                                  tmFields.tm_profile_image_url ||
+                                    tmFields.profile_image_url
+                                );
+                                const tmProfileUrl = toAbsoluteUrl(
+                                  tmFields.tm_profile_url || candidate.tm_profile_url
+                                );
+                                const tmMarketValue = formatCompactNumber(
+                                  tmFields.tm_market_value
+                                );
+                                const tmAgentName = tmFields.tm_agent_name;
+                                const reportHref =
+                                  candidate.player_id !== null &&
+                                  candidate.player_id !== undefined
+                                    ? `/report?player_id=${candidate.player_id}${
+                                        candidate.player_season_id != null
+                                          ? `&player_season_id=${candidate.player_season_id}`
+                                          : ""
+                                      }`
+                                    : null;
+                                return (
+                                  <div
+                                    key={`${candidate.player_id || candidate.player_name}-${cardIndex}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => {
                                       if (reportHref) {
                                         window.open(
                                           reportHref,
@@ -767,225 +924,238 @@ export default function AIPage() {
                                       } else {
                                         handleOpenReport(candidate);
                                       }
-                                    }
-                                  }}
-                                  className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
-                                >
-                                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                                    <div className="flex items-center gap-3">
-                                      <div className="text-2xl font-semibold text-primary">
-                                        {cardIndex + 1}
-                                      </div>
-                                      <div className="flex items-center gap-3">
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (
+                                        (event.key === "Enter" || event.key === " ") &&
+                                        (candidate.player_id || candidate.player_name)
+                                      ) {
+                                        event.preventDefault();
+                                        if (reportHref) {
+                                          window.open(
+                                            reportHref,
+                                            "_blank",
+                                            "noopener,noreferrer"
+                                          );
+                                        } else {
+                                          handleOpenReport(candidate);
+                                        }
+                                      }
+                                    }}
+                                    className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.025] p-4 transition hover:border-[#3A8967]/35 hover:bg-[#2F7D5C]/10 focus:outline-none focus:ring-2 focus:ring-[#3A8967]/50"
+                                  >
+                                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px] xl:items-start">
+                                      <div className="flex min-w-0 items-start gap-3">
+                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 text-sm font-semibold text-[#8CC7A7]">
+                                          {cardIndex + 1}
+                                        </div>
                                         {tmPhotoUrl ? (
                                           <img
                                             src={tmPhotoUrl}
                                             alt={candidate.player_name}
-                                            className="h-12 w-12 rounded-full object-cover border border-white/10"
+                                            className="h-12 w-12 shrink-0 rounded-md border border-white/10 object-cover"
                                           />
                                         ) : (
-                                          <div className="h-12 w-12 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-200 font-semibold">
+                                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm font-semibold text-slate-200">
                                             {getInitials(candidate.player_name)}
                                           </div>
                                         )}
-                                        <div>
-                                          <div className="text-lg font-semibold text-white flex items-center gap-2">
-                                            {candidate.player_name}
-                                            <PriorityBadge value={candidate.priority} />
+                                        <div className="min-w-0 flex-1">
+                                          <div className="min-w-0">
+                                            <h4 className="break-words text-lg font-semibold leading-6 text-white">
+                                              {candidate.player_name}
+                                            </h4>
                                           </div>
-                                          <div className="text-slate-400 text-sm">
-                                            {candidate.team || "—"} •{" "}
-                                            {candidate.competition_name} •{" "}
-                                            {candidate.calendar || "–"}
-                                          </div>
+                                          <p className="mt-1 text-sm text-slate-400">
+                                            {candidate.team || "—"} · {candidate.competition_name || "—"} · {candidate.calendar || "—"}
+                                          </p>
                                           {tmProfileUrl ? (
                                             <a
                                               href={tmProfileUrl}
                                               target="_blank"
                                               rel="noreferrer"
-                                              className="text-xs text-primary hover:text-primary/80"
-                                              onClick={(event) =>
-                                                event.stopPropagation()
-                                              }
+                                              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#8CC7A7] hover:text-white"
+                                              onClick={(event) => event.stopPropagation()}
                                             >
                                               Transfermarkt profile
+                                              <Icon name="external" className="h-3 w-3" />
                                             </a>
                                           ) : null}
-                                          {tmMarketValue || tmAgentName ? (
-                                            <div className="text-xs text-slate-400 mt-1">
-                                              {tmMarketValue
-                                                ? `Market value: ${tmMarketValue}`
-                                                : null}
-                                              {tmMarketValue && tmAgentName
-                                                ? " • "
-                                                : null}
-                                              {tmAgentName
-                                                ? `Agent: ${tmAgentName}`
-                                                : null}
-                                            </div>
-                                          ) : null}
-                                          <div className="flex flex-wrap gap-2 mt-2">
-                                            {candidate.assigned_role ? (
-                                              <span className="px-2 py-1 rounded-full bg-slate-800 text-xs text-slate-200 border border-white/5">
-                                                {candidate.assigned_role}
-                                              </span>
-                                            ) : null}
-                                            {candidate.position ? (
-                                              <span className="px-2 py-1 rounded-full bg-slate-800 text-xs text-slate-200 border border-white/5">
-                                                {candidate.position}
-                                              </span>
-                                            ) : null}
-                                            {candidate.age ? (
-                                              <span className="px-2 py-1 rounded-full bg-slate-800 text-xs text-slate-200 border border-white/5">
-                                                {candidate.age} yrs
-                                              </span>
-                                            ) : null}
-                                            <span className="px-2 py-1 rounded-full bg-slate-800 text-xs text-slate-200 border border-white/5">
-                                              {Math.round(
-                                                candidate.minutes_played || 0
-                                              )}{" "}
-                                              mins
-                                            </span>
-                                          </div>
                                         </div>
                                       </div>
+                                      <div className="grid grid-cols-2 gap-2 xl:min-w-[260px]">
+                                        <MetricTile
+                                          label="Score"
+                                          value={candidate.global_score_adjusted?.toFixed(1) ?? "—"}
+                                          tone="green"
+                                        />
+                                        <MetricTile
+                                          label="Role pct"
+                                          value={`${candidate.assigned_role_pct_league?.toFixed(0) ?? "—"} / ${candidate.assigned_role_pct_global?.toFixed(0) ?? "—"}`}
+                                        />
+                                      </div>
                                     </div>
-                                    <div className="flex flex-wrap items-center gap-6">
-                                      <div className="text-right">
-                                        <p className="text-xs uppercase text-slate-400">
-                                          Global score (adj.)
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      {candidate.assigned_role ? (
+                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                          {candidate.assigned_role}
+                                        </span>
+                                      ) : null}
+                                      {candidate.position ? (
+                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                          {candidate.position}
+                                        </span>
+                                      ) : null}
+                                      {candidate.age ? (
+                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                          {candidate.age} yrs
+                                        </span>
+                                      ) : null}
+                                      <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                        {Math.round(candidate.minutes_played || 0)} mins
+                                      </span>
+                                      {tmMarketValue ? (
+                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                          Market value: {tmMarketValue}
+                                        </span>
+                                      ) : null}
+                                      {tmAgentName ? (
+                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                          Agent: {tmAgentName}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                                      <div className="rounded-md border border-white/10 bg-black/[0.18] p-3">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                          Reason
                                         </p>
-                                        <p className="text-2xl font-bold text-primary">
-                                          {candidate.global_score_adjusted?.toFixed(1) ??
-                                            "—"}
+                                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                                          {candidate.reason || "—"}
                                         </p>
                                       </div>
-                                      <div className="text-right">
-                                        <p className="text-xs uppercase text-slate-400">
-                                          Role pct (league/global)
+                                      <div className="rounded-md border border-white/10 bg-black/[0.18] p-3">
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                                          Role summary
                                         </p>
-                                        <p className="text-lg font-semibold">
-                                          {candidate.assigned_role_pct_league?.toFixed(0) ??
-                                            "—"}{" "}
-                                          /{" "}
-                                          {candidate.assigned_role_pct_global?.toFixed(0) ??
-                                            "—"}
+                                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                                          {candidate.role_summary || "—"}
                                         </p>
                                       </div>
                                     </div>
                                   </div>
-                                  <div className="mt-3 grid grid-cols-1 lg:grid-cols-[1.1fr_1fr] gap-4">
-                                    <div>
-                                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                                        Reason
-                                      </div>
-                                      <p className="text-sm text-slate-300">
-                                        {candidate.reason}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                                        Role summary
-                                      </div>
-                                      <p className="text-sm text-slate-300">
-                                        {candidate.role_summary}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </Card>
-                              );
-                              return cardContent;
-                            })}
-                          </div>
-                        ) : null}
+                                );
+                              })}
+                            </div>
+                          ) : null}
 
-                        {payload?.report ? (
-                          <details className="mt-3 text-xs text-slate-400">
-                            <summary className="cursor-pointer">
-                              Context used
-                            </summary>
-                            <pre className="mt-2 whitespace-pre-wrap">
-                              {JSON.stringify(payload.context || {}, null, 2)}
-                            </pre>
-                          </details>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {error && (
-              <Card>
-                <p className="text-danger">Error: {error}</p>
-              </Card>
-            )}
-
-            <Card className="space-y-3">
-              {mode === "player" ? (
-                <div className="relative z-30">
-                  <Label>Player</Label>
-                  <Input
-                    value={playerQuery}
-                    placeholder="Start typing a player name..."
-                    onChange={(e) => {
-                      setPlayerQuery(e.target.value);
-                      setSelectedPlayerId("");
-                      setSelectedPlayerSeasonId("");
-                      setShowResults(true);
-                    }}
-                    onFocus={() => setShowResults(true)}
-                    onBlur={() => setTimeout(() => setShowResults(false), 150)}
-                  />
-                  {showResults && playerQuery.trim().length >= 2 ? (
-                    <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl">
-                      {playerOptions.length === 0 ? (
-                        <div className="px-3 py-2 text-sm text-slate-400">
-                          No matches found.
+                          {payload?.report ? (
+                            <details className="mt-4 rounded-md border border-white/10 bg-black/[0.22] px-3 py-2 text-xs text-slate-400">
+                              <summary className="cursor-pointer font-semibold text-slate-300">
+                                Context used
+                              </summary>
+                              <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-slate-500">
+                                {JSON.stringify(payload.context || {}, null, 2)}
+                              </pre>
+                            </details>
+                          ) : null}
                         </div>
-                      ) : (
-                        playerOptions.map((player) => (
-                          <button
-                            key={`${player.id}-${player.seasonId || "latest"}`}
-                            type="button"
-                            className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              setSelectedPlayerId(player.id);
-                              setSelectedPlayerSeasonId(player.seasonId || "");
-                              setPlayerQuery(player.label);
-                              setShowResults(false);
-                            }}
-                          >
-                            {player.label}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="space-y-2">
-                <Label>Message</Label>
-                <textarea
-                  className="w-full min-h-[120px] bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
-                  placeholder="Describe the scouting brief or the report you need..."
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                />
+                      </div>
+                    );
+                  })
+                )}
               </div>
-              <div className="flex justify-end">
-                <button
-                  className="px-4 py-2 rounded-md bg-primary text-slate-900 font-semibold hover:bg-primary/90 transition"
-                  onClick={handleSend}
-                  disabled={loading || !prompt.trim()}
-                >
-                  Send
-                </button>
+            </Card>
+
+            {error ? (
+              <Card className="border-rose-400/35 bg-rose-500/10">
+                <p className="text-sm font-semibold text-rose-200">Error: {error}</p>
+              </Card>
+            ) : null}
+
+            <Card className="overflow-visible p-0">
+              <div className="border-b border-white/10 px-4 py-3">
+                <p className="text-sm font-semibold text-white">Composer</p>
+                <p className="mt-1 text-xs text-slate-500">Write the exact recruitment question or player report request.</p>
+              </div>
+              <div className="space-y-3 p-4">
+                {mode === "player" ? (
+                  <div className="relative z-30">
+                    <Label>Player</Label>
+                    <Input
+                      value={playerQuery}
+                      placeholder="Start typing a player name..."
+                      autoComplete="off"
+                      onChange={(e) => {
+                        setPlayerQuery(e.target.value);
+                        setSelectedPlayerId("");
+                        setSelectedPlayerSeasonId("");
+                        setShowResults(true);
+                      }}
+                      onFocus={() => setShowResults(true)}
+                      onBlur={() => setTimeout(() => setShowResults(false), 150)}
+                    />
+                    {showResults && playerQuery.trim().length >= 2 ? (
+                      <div className="absolute z-50 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-white/10 bg-[#080B0A] shadow-2xl">
+                        {playerOptions.length === 0 ? (
+                          <div className="px-3 py-3 text-sm text-slate-400">
+                            No matches found.
+                          </div>
+                        ) : (
+                          playerOptions.map((player) => (
+                            <button
+                              key={`${player.id}-${player.seasonId || "latest"}`}
+                              type="button"
+                              className="w-full border-b border-white/5 px-3 py-2.5 text-left text-sm text-slate-300 transition last:border-b-0 hover:bg-[#2F7D5C]/12 hover:text-white"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setSelectedPlayerId(player.id);
+                                setSelectedPlayerSeasonId(player.seasonId || "");
+                                setPlayerQuery(player.label);
+                                setShowResults(false);
+                              }}
+                            >
+                              {player.label}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  <Label>Message</Label>
+                  <textarea
+                    className="nl-field min-h-[132px] resize-y"
+                    placeholder="Describe the scouting brief or the report you need..."
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs text-slate-500">
+                    Cmd/Ctrl + Enter to send. Answers keep the selected mode, language and season.
+                  </p>
+                  <button
+                    type="button"
+                    className="nl-button-primary justify-center disabled:cursor-not-allowed disabled:opacity-45"
+                    onClick={handleSend}
+                    disabled={loading || !prompt.trim()}
+                  >
+                    <Icon name="send" className="h-4 w-4" />
+                    {loading ? "Sending" : "Send brief"}
+                  </button>
+                </div>
               </div>
             </Card>
           </section>
+
         </div>
       </div>
     </main>

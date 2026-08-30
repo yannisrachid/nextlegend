@@ -40,9 +40,12 @@ const Label = ({ children }) => (
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -352,8 +355,9 @@ export default function ProjectionPage() {
               <div className="flex flex-col gap-2">
                 <Label>Player</Label>
                 <input
-                  className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                  className="nl-field"
                   placeholder="Start typing a player name..."
+                  autoComplete="off"
                   value={playerQuery}
                   onChange={(e) => {
                     setPlayerQuery(e.target.value);

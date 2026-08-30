@@ -10,7 +10,7 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Avoid prototype or implementation-led text such as `v2`, `current app`, `condensed workspace`, or `prototype` in UI copy.
 
 ## Stack
-- Frontend: Next.js 14, React 18, Tailwind CSS, SWR, Recharts, Plotly.
+- Frontend: Next.js 16, React 19, Tailwind CSS, SWR, Recharts, Plotly.
 - API: FastAPI, SQLAlchemy 2, Pydantic 2, Postgres.
 - Pipeline: Python, Pandas, PyArrow, SQLAlchemy, Boto3, MinIO S3-compatible storage.
 - Runtime: Docker Compose for local and VPS.
@@ -41,6 +41,15 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Keep operational workspace UI dense, clear, and task-focused.
 - Use existing shared components when present, especially `ClubLogo` and scouting shell/navigation components.
 - Player photos should prefer application-provided image fields; canvas/export flows must use `/image-proxy` when cross-origin images need safe rendering.
+- Current UI direction is dark premium SaaS: near-black page background, anthracite surfaces, subtle borders, restrained muted green accents, dense professional layouts, and no generic admin-template look.
+- Main app navigation is on the left and must remain collapsible/expandable with a visible mid-rail toggle. Do not move it back to the right unless explicitly requested.
+- Keep `Mercato 2026` hidden from normal navigation until the user asks to re-enable it. Do not delete the module.
+- Use the `nl-field` pattern for text inputs/selects/filters to avoid browser-autofill blue backgrounds and inconsistent dark-mode styling.
+- Scouting filter UX should preserve user selections when possible; default ranking filters are Big 5 Leagues, season `2026/2027`, all positions, 90+ minutes, age 15-45.
+- Player search/autocomplete results should be ordered by club strength/ranking where the backend provides enough context.
+- AI Assistant layout: keep a two-column desktop composition with `Conversation memory`, `Context lock`, admin-only `Usage`, and brief-input guidance in the left column; the chat/composer stays in the main column. Avoid a third right column because it breaks when the navigation is expanded.
+- AI conversations are user-scoped server-side. The API must use the authenticated session user, not a client-provided `user_id`, as the source of truth for conversation history.
+- AI usage/admin user tooling must remain visible only to admin `yrachid`.
 
 ## Pipeline Conventions
 - The pipeline is the only writer for football serving tables.

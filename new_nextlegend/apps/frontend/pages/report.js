@@ -9,9 +9,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { apiUrl, fetchJson, fetchJsonCached } from "@/lib/api";
+import { apiUrl, fetchJson, fetchJsonCached, postJson } from "@/lib/api";
 import ClubLogo from "@/components/ClubLogo";
-import { getMetricConfig, getPositionMeta, getRadarMetricKeys, normalizePositionGroup, POSITION_GROUPS } from "@/lib/reportMetrics";
+import {
+  getMetricConfig,
+  getPositionMeta,
+  getRadarMetricKeys,
+  metricGroupOrderForPosition,
+  metricGroups,
+  normalizePositionGroup,
+  POSITION_GROUPS,
+} from "@/lib/reportMetrics";
 import {
   DEFAULT_SCOUTING_SEASON,
   withDefaultSeason,
@@ -237,22 +245,22 @@ const drawBar = (ctx, label, value, raw, x, y, width) => {
   const score = canvasClamp(value);
   const tone = canvasTone(score);
   ctx.fillStyle = "#0f172a";
-  ctx.font = "900 23px Arial";
+  ctx.font = "900 18px Arial";
   ctx.fillText(label, x, y);
   ctx.fillStyle = "#64748b";
-  ctx.font = "700 18px Arial";
+  ctx.font = "700 15px Arial";
   ctx.textAlign = "right";
   ctx.fillText(raw ? `${raw} raw` : score === null ? "-" : `${Math.round(score)} pct`, x + width, y);
   ctx.textAlign = "left";
   ctx.fillStyle = tone.bg;
-  drawRoundedRect(ctx, x, y + 16, width, 18, 9);
+  drawRoundedRect(ctx, x, y + 16, width, 10, 5);
   ctx.fill();
   if (score !== null) {
     ctx.fillStyle = tone.color;
-    drawRoundedRect(ctx, x, y + 16, Math.max(10, (width * score) / 100), 18, 9);
+    drawRoundedRect(ctx, x, y + 16, Math.max(10, (width * score) / 100), 10, 5);
     ctx.fill();
   }
-  return y + 54;
+  return y + 46;
 };
 
 const drawKeyValue = (ctx, label, value, x, y, width) => {
@@ -333,7 +341,7 @@ const drawRadar = (ctx, rows, x, y, size, title, subtitle) => {
   const centerX = x + size / 2;
   const centerY = y + 92 + size / 2;
   const radius = size * 0.34;
-  const filtered = rows.slice(0, 8);
+  const filtered = rows.slice(0, 6);
   if (filtered.length < 3) {
     ctx.fillStyle = "#64748b";
     ctx.font = "700 22px Arial";
@@ -396,23 +404,98 @@ const drawRadar = (ctx, rows, x, y, size, title, subtitle) => {
   ctx.textAlign = "left";
 };
 
-const buildPngVerdict = (player, positionMeta, characteristics) => {
-  const score = Number(player?.global_score_adjusted);
+const buildPngVerdict = (player, generatedAt) => {
   const minutes = Number(player?.minutes_played);
-  const strengths = characteristics?.strengths || [];
-  const top = strengths.slice(0, 2).map((row) => row.label.toLowerCase());
-  const scoreText = Number.isFinite(score) && score >= 85
-    ? "high-priority follow-up"
-    : Number.isFinite(score) && score >= 75
-      ? "worth a deeper scouting check"
-      : "profile to monitor with context";
-  const evidence = top.length ? `Core evidence: ${top.join(" and ")}.` : "Evidence is limited by available percentile coverage.";
-  const volume = Number.isFinite(minutes) && minutes >= 900
-    ? "The sample is meaningful enough to trust the signal."
-    : Number.isFinite(minutes) && minutes > 0
-      ? "The minutes sample is still developing, so video validation matters."
-      : "Minutes context is unavailable.";
-  return `${positionMeta.short} ${scoreText}. ${evidence} ${volume}`;
+  const sample = Number.isFinite(minutes) && minutes > 0
+    ? `${formatValue(minutes, "integer")} minutes observed`
+    : "Minutes sample unavailable";
+  return `Observed statistical profile generated on ${generatedAt} from Wyscout season data. ${sample}. Position-based percentiles should be confirmed through video scouting before any recruitment decision.`;
+};
+
+const drawSeasonEvolution = (ctx, rows, x, y, width, height) => {
+  drawCard(ctx, x, y, width, height, { fill: "#ffffff", stroke: "#e2e8f0", radius: 24 });
+  drawKicker(ctx, "Season evolution", x + 32, y + 42);
+
+  const seasons = [...(rows || [])]
+    .filter((row) => hasValue(row?.calendar) || hasValue(row?.global_score_adjusted) || hasValue(row?.minutes_played))
+    .sort((a, b) => seasonSortValue(a.calendar) - seasonSortValue(b.calendar))
+    .slice(-5);
+
+  ctx.fillStyle = "#64748b";
+  ctx.font = "700 18px Arial";
+  ctx.fillText("Latest available seasons with minutes and model rating trend.", x + 32, y + 74);
+
+  if (!seasons.length) {
+    ctx.fillStyle = "#f8fafc";
+    drawRoundedRect(ctx, x + 32, y + 108, width - 64, 72, 18);
+    ctx.fill();
+    ctx.fillStyle = "#475569";
+    ctx.font = "800 20px Arial";
+    ctx.fillText("No season evolution available for this player.", x + 54, y + 153);
+    return;
+  }
+
+  const chartX = x + 42;
+  const chartY = y + 106;
+  const chartW = width - 84;
+  const chartH = 128;
+  const scores = seasons.map((row) => Number(row.global_score_adjusted)).filter(Number.isFinite);
+  const minScore = Math.max(0, Math.floor((Math.min(...scores, 50) - 5) / 5) * 5);
+  const maxScore = Math.min(100, Math.ceil((Math.max(...scores, 100) + 5) / 5) * 5);
+  const span = Math.max(10, maxScore - minScore);
+
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.lineWidth = 1.5;
+  [0, 0.5, 1].forEach((ratio) => {
+    const gy = chartY + chartH * ratio;
+    ctx.beginPath();
+    ctx.moveTo(chartX, gy);
+    ctx.lineTo(chartX + chartW, gy);
+    ctx.stroke();
+  });
+
+  const points = seasons.map((row, index) => {
+    const score = Number(row.global_score_adjusted);
+    const px = chartX + (seasons.length === 1 ? chartW / 2 : (chartW * index) / (seasons.length - 1));
+    const py = Number.isFinite(score) ? chartY + chartH - ((score - minScore) / span) * chartH : null;
+    return { row, score, x: px, y: py };
+  });
+
+  let lineStarted = false;
+  ctx.beginPath();
+  points.forEach((point) => {
+    if (point.y === null) return;
+    if (!lineStarted) {
+      ctx.moveTo(point.x, point.y);
+      lineStarted = true;
+    } else {
+      ctx.lineTo(point.x, point.y);
+    }
+  });
+  ctx.strokeStyle = "#0f766e";
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  points.forEach((point) => {
+    if (point.y !== null) {
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#0f766e";
+      ctx.lineWidth = 5;
+      ctx.stroke();
+    }
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#64748b";
+    ctx.font = "800 14px Arial";
+    ctx.fillText(point.row.calendar || "-", point.x, chartY + chartH + 28);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = "900 18px Arial";
+    ctx.fillText(Number.isFinite(point.score) ? formatValue(point.score, "score") : "-", point.x, chartY + chartH + 54);
+  });
+  ctx.textAlign = "left";
 };
 
 const drawReportPng = async ({
@@ -422,13 +505,14 @@ const drawReportPng = async ({
   characteristics,
   profileCategoriesData,
   similarities,
+  scoreHistory,
   context,
   referenceGroup,
   full,
 }) => {
   const canvas = document.createElement("canvas");
   canvas.width = 1600;
-  canvas.height = full ? 2480 : 1800;
+  canvas.height = full ? 2480 : 2440;
   const ctx = canvas.getContext("2d");
   const player = report.player || {};
   const metrics = report.metrics || {};
@@ -450,7 +534,7 @@ const drawReportPng = async ({
       };
     })
     .filter((row) => canvasClamp(row.percentile) !== null);
-  const keyRows = radarKeys.slice(0, full ? 10 : 7);
+  const keyRows = radarKeys.slice(0, full ? 8 : 6);
   const topStrengths = (characteristics.strengths || []).slice(0, full ? 8 : 5);
   const topWeaknesses = (characteristics.weaknesses || []).slice(0, full ? 5 : 3);
   const sortedSimilarities = [...(similarities || [])].sort((a, b) => Number(b.global_score_adjusted || -1) - Number(a.global_score_adjusted || -1)).slice(0, full ? 5 : 3);
@@ -474,7 +558,7 @@ const drawReportPng = async ({
 
   ctx.fillStyle = "#99f6e4";
   ctx.font = "900 25px Arial";
-  ctx.fillText(full ? "NEXT LEGEND - COMPLETE PLAYER REPORT" : "NEXT LEGEND - SCOUT DECISION SNAPSHOT", 70, 72);
+  ctx.fillText(full ? "COMPLETE PLAYER REPORT" : "SCOUT DECISION SNAPSHOT", 70, 72);
   ctx.fillStyle = "#ffffff";
   ctx.font = "900 76px Arial";
   wrapCanvasText(ctx, player.name || "Player", 70, 165, 880, 80, 2);
@@ -483,16 +567,9 @@ const drawReportPng = async ({
   ctx.fillText([positionMeta.short, player.team, player.competition_name, player.calendar].filter(Boolean).join("  |  "), 72, 282);
   ctx.fillStyle = "#e2e8f0";
   ctx.font = "700 22px Arial";
-  wrapCanvasText(ctx, buildPngVerdict(player, positionMeta, characteristics), 72, 330, 950, 31, 3);
+  wrapCanvasText(ctx, buildPngVerdict(player, generatedAt), 72, 330, 950, 31, 3);
 
   drawCoverImage(ctx, photo, 1160, 54, 300, 340, 32, player.name);
-  drawCard(ctx, 1010, 278, 188, 128, { fill: "#ffffff", stroke: "#99f6e4", radius: 26 });
-  ctx.fillStyle = "#0f766e";
-  ctx.font = "900 20px Arial";
-  ctx.fillText("NL RATING", 1032, 316);
-  ctx.fillStyle = "#0f172a";
-  ctx.font = "900 58px Arial";
-  ctx.fillText(formatValue(player.global_score_adjusted, "score"), 1032, 376);
 
   let y = 492;
   const kpis = [
@@ -533,9 +610,12 @@ const drawReportPng = async ({
 
   drawCard(ctx, 570, y, 470, 360, { fill: "#ffffff", stroke: "#e2e8f0", radius: 24 });
   drawKicker(ctx, "Performance dimensions", 598, y + 42);
-  let barY = y + 88;
-  profileCategoriesData.forEach((category) => {
-    barY = drawBar(ctx, category.label, category.score, null, 598, barY, 392);
+  const dimensionRows = profileCategoriesData.slice(0, 6);
+  const dimensionStep = Math.min(46, Math.floor(276 / Math.max(dimensionRows.length, 1)));
+  let barY = y + 92;
+  dimensionRows.forEach((category) => {
+    drawBar(ctx, category.label, category.score, null, 598, barY, 392);
+    barY += dimensionStep;
   });
 
   drawCard(ctx, 1080, y, 450, 360, { fill: "#ffffff", stroke: "#e2e8f0", radius: 24 });
@@ -565,7 +645,14 @@ const drawReportPng = async ({
   ctx.fillStyle = "#64748b";
   ctx.font = "700 19px Arial";
   ctx.fillText("Percentiles are position-based. Raw values are shown when available.", 792, y + 76);
-  let tableY = y + 116;
+  ctx.font = "900 15px Arial";
+  ctx.fillStyle = "#0f766e";
+  ctx.fillText("METRIC", 814, y + 122);
+  ctx.textAlign = "right";
+  ctx.fillText("RAW VALUE", 1328, y + 122);
+  ctx.fillText("PERCENTILE", 1470, y + 122);
+  ctx.textAlign = "left";
+  let tableY = y + 146;
   keyRows.forEach((row) => {
     const tone = canvasTone(row.percentile);
     ctx.fillStyle = "#f8fafc";
@@ -591,22 +678,7 @@ const drawReportPng = async ({
   }
 
   y += 790;
-  drawCard(ctx, 70, y, 710, 320, { fill: "#ffffff", stroke: "#e2e8f0", radius: 24 });
-  drawKicker(ctx, "Risk check", 102, y + 42);
-  ctx.fillStyle = "#0f172a";
-  ctx.font = "900 30px Arial";
-  ctx.fillText("Relevant weaknesses only", 102, y + 82);
-  let riskY = y + 124;
-  (topWeaknesses.length ? topWeaknesses : [{ label: "No major relevant weakness flagged by the current percentile model.", percentile: null }]).forEach((row) => {
-    const tone = canvasTone(row.percentile);
-    ctx.fillStyle = row.percentile == null ? "#f8fafc" : tone.bg;
-    drawRoundedRect(ctx, 102, riskY, 646, 48, 18);
-    ctx.fill();
-    ctx.fillStyle = row.percentile == null ? "#475569" : tone.text;
-    ctx.font = "800 19px Arial";
-    wrapCanvasText(ctx, row.percentile == null ? row.label : `${row.label} - ${Math.round(row.percentile)} pct`, 122, riskY + 31, 600, 20, 1);
-    riskY += 58;
-  });
+  drawSeasonEvolution(ctx, scoreHistory, 70, y, 710, 320);
 
   drawCard(ctx, 820, y, 710, 320, { fill: "#ffffff", stroke: "#e2e8f0", radius: 24 });
   drawKicker(ctx, "Market context", 852, y + 42);
@@ -675,9 +747,7 @@ const drawReportPng = async ({
 
   ctx.fillStyle = "#64748b";
   ctx.font = "700 16px Arial";
-  ctx.fillText("Source: Next Legend player season report. Missing values are not converted to zero.", 70, canvas.height - 44);
-  ctx.textAlign = "right";
-  ctx.fillText("nextlegend.ai", canvas.width - 70, canvas.height - 44);
+  ctx.fillText("Source: player season report. Missing values are not converted to zero.", 70, canvas.height - 44);
   ctx.textAlign = "left";
   return canvas;
 };
@@ -687,6 +757,292 @@ const downloadCanvas = (canvas, filename) => {
   link.download = filename;
   link.href = canvas.toDataURL("image/png");
   link.click();
+};
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const pdfTone = (value) => {
+  const score = canvasClamp(value);
+  if (score === null) return { color: "#94a3b8", bg: "rgba(148,163,184,0.12)" };
+  if (score >= 80) return { color: "#8CC7A7", bg: "rgba(47,125,92,0.22)" };
+  if (score >= 60) return { color: "#86efac", bg: "rgba(34,197,94,0.14)" };
+  if (score >= 40) return { color: "#fbbf24", bg: "rgba(245,158,11,0.14)" };
+  if (score >= 20) return { color: "#fb923c", bg: "rgba(249,115,22,0.14)" };
+  return { color: "#fda4af", bg: "rgba(244,63,94,0.14)" };
+};
+
+const pdfBar = (label, value, raw = null) => {
+  const score = canvasClamp(value);
+  const tone = pdfTone(score);
+  const width = score === null ? 0 : score;
+  return `
+    <div class="bar-row">
+      <div class="bar-head">
+        <span>${escapeHtml(label)}</span>
+        <strong style="color:${tone.color}">${score === null ? "-" : Math.round(score)}</strong>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${width}%;background:${tone.color}"></div></div>
+      ${raw !== null && raw !== undefined && raw !== "" ? `<div class="raw">${escapeHtml(raw)}</div>` : ""}
+    </div>
+  `;
+};
+
+const buildPdfMetricGroups = (metrics, positionGroup, context) =>
+  metricGroupOrderForPosition(positionGroup)
+    .map((groupKey) => {
+      const group = metricGroups[groupKey];
+      const rows = (group?.metrics || [])
+        .map((metric) => ({
+          ...metric,
+          raw: metrics?.[metric.key],
+          percentile: canvasMetricPct(metrics, metric.key, context),
+        }))
+        .filter((metric) => hasValue(metric.raw) || canvasClamp(metric.percentile) !== null);
+      return { key: groupKey, label: group?.label || groupKey, rows };
+    })
+    .filter((group) => group.rows.length);
+
+const buildFullReportPdfHtml = ({
+  report,
+  photoUrl,
+  tmDetails,
+  socialLinks,
+  characteristics,
+  profileCategoriesData,
+  similarities,
+  comparisonReport,
+  scoreHistory,
+  metricsSummary,
+  context,
+  referenceGroup,
+}) => {
+  const player = report?.player || {};
+  const metrics = report?.metrics || {};
+  const comparison = comparisonReport?.player;
+  const comparisonMetrics = comparisonReport?.metrics || {};
+  const comparisonLabel = comparison?.name || "cohort average";
+  const positionMeta = getPositionMeta(player.assigned_role, player.position);
+  const positionGroup = referenceGroup || normalizePositionGroup(player.assigned_role, player.position);
+  const radarKeys = getRadarMetricKeys(positionGroup, report?.radar_metrics || [])
+    .map((key) => {
+      const cfg = getMetricConfig(key);
+      const avg = report?.average_contexts?.[context]?.[positionGroup]?.metrics?.[key] || {};
+      return {
+        key,
+        label: cfg.label,
+        format: cfg.format,
+        raw: metrics[key],
+        percentile: canvasMetricPct(metrics, key, context),
+        avgRaw: comparison ? comparisonMetrics[key] : avg.raw,
+        avgPercentile: comparison ? canvasMetricPct(comparisonMetrics, key, context) : avg.percentile,
+      };
+    })
+    .filter((row) => hasValue(row.raw) || canvasClamp(row.percentile) !== null);
+  const metricGroupsForPdf = buildPdfMetricGroups(metrics, positionGroup, context);
+  const recentSeasons = (report?.season_metric_history || []).slice(-4);
+  const similarRows = [...(similarities || [])]
+    .sort((a, b) => Number(b.global_score_adjusted || -1) - Number(a.global_score_adjusted || -1))
+    .slice(0, 10);
+  const generatedAt = new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(new Date());
+  const stats = [
+    ["Season", player.calendar],
+    ["Club", player.team],
+    ["Competition", player.competition_name],
+    ["Position", `${positionMeta.short} - ${positionMeta.label}`],
+    ["Minutes", formatValue(player.minutes_played, "integer")],
+    ["Matches", formatValue(player.matches_played, "integer")],
+    ["Goals", formatValue(metrics.goals, "integer")],
+    ["Assists", formatValue(metrics.assists, "integer")],
+    ["xG", formatValue(metrics.xg, "number")],
+    ["xA", formatValue(metrics.xa, "number")],
+    ["Prog. passes /90", formatValue(metrics.progressive_passes_per_90, "number")],
+    ["Prog. runs /90", formatValue(metrics.progressive_runs_per_90, "number")],
+  ];
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(player.name || "Player report")}</title>
+  <style>
+    @page { size: A4; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #050706; color: #F3F5F4; font-family: Inter, Arial, sans-serif; font-size: 12px; }
+    .page { min-height: 100vh; background: radial-gradient(circle at 18% 0%, rgba(85,154,120,0.18), transparent 28%), #050706; }
+    .section { margin-bottom: 14px; border: 1px solid rgba(255,255,255,0.10); border-radius: 10px; background: rgba(255,255,255,0.045); padding: 14px; }
+    .page-break { break-before: page; page-break-before: always; }
+    .hero { display: grid; grid-template-columns: 1fr 120px; gap: 16px; align-items: start; padding: 18px; border: 1px solid rgba(85,154,120,0.30); border-radius: 12px; background: linear-gradient(135deg, rgba(47,125,92,0.18), rgba(255,255,255,0.035)); }
+    .kicker { color: #8CC7A7; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: .16em; }
+    h1 { margin: 8px 0 8px; font-size: 34px; line-height: 1; letter-spacing: -0.03em; }
+    h2 { margin: 6px 0 10px; font-size: 18px; }
+    h3 { margin: 0 0 8px; font-size: 14px; color: #F3F5F4; }
+    p { margin: 0; color: #A0A8A3; line-height: 1.45; }
+    .photo { width: 120px; height: 150px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); object-fit: cover; background: rgba(255,255,255,0.06); }
+    .grid { display: grid; gap: 8px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .tile { min-width: 0; border: 1px solid rgba(255,255,255,0.10); border-radius: 8px; background: rgba(0,0,0,0.20); padding: 9px; }
+    .tile small { display: block; margin-bottom: 4px; color: #6F7772; font-size: 8px; font-weight: 900; text-transform: uppercase; letter-spacing: .14em; }
+    .tile strong { display: block; overflow-wrap: anywhere; color: #F3F5F4; font-size: 12px; }
+    .chip { display: inline-block; margin: 0 4px 4px 0; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; background: rgba(255,255,255,0.045); padding: 5px 7px; color: #DDE3DF; font-size: 10px; font-weight: 800; }
+    .chip-green { border-color: rgba(58,137,103,0.35); background: rgba(47,125,92,0.15); color: #8CC7A7; }
+    .bar-row { margin-bottom: 9px; }
+    .bar-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 4px; color: #DDE3DF; font-size: 11px; font-weight: 800; }
+    .bar-track { height: 7px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,0.08); }
+    .bar-fill { height: 100%; border-radius: inherit; }
+    .raw { margin-top: 3px; color: #6F7772; font-size: 9px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; break-inside: avoid; }
+    th { color: #8CC7A7; font-size: 8px; text-transform: uppercase; letter-spacing: .12em; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.10); padding: 7px 6px; }
+    td { border-bottom: 1px solid rgba(255,255,255,0.075); padding: 7px 6px; color: #DDE3DF; vertical-align: top; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .muted { color: #6F7772; }
+    .small { font-size: 10px; }
+    .strength { border-left: 3px solid #559A78; padding-left: 9px; margin-bottom: 8px; }
+    .weakness { border-left: 3px solid #fb7185; padding-left: 9px; margin-bottom: 8px; }
+    @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div>
+        <div class="kicker">Full player report</div>
+        <h1>${escapeHtml(player.name || "Player")}</h1>
+        <p>${escapeHtml([positionMeta.short, player.team, player.competition_name, player.calendar].filter(Boolean).join(" | "))}</p>
+        <div style="margin-top:12px">
+          <span class="chip chip-green">${escapeHtml(positionMeta.label)}</span>
+          <span class="chip">${escapeHtml(context)} context</span>
+          <span class="chip">Generated ${escapeHtml(generatedAt)}</span>
+        </div>
+      </div>
+      ${photoUrl ? `<img class="photo" src="${escapeHtml(photoUrl)}" alt="${escapeHtml(player.name || "Player")}" />` : `<div class="photo" style="display:grid;place-items:center;font-size:28px;font-weight:900">${escapeHtml(getInitials(player.name))}</div>`}
+    </section>
+
+    <section class="section">
+      <div class="kicker">Statistics</div>
+      <h2>Season executive summary</h2>
+      <div class="grid grid-4">
+        ${stats.map(([label, value]) => `<div class="tile"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value || "-")}</strong></div>`).join("")}
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="kicker">Market and identity</div>
+      <h2>Player context</h2>
+      <div class="grid grid-3">
+        ${(tmDetails.length ? tmDetails : [{ label: "Transfermarkt", value: "No external data available" }]).map((item) => `<div class="tile"><small>${escapeHtml(item.label)}</small><strong>${escapeHtml(item.value || item.url || "-")}</strong></div>`).join("")}
+      </div>
+      ${socialLinks?.length ? `<div style="margin-top:10px">${socialLinks.map((link) => `<span class="chip">${escapeHtml(link.label)}</span>`).join("")}</div>` : ""}
+    </section>
+
+    <section class="section">
+      <div class="kicker">Performance dimensions</div>
+      <h2>Profile overview</h2>
+      <div class="grid grid-2">
+        ${profileCategoriesData.map((category) => pdfBar(category.label, category.score)).join("")}
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="kicker">Characteristics</div>
+      <h2>Strengths and weaknesses</h2>
+      <div class="grid grid-2">
+        <div>
+          <h3>Strengths</h3>
+          ${(characteristics.strengths || []).slice(0, 10).map((row) => `<div class="strength"><strong>${escapeHtml(row.label)}</strong><p class="small">${escapeHtml(formatValue(row.raw, getMetricConfig(row.key).format))} raw | ${escapeHtml(Math.round(row.percentile))} percentile</p></div>`).join("") || `<p>No major strength flagged.</p>`}
+        </div>
+        <div>
+          <h3>Weaknesses</h3>
+          ${(characteristics.weaknesses || []).slice(0, 10).map((row) => `<div class="weakness"><strong>${escapeHtml(row.label)}</strong><p class="small">${escapeHtml(formatValue(row.raw, getMetricConfig(row.key).format))} raw | ${escapeHtml(Math.round(row.percentile))} percentile</p></div>`).join("") || `<p>No major weakness flagged.</p>`}
+        </div>
+      </div>
+    </section>
+
+    <section class="section page-break">
+      <div class="kicker">Visual comparison</div>
+      <h2>${escapeHtml(player.name || "Player")} vs ${escapeHtml(comparisonLabel)}</h2>
+      <table>
+        <thead><tr><th>Metric</th><th class="num">Player raw</th><th class="num">Player pct</th><th class="num">${escapeHtml(comparison ? "Comparison raw" : "Cohort raw")}</th><th class="num">${escapeHtml(comparison ? "Comparison pct" : "Cohort pct")}</th></tr></thead>
+        <tbody>
+          ${radarKeys.map((row) => {
+            const playerTone = pdfTone(row.percentile);
+            const avgTone = pdfTone(row.avgPercentile);
+            return `<tr><td>${escapeHtml(row.label)}</td><td class="num">${escapeHtml(formatValue(row.raw, row.format))}</td><td class="num" style="color:${playerTone.color}">${escapeHtml(formatValue(row.percentile, "integer"))}</td><td class="num">${escapeHtml(formatValue(row.avgRaw, row.format))}</td><td class="num" style="color:${avgTone.color}">${escapeHtml(formatValue(row.avgPercentile, "integer"))}</td></tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="kicker">Advanced characteristics</div>
+      <h2>Detailed metric percentiles</h2>
+      ${metricGroupsForPdf.map((group) => `
+        <div style="margin-top:12px;break-inside:avoid">
+          <h3>${escapeHtml(group.label)}</h3>
+          <table>
+            <thead><tr><th>Metric</th><th class="num">Raw value</th><th class="num">Percentile</th></tr></thead>
+            <tbody>
+              ${group.rows.map((row) => {
+                const tone = pdfTone(row.percentile);
+                return `<tr><td>${escapeHtml(row.label)}</td><td class="num">${escapeHtml(formatValue(row.raw, row.format))}</td><td class="num" style="color:${tone.color}">${escapeHtml(formatValue(row.percentile, "integer"))}</td></tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `).join("")}
+    </section>
+
+    <section class="section page-break">
+      <div class="kicker">Season radar</div>
+      <h2>Latest 4 seasons</h2>
+      <table>
+        <thead><tr><th>Metric</th>${recentSeasons.map((season) => `<th class="num">${escapeHtml(season.calendar || season.team || "Season")}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${radarKeys.map((row) => `<tr><td>${escapeHtml(row.label)}</td>${recentSeasons.map((season) => {
+            const pct = canvasMetricPct(season.metrics || {}, row.key, context);
+            const tone = pdfTone(pct);
+            return `<td class="num" style="color:${tone.color}">${escapeHtml(formatValue(pct, "integer"))}</td>`;
+          }).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="kicker">Similar players</div>
+      <h2>Statistical neighbours</h2>
+      <table>
+        <thead><tr><th>#</th><th>Player</th><th>Club</th><th>Competition</th><th class="num">Age</th><th class="num">Score</th></tr></thead>
+        <tbody>
+          ${similarRows.map((sim, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(sim.player_b_name || "-")}</td><td>${escapeHtml(sim.team || "-")}</td><td>${escapeHtml([sim.competition_name, sim.calendar].filter(Boolean).join(" | ") || "-")}</td><td class="num">${escapeHtml(formatValue(sim.age, "integer"))}</td><td class="num">${escapeHtml(formatValue(sim.global_score_adjusted, "score"))}</td></tr>`).join("") || `<tr><td colspan="6">No similar players found.</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="kicker">Score history</div>
+      <h2>Rating evolution</h2>
+      <table>
+        <thead><tr><th>Season</th><th>Club</th><th>Competition</th><th class="num">Minutes</th><th class="num">Score</th></tr></thead>
+        <tbody>
+          ${(scoreHistory || []).map((row) => `<tr><td>${escapeHtml(row.calendar || "-")}</td><td>${escapeHtml(row.team || "-")}</td><td>${escapeHtml(row.competition_name || "-")}</td><td class="num">${escapeHtml(formatValue(row.minutes_played, "integer"))}</td><td class="num">${escapeHtml(formatValue(row.global_score_adjusted, "score"))}</td></tr>`).join("") || `<tr><td colspan="5">No score history available.</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <div class="kicker">Data coverage</div>
+      <p>Configured report metrics available: ${escapeHtml(metricsSummary.available.length)}. Missing or unavailable for this player/provider: ${escapeHtml(metricsSummary.missing.length)}. Missing data is shown as "-" and is never converted to zero.</p>
+    </section>
+  </main>
+</body>
+</html>`;
 };
 
 const seasonSortValue = (label) => {
@@ -709,22 +1065,22 @@ function ScoreHistory({ data }) {
     <ReportCard>
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-teal-700">Score history</p>
-          <h3 className="mt-2 text-xl font-black text-slate-950">Next Legend rating evolution</h3>
+          <p className="nl-kicker">Score history</p>
+          <h3 className="mt-2 text-xl font-black text-white">Rating evolution</h3>
         </div>
       </div>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 12, right: 18, left: 0, bottom: 8 }}>
-            <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-            <XAxis dataKey="calendar" stroke="#64748b" tick={{ fill: "#64748b", fontSize: 12 }} />
-            <YAxis domain={[50, 100]} stroke="#64748b" tick={{ fill: "#64748b", fontSize: 12 }} />
+            <CartesianGrid stroke="rgba(255,255,255,0.10)" strokeDasharray="3 3" />
+            <XAxis dataKey="calendar" stroke="#6F7772" tick={{ fill: "#A0A8A3", fontSize: 12 }} />
+            <YAxis domain={[50, 100]} stroke="#6F7772" tick={{ fill: "#A0A8A3", fontSize: 12 }} />
             <Tooltip
-              contentStyle={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 14, color: "#0f172a", boxShadow: "0 20px 45px rgba(15,23,42,0.12)" }}
-              labelStyle={{ color: "#0f766e" }}
+              contentStyle={{ background: "#080B0A", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 8, color: "#F3F5F4", boxShadow: "0 20px 45px rgba(0,0,0,0.34)" }}
+              labelStyle={{ color: "#8CC7A7" }}
               formatter={(value) => [value == null ? "-" : Number(value).toFixed(1), "Rating"]}
             />
-            <Line type="monotone" dataKey="global_score_adjusted" stroke="#0f766e" strokeWidth={2.5} dot={{ r: 4, fill: "#ffffff", stroke: "#0f766e", strokeWidth: 2 }} connectNulls />
+            <Line type="monotone" dataKey="global_score_adjusted" stroke="#559A78" strokeWidth={2.5} dot={{ r: 4, fill: "#080B0A", stroke: "#8CC7A7", strokeWidth: 2 }} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -742,41 +1098,41 @@ function TransferHistoryCard({ transfers = [] }) {
     <ReportCard>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-teal-700">Transfers</p>
-          <h3 className="mt-2 text-xl font-black text-slate-950">Career movement timeline</h3>
+          <p className="nl-kicker">Transfers</p>
+          <h3 className="mt-2 text-xl font-black text-white">Career movement timeline</h3>
           <p className="mt-1 text-sm text-slate-600">Most recent moves first, with fee and source context when available.</p>
         </div>
-        <span className="rounded-full border border-slate-200 px-3 py-1 text-xs font-black text-teal-700">{items.length} moves</span>
+        <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-1 text-xs font-black text-[#8CC7A7]">{items.length} moves</span>
       </div>
       {items.length ? (
         <div className="mt-5 space-y-3">
           {items.map((transfer) => (
-            <div key={`${transfer.id}-${transfer.transfer_date || "date"}-${transfer.team_in_name || "in"}-${transfer.team_out_name || "out"}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div key={`${transfer.id}-${transfer.transfer_date || "date"}-${transfer.team_in_name || "in"}-${transfer.team_out_name || "out"}`} className="rounded-lg border border-white/10 bg-white/[0.025] p-4 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-white">{formatTransferDate(transfer.transfer_date)}</span>
-                    <span className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-teal-700">{transfer.transfer_type || "Transfer"}</span>
+                    <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-[#8CC7A7]">{transfer.transfer_type || "Transfer"}</span>
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] md:items-center">
-                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3">
                       <ClubLogo name={transfer.team_out_name} className="h-10 w-10 rounded" />
                       <div className="min-w-0">
                         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">From</p>
                         <p className="truncate text-sm font-extrabold text-slate-950">{transfer.team_out_name || "Free agent"}</p>
                       </div>
                     </div>
-                    <div className="hidden h-10 items-center justify-center rounded-full border border-slate-200 bg-white text-lg font-black text-slate-400 md:flex">-&gt;</div>
-                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-teal-200 bg-teal-50 p-3">
+                    <div className="hidden h-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-lg font-black text-slate-400 md:flex">-&gt;</div>
+                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-[#3A8967]/30 bg-[#2F7D5C]/15 p-3">
                       <ClubLogo name={transfer.team_in_name} className="h-10 w-10 rounded" />
                       <div className="min-w-0">
-                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-teal-700">To</p>
+                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#8CC7A7]">To</p>
                         <p className="truncate text-sm font-extrabold text-slate-950">{transfer.team_in_name || "Free agent"}</p>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div className="min-w-[170px] rounded-lg border border-slate-200 bg-slate-50 p-3 text-left lg:text-right">
+                <div className="min-w-[170px] rounded-lg border border-white/10 bg-white/[0.035] p-3 text-left lg:text-right">
                   <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Fee</p>
                   <p className="mt-1 text-lg font-extrabold text-slate-950">{transferFeeLabel(transfer.transfer_fee)}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-500">{transfer.league_name || transfer.team_name_context || "League to confirm"}</p>
@@ -786,8 +1142,8 @@ function TransferHistoryCard({ transfers = [] }) {
           ))}
         </div>
       ) : (
-        <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5">
-          <p className="text-sm font-extrabold text-slate-950">No verified transfer history yet.</p>
+        <div className="mt-5 rounded-lg border border-dashed border-white/10 bg-white/[0.025] p-5">
+          <p className="text-sm font-extrabold text-white">No verified transfer history yet.</p>
           <p className="mt-1 text-sm font-semibold text-slate-500">Import Transfermarkt movement data to enrich this report.</p>
         </div>
       )}
@@ -819,6 +1175,9 @@ export default function ReportPage() {
   const [comparisonReport, setComparisonReport] = useState(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [prospectLoading, setProspectLoading] = useState(false);
+  const [isProspect, setIsProspect] = useState(false);
+  const [prospectMessage, setProspectMessage] = useState("");
 
   useEffect(() => {
     if (!router.isReady || hydratedQuery.current) return;
@@ -905,6 +1264,30 @@ export default function ReportPage() {
   }, [selectedPlayerId, selectedPlayerSeasonId]);
 
   useEffect(() => {
+    if (!selectedPlayerId) {
+      setIsProspect(false);
+      setProspectMessage("");
+      return;
+    }
+    let cancelled = false;
+    setIsProspect(false);
+    setProspectMessage("");
+    fetchJson(`/prospects/${selectedPlayerId}`)
+      .then((res) => {
+        if (!cancelled) {
+          setIsProspect(Boolean(res?.is_prospect));
+          setProspectMessage("");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsProspect(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPlayerId]);
+
+  useEffect(() => {
     if (compareQuery.trim().length < 2) {
       setCompareResults([]);
       setShowCompareResults(false);
@@ -974,14 +1357,69 @@ export default function ReportPage() {
         characteristics,
         profileCategoriesData,
         similarities,
+        scoreHistory,
         context: percentileContext,
         referenceGroup: selectedReferenceGroup,
         full,
       });
       const slug = String(report.player?.name || "player").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      downloadCanvas(canvas, `nextlegend-${slug || "report"}-${full ? "full" : "scout"}.png`);
+      downloadCanvas(canvas, `report-${slug || "player"}-${full ? "full" : "scout"}.png`);
     } finally {
       setExportBusy(false);
+    }
+  };
+
+  const exportPdf = () => {
+    if (!report || exportBusy || typeof window === "undefined") return;
+    setExportBusy(true);
+    try {
+      const pdfWindow = window.open("", "_blank");
+      if (!pdfWindow) {
+        setError("Unable to open the PDF export window. Please allow pop-ups for this site.");
+        return;
+      }
+      const html = buildFullReportPdfHtml({
+        report,
+        photoUrl: tmPhotoUrl,
+        tmDetails,
+        socialLinks,
+        characteristics,
+        profileCategoriesData,
+        similarities,
+        comparisonReport,
+        scoreHistory,
+        metricsSummary,
+        context: percentileContext,
+        referenceGroup: selectedReferenceGroup,
+      });
+      pdfWindow.document.open();
+      pdfWindow.document.write(html);
+      pdfWindow.document.close();
+      pdfWindow.focus();
+      setTimeout(() => {
+        pdfWindow.print();
+      }, 450);
+    } finally {
+      setTimeout(() => setExportBusy(false), 700);
+    }
+  };
+
+  const addToProspects = async () => {
+    if (!selectedPlayerId || prospectLoading || isProspect) return;
+    setProspectLoading(true);
+    setProspectMessage("");
+    try {
+      const selectedSeason = selectedPlayerSeasonId || report?.player?.player_season_id;
+      const res = await postJson("/prospects", {
+        player_id: Number(selectedPlayerId),
+        player_season_id: selectedSeason ? Number(selectedSeason) : undefined,
+      });
+      setIsProspect(true);
+      setProspectMessage(res?.added ? "Player added to prospects." : "Player is already in prospects.");
+    } catch (err) {
+      setProspectMessage(err.message || "Unable to add player to prospects.");
+    } finally {
+      setProspectLoading(false);
     }
   };
 
@@ -1043,8 +1481,8 @@ export default function ReportPage() {
             <div className={report ? "grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]" : ""}>
               {report ? (
                 <div className="w-full max-w-[170px]">
-                  <div className="h-[210px] overflow-hidden rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-2 shadow-sm">
-                    <div className="h-full overflow-hidden rounded-xl border border-white bg-slate-100">
+                  <div className="h-[210px] overflow-hidden rounded-lg border border-[#3A8967]/25 bg-[#06100C] p-2 shadow-sm">
+                    <div className="h-full overflow-hidden rounded-md border border-white/10 bg-white/[0.04]">
                       {tmPhotoUrl ? (
                         <img src={tmPhotoUrl} alt={report.player.name || "Player"} className="h-full w-full object-cover" loading="lazy" />
                       ) : (
@@ -1054,16 +1492,16 @@ export default function ReportPage() {
                       )}
                     </div>
                   </div>
-                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2 shadow-sm">
                     <ClubLogo name={report.player.team} className="h-8 w-8 rounded-md" />
-                    <span className="min-w-0 truncate text-xs font-black text-slate-700">{report.player.team || "No club"}</span>
+                    <span className="min-w-0 truncate text-xs font-black text-slate-300">{report.player.team || "No club"}</span>
                   </div>
                 </div>
               ) : null}
 
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.32em] text-teal-700">Next Legend report</p>
-                <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-[-0.04em] text-slate-950 md:text-6xl">
+                <p className="nl-kicker">Player report</p>
+                <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-[-0.04em] text-white md:text-6xl">
                   {report?.player?.name || "Professional scouting dossier"}
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
@@ -1072,11 +1510,11 @@ export default function ReportPage() {
                 {report ? (
                   <>
                     <div className="mt-5 flex flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-teal-600/40 bg-teal-50 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-teal-700">{positionMeta.short} - {positionMeta.label}</span>
-                      <span className="rounded-full border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600">{report.player.team || "No club"}</span>
-                      <span className="rounded-full border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600">{report.player.competition_name || "No competition"}</span>
+                      <span className="rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-[#8CC7A7]">{positionMeta.short} - {positionMeta.label}</span>
+                      <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-bold text-slate-300">{report.player.team || "No club"}</span>
+                      <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-bold text-slate-300">{report.player.competition_name || "No competition"}</span>
                       {tmProfileUrl ? (
-                        <a href={tmProfileUrl} target="_blank" rel="noreferrer" className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-blue-700">
+                        <a href={tmProfileUrl} target="_blank" rel="noreferrer" className="rounded-md border border-sky-400/25 bg-sky-500/10 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-sky-200">
                           Transfermarkt
                         </a>
                       ) : null}
@@ -1084,7 +1522,7 @@ export default function ReportPage() {
                     {socialLinks.length > 0 ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {socialLinks.map((link) => (
-                          <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700 transition hover:border-teal-500 hover:text-teal-700">
+                          <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-black text-slate-300 transition hover:border-[#3A8967]/35 hover:text-[#8CC7A7]">
                             <SocialIcon type={link.type} />
                             <span>{link.label}</span>
                           </a>
@@ -1092,24 +1530,32 @@ export default function ReportPage() {
                       </div>
                     ) : null}
                     <div className="mt-5 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => exportPng(false)} disabled={exportBusy} className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-white shadow-sm transition hover:bg-teal-800 disabled:opacity-60">
+                      <button type="button" onClick={addToProspects} disabled={prospectLoading || isProspect} className={isProspect ? "nl-button-secondary px-4 py-2 text-xs uppercase tracking-[0.14em]" : "nl-button-primary px-4 py-2 text-xs uppercase tracking-[0.14em]"}>
+                        {prospectLoading ? "Adding..." : isProspect ? "In prospects" : "Add prospect"}
+                      </button>
+                      <button type="button" onClick={() => exportPng(false)} disabled={exportBusy} className="nl-button-primary px-4 py-2 text-xs uppercase tracking-[0.14em]">
                         Scout PNG
                       </button>
-                      <button type="button" onClick={() => exportPng(true)} disabled={exportBusy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-slate-800 shadow-sm transition hover:border-teal-600 hover:text-teal-700 disabled:opacity-60">
-                        Full PNG
+                      <button type="button" onClick={exportPdf} disabled={exportBusy} className="nl-button-secondary px-4 py-2 text-xs uppercase tracking-[0.14em]">
+                        Full PDF
                       </button>
                     </div>
+                    {prospectMessage ? (
+                      <p className={`mt-3 text-xs font-semibold ${isProspect ? "text-[#8CC7A7]" : "text-amber-200"}`}>
+                        {prospectMessage}
+                      </p>
+                    ) : null}
                     {hasTmData ? (
                       <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                         {tmDetails.map((item) => (
-                          <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div key={item.label} className="rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2">
                             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{item.label}</p>
                             {item.url ? (
-                              <a href={item.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-sm font-black text-teal-700 hover:text-teal-900">
+                              <a href={item.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-sm font-black text-[#8CC7A7] hover:text-white">
                                 {item.value || "Profile"}
                               </a>
                             ) : (
-                              <p className="mt-1 truncate text-sm font-black text-slate-900">{item.value}</p>
+                              <p className="mt-1 truncate text-sm font-black text-white">{item.value}</p>
                             )}
                           </div>
                         ))}
@@ -1234,12 +1680,9 @@ export default function ReportPage() {
               similarities={similarities}
               loading={similarLoading}
               onOpen={(sim) => {
-                setSelectedPlayerId(String(sim.player_b_id));
-                setSelectedPlayerSeasonId("");
-                setPlayerQuery(sim.player_b_name || "");
-                setComparisonReport(null);
-                setSelectedComparisonLabel("");
-                router.replace({ pathname: "/report", query: { player_id: sim.player_b_id } }, undefined, { shallow: true });
+                if (sim?.player_b_id) {
+                  window.open(`/report?player_id=${sim.player_b_id}`, "_blank", "noopener,noreferrer");
+                }
               }}
             />
 

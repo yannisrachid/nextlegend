@@ -5,8 +5,6 @@ import {
   DEFAULT_AGE_MAX,
   DEFAULT_AGE_MIN,
   DEFAULT_LIMIT,
-  DEFAULT_MIN_MINUTES,
-  DEFAULT_SCOUTING_COMPETITION,
   DEFAULT_SCOUTING_SEASON,
   formatFilterValue,
   parseIntegerInput,
@@ -19,6 +17,8 @@ import {
 
 const STAGES = ["Priority 1", "Priority 2", "Priority 3", "Completed"];
 const TM_BASE_URL = "https://www.transfermarkt.com";
+const PROSPECT_DEFAULT_COMPETITION = "";
+const PROSPECT_DEFAULT_MIN_MINUTES = 0;
 
 const Card = ({ children, className = "", ...props }) => (
   <div
@@ -183,12 +183,12 @@ export default function ProspectPage() {
   const [teams, setTeams] = useState([]);
 
   const [filters, setFilters] = useState({
-    competition: DEFAULT_SCOUTING_COMPETITION,
+    competition: PROSPECT_DEFAULT_COMPETITION,
     season: DEFAULT_SCOUTING_SEASON,
     role: "",
     position: "",
     team: "",
-    min_minutes: DEFAULT_MIN_MINUTES,
+    min_minutes: PROSPECT_DEFAULT_MIN_MINUTES,
     age_min: DEFAULT_AGE_MIN,
     age_max: DEFAULT_AGE_MAX,
     limit: DEFAULT_LIMIT,
@@ -480,12 +480,12 @@ export default function ProspectPage() {
 
   const resetFilters = () => {
     setFilters({
-      competition: DEFAULT_SCOUTING_COMPETITION,
+      competition: PROSPECT_DEFAULT_COMPETITION,
       season: DEFAULT_SCOUTING_SEASON,
       role: "",
       position: "",
       team: "",
-      min_minutes: DEFAULT_MIN_MINUTES,
+      min_minutes: PROSPECT_DEFAULT_MIN_MINUTES,
       age_min: DEFAULT_AGE_MIN,
       age_max: DEFAULT_AGE_MAX,
       limit: filters.limit,
@@ -494,12 +494,12 @@ export default function ProspectPage() {
   };
 
   const activeFilterCount = [
-    filters.competition !== DEFAULT_SCOUTING_COMPETITION,
+    filters.competition !== PROSPECT_DEFAULT_COMPETITION,
     filters.season !== DEFAULT_SCOUTING_SEASON,
     filters.role,
     filters.position,
     filters.team,
-    filters.min_minutes !== DEFAULT_MIN_MINUTES,
+    filters.min_minutes !== PROSPECT_DEFAULT_MIN_MINUTES,
     filters.age_min !== DEFAULT_AGE_MIN,
     filters.age_max !== DEFAULT_AGE_MAX,
   ].filter(Boolean).length;
@@ -539,7 +539,10 @@ export default function ProspectPage() {
     setAddProspectBusy(true);
     setAddProspectMessage("");
     try {
-      const res = await postJson("/prospects", { player_id: Number(player.id) });
+      const res = await postJson("/prospects", {
+        player_id: Number(player.id),
+        player_season_id: player.player_season_id ? Number(player.player_season_id) : undefined,
+      });
       setAddProspectMessage(res?.added ? "Prospect added." : "Prospect already in list.");
       const refreshed = await fetchJson("/prospects/page", {
         competition: filters.competition,
@@ -920,7 +923,7 @@ export default function ProspectPage() {
               </div>
               <div className="relative max-w-xl" ref={addProspectAnchorRef}>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                  className="nl-field"
                   value={addProspectQuery}
                   onChange={(e) => {
                     setAddProspectQuery(e.target.value);
@@ -1149,7 +1152,7 @@ export default function ProspectPage() {
                   <div className="flex flex-col gap-2">
                     <Label>Need</Label>
                     <input
-                      className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                      className="nl-field"
                       value={newNeed.need_label}
                       onChange={(e) =>
                         setNewNeed((prev) => ({ ...prev, need_label: e.target.value }))
@@ -1175,7 +1178,7 @@ export default function ProspectPage() {
                   <div className="flex flex-col gap-2">
                     <Label>Contact name</Label>
                     <input
-                      className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                      className="nl-field"
                       value={newNeed.contact_name}
                       onChange={(e) =>
                         setNewNeed((prev) => ({ ...prev, contact_name: e.target.value }))
@@ -1186,7 +1189,7 @@ export default function ProspectPage() {
                   <div className="flex flex-col gap-2">
                     <Label>Contact phone</Label>
                     <input
-                      className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                      className="nl-field"
                       value={newNeed.contact_phone}
                       onChange={(e) =>
                         setNewNeed((prev) => ({ ...prev, contact_phone: e.target.value }))
@@ -1197,7 +1200,7 @@ export default function ProspectPage() {
                   <div className="flex flex-col gap-2">
                     <Label>Assigned user</Label>
                     <input
-                      className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                      className="nl-field"
                       value={newNeed.assigned_user}
                       onChange={(e) =>
                         setNewNeed((prev) => ({ ...prev, assigned_user: e.target.value }))
@@ -1301,7 +1304,7 @@ export default function ProspectPage() {
                               {addPlayerNeedId === need.id ? (
                                 <div className="relative" ref={addPlayerAnchorRef}>
                                   <input
-                                    className="w-full bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                                    className="nl-field"
                                     value={playerQuery}
                                     onChange={(e) => {
                                       setPlayerQuery(e.target.value);
