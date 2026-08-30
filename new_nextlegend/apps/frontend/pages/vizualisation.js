@@ -4,6 +4,14 @@ import { createPortal } from "react-dom";
 import { fetchJson, fetchJsonCached, postJson } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
 import { POSITIONS_GLOSSARY } from "@/lib/positionsGlossary";
+import {
+  DEFAULT_MIN_MINUTES,
+  DEFAULT_SCOUTING_SEASON,
+  formatFilterValue,
+  parseIntegerInput,
+  sortPositions,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -116,9 +124,12 @@ const Label = ({ children }) => (
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -130,30 +141,6 @@ const formatMetricLabel = (key) => {
   if (METRIC_LABELS[key]) return METRIC_LABELS[key];
   return key.replace(/_/g, " ");
 };
-
-const seasonSortKey = (value) => {
-  const text = String(value || "").trim();
-  if (!text) return 0;
-  const matchRange = text.match(/(20\d{2})\s*[/-]\s*((?:20)?\d{2,4})/);
-  if (matchRange) {
-    const start = Number(matchRange[1]);
-    const rawEnd = matchRange[2];
-    const end =
-      rawEnd.length === 2
-        ? Math.floor(start / 100) * 100 + Number(rawEnd)
-        : Number(rawEnd.slice(-4));
-    return end * 10000 + start;
-  }
-  const matchYear = text.match(/20\d{2}/);
-  return matchYear ? Number(matchYear[0]) * 10000 + Number(matchYear[0]) : 0;
-};
-
-const sortSeasonsDesc = (items) =>
-  Array.from(new Set((items || []).filter(Boolean))).sort((a, b) => {
-    const diff = seasonSortKey(b) - seasonSortKey(a);
-    if (diff !== 0) return diff;
-    return String(b).localeCompare(String(a), undefined, { sensitivity: "base" });
-  });
 
 const buildDynamicSections = (percentiles, enforceTop) => {
   if (!enforceTop) return { sections: SECTIONS, reason: "Full analytical breakdown retained." };
@@ -189,11 +176,21 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
   const [exporting, setExporting] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const [showZoom, setShowZoom] = useState(false);
-  const rounded = values.map((value) => Math.round(value));
-  const colors = rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#01ca0a" : "#4ecc54"));
+  const rounded = values.map((value) => Math.round(Number(value) || 0));
+  const colors = rounded.map((value) =>
+    value >= GLOBAL_THRESHOLD ? "#559A78" : "rgba(160,168,163,0.34)"
+  );
+  const markerLines = rounded.map((value) =>
+    value >= GLOBAL_THRESHOLD ? "rgba(221,243,232,0.82)" : "rgba(255,255,255,0.10)"
+  );
   const sliceCount = Math.max(labels.length, 1);
   const sliceWidth = 360 / sliceCount;
   const angles = labels.map((_, index) => index * sliceWidth + sliceWidth / 2);
+  const hoverData = labels.map((label, index) => [
+    label,
+    rounded[index],
+    rounded[index] >= GLOBAL_THRESHOLD ? "Target metric" : "Cohort context",
+  ]);
   const textRadius = rounded.map((value) => {
       const clamped = Math.max(0, Math.min(100, value));
       if (clamped >= 98) return 96;
@@ -212,14 +209,29 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
   });
   const data = [
     {
+      type: "scatterpolar",
+      r: [...angles.map(() => GLOBAL_THRESHOLD), angles.length ? GLOBAL_THRESHOLD : 0],
+      theta: [...angles, angles[0] || 0],
+      mode: "lines",
+      line: { color: "rgba(221,243,232,0.34)", width: 1.4, dash: "dot" },
+      hoverinfo: "skip",
+      showlegend: false,
+    },
+    {
       type: "barpolar",
       r: rounded,
       theta: angles,
       width: labels.map(() => sliceWidth),
-        marker: { color: colors, line: { color: "#0B1120", width: 1.6 } },
-        opacity: 0.95,
-        hoverinfo: "skip",
-      },
+      marker: { color: colors, line: { color: markerLines, width: 1.2 } },
+      opacity: 0.95,
+      customdata: hoverData,
+      hovertemplate:
+        "<b>%{customdata[0]}</b><br>" +
+        "%{customdata[2]}<br><br>" +
+        '<span style="color:#A0A8A3">Percentile</span>: %{customdata[1]}<br>' +
+        '<span style="color:#8CC7A7">Target threshold</span>: 75' +
+        "<extra></extra>",
+    },
     {
       type: "scatterpolar",
       r: textRadius,
@@ -228,24 +240,33 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
       marker: {
         color: colors,
         size: badgeSizes,
-        line: { color: "#0B1120", width: 1 },
+        line: { color: markerLines, width: 1 },
       },
       text: rounded.map((value) => `${value}`),
-      textfont: { color: "#FFFFFF", size: textSizes },
+      textfont: {
+        color: rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#FFFFFF" : "#DDE3DF")),
+        size: textSizes,
+        family: "Inter, system-ui, sans-serif",
+      },
       textposition: "middle center",
       cliponaxis: false,
-      hoverinfo: "skip",
+      customdata: hoverData,
+      hovertemplate:
+        "<b>%{customdata[0]}</b><br>" +
+        "%{customdata[2]}<br><br>" +
+        '<span style="color:#A0A8A3">Percentile</span>: %{customdata[1]}' +
+        "<extra></extra>",
     },
   ];
     const layout = {
       polar: {
-        domain: { x: [0.08, 0.92], y: [0.2, 0.92] },
+        domain: { x: [0.08, 0.92], y: [0.18, 0.9] },
         radialaxis: {
           range: [0, 100],
           showticklabels: false,
-        ticks: "",
-        showline: false,
-          gridcolor: "rgba(255,255,255,0.08)",
+          ticks: "",
+          showline: false,
+          gridcolor: "rgba(255,255,255,0.055)",
           showgrid: true,
         },
         angularaxis: {
@@ -258,49 +279,56 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
           showline: false,
           showgrid: false,
         },
-        bgcolor: "#0F172A",
+        bgcolor: "rgba(5,7,6,0)",
       },
       showlegend: false,
-      margin: { l: 90, r: 90, t: 160, b: 170 },
-      paper_bgcolor: "#0F172A",
-      plot_bgcolor: "#0F172A",
+      margin: { l: 82, r: 82, t: 138, b: 150 },
+      paper_bgcolor: "rgba(5,7,6,0)",
+      plot_bgcolor: "rgba(5,7,6,0)",
+      font: { color: "#A0A8A3", family: "Inter, system-ui, sans-serif" },
+      hoverlabel: {
+        bgcolor: "#0A0C0B",
+        bordercolor: "#3A8967",
+        font: { color: "#F3F5F4", size: 12 },
+        align: "left",
+      },
       annotations: [
         {
           text: playerLabel,
           x: 0.5,
-          y: 1.12,
+          y: 1.1,
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 16, color: "#F2F2F2" },
+          font: { size: 16, color: "#F3F5F4", family: "Inter, system-ui, sans-serif" },
         },
         {
           text: subtitle,
           x: 0.5,
-          y: 1.06,
+          y: 1.04,
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 12, color: "#F2F2F2" },
+          font: { size: 12, color: "#A0A8A3", family: "Inter, system-ui, sans-serif" },
         },
         {
           text: "Data: StatsBomb / Your Legend",
           x: 0.98,
-          y: -0.08,
+          y: -0.1,
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 9, color: "#F2F2F2" },
+          font: { size: 9, color: "#6F7772" },
           align: "right",
         },
         {
           text: "Statistics scaled per 90 minutes",
           x: 0.02,
-          y: -0.14,
+          y: -0.15,
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 9, color: "#F2F2F2" },
+          font: { size: 9, color: "#6F7772" },
           align: "left",
         },
       ],
@@ -380,18 +408,18 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
     }
   };
     return (
-    <div className="relative h-[780px] rounded-xl overflow-hidden bg-[#0F172A]">
+    <div className="relative h-[700px] overflow-hidden rounded-lg border border-white/10 bg-black/[0.22]">
       <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
         <button
           type="button"
-          className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+          className="nl-button-secondary px-3 py-1 text-xs"
           onClick={handleCopy}
         >
           Copy
         </button>
         <button
           type="button"
-          className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+          className="nl-button-secondary px-3 py-1 text-xs"
           onClick={handleDownload}
         >
           Download
@@ -407,7 +435,12 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
           data={data}
           layout={layout}
           style={{ width: "100%", height: "100%" }}
-          config={{ displayModeBar: false, responsive: true }}
+          config={{
+            displayModeBar: "hover",
+            displaylogo: false,
+            responsive: true,
+            modeBarButtonsToRemove: ["lasso2d", "select2d"],
+          }}
           onInitialized={(_, graphDiv) => {
             graphRef.current = graphDiv;
           }}
@@ -423,27 +456,27 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
               onClick={() => setShowZoom(false)}
             >
               <div
-                className="relative w-full max-w-5xl h-[82vh] bg-slate-950 border border-white/10 rounded-2xl shadow-xl"
+                className="relative h-[82vh] w-full max-w-5xl rounded-lg border border-white/10 bg-[#050706] shadow-xl"
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="absolute right-4 top-4 flex items-center gap-2">
                   <button
                     type="button"
-                    className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+                    className="nl-button-secondary px-3 py-1 text-xs"
                     onClick={handleCopy}
                   >
                     Copy
                   </button>
                   <button
                     type="button"
-                    className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+                    className="nl-button-secondary px-3 py-1 text-xs"
                     onClick={handleDownload}
                   >
                     Download
                   </button>
                   <button
                     type="button"
-                    className="text-xs uppercase tracking-[0.2em] text-slate-200 border border-white/10 px-3 py-1 rounded-full hover:border-emerald-400"
+                    className="nl-button-secondary px-3 py-1 text-xs"
                     onClick={() => setShowZoom(false)}
                   >
                     Close
@@ -459,7 +492,12 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
                     data={data}
                     layout={zoomLayout}
                     style={{ width: "100%", height: "100%" }}
-                    config={{ displayModeBar: false, responsive: true }}
+                    config={{
+                      displayModeBar: "hover",
+                      displaylogo: false,
+                      responsive: true,
+                      modeBarButtonsToRemove: ["lasso2d", "select2d"],
+                    }}
                   />
                 </div>
               </div>
@@ -479,7 +517,7 @@ export default function VizualisationPage() {
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [selectedPlayerSeasonId, setSelectedPlayerSeasonId] = useState("");
   const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [showResults, setShowResults] = useState(false);
   const [vizData, setVizData] = useState(null);
   const [context, setContext] = useState("League");
@@ -487,7 +525,7 @@ export default function VizualisationPage() {
   const [positionsOpen, setPositionsOpen] = useState(false);
   const [positionsAll, setPositionsAll] = useState(true);
   const [selectedPositions, setSelectedPositions] = useState([]);
-  const [minMinutes, setMinMinutes] = useState(270);
+  const [minMinutes, setMinMinutes] = useState(DEFAULT_MIN_MINUTES);
   const [showOnlyTopGlobal, setShowOnlyTopGlobal] = useState(false);
   const [sectionSelections, setSectionSelections] = useState({});
   const [sectionShowTop, setSectionShowTop] = useState({});
@@ -503,11 +541,10 @@ export default function VizualisationPage() {
   useEffect(() => {
     fetchJsonCached("/meta/positions")
       .then((data) => {
-        const list = (data || []).map((code) => ({
+        const list = sortPositions(data || []).map((code) => ({
           code,
           label: POSITIONS_GLOSSARY[code] || code,
         }));
-        list.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
         setPositions(list);
       })
       .catch((err) => console.error(err));
@@ -515,7 +552,7 @@ export default function VizualisationPage() {
 
   useEffect(() => {
     fetchJsonCached("/meta/seasons")
-      .then((data) => setSeasons(sortSeasonsDesc(data || [])))
+      .then((data) => setSeasons(withDefaultSeason(data || [])))
       .catch(() => setSeasons([]));
   }, []);
 
@@ -661,6 +698,27 @@ export default function VizualisationPage() {
     ? "All"
     : selectedPositions.map((code) => POSITIONS_GLOSSARY[code] || code).join(", ");
 
+  const activeFilterCount = [
+    selectedSeason !== DEFAULT_SCOUTING_SEASON,
+    context !== "League",
+    !positionsAll,
+    minMinutes !== DEFAULT_MIN_MINUTES,
+    showOnlyTopGlobal,
+  ].filter(Boolean).length;
+
+  const resetVisualFilters = () => {
+    setSelectedSeason(DEFAULT_SCOUTING_SEASON);
+    setContext("League");
+    setPositionsAll(true);
+    setSelectedPositions([]);
+    setMinMinutes(DEFAULT_MIN_MINUTES);
+    setShowOnlyTopGlobal(false);
+  };
+
+  const updateMinMinutes = (value) => {
+    setMinMinutes(parseIntegerInput(value, 0));
+  };
+
   const renderPositionsMenu = () => {
     if (!positionsOpen || !isClient) return null;
     return createPortal(
@@ -716,11 +774,27 @@ export default function VizualisationPage() {
           </p>
         </header>
 
-        <Card className="relative z-30">
-          <div className="relative">
-            <div className="flex flex-col gap-2 mb-3 max-w-xs">
-              <Label>Season Filter</Label>
+        <Card className="relative z-30 nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Visual setup</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Select a player and season context</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                {selectedSeason || "All seasons"}
+              </span>
+              <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetVisualFilters}>
+                Reset
+              </button>
+            </div>
+          </div>
+          <div className="relative space-y-4 p-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+            <div className="flex flex-col gap-2">
+              <Label>Season</Label>
               <Select
+                id="visual-season"
                 value={selectedSeason}
                 onChange={(e) => {
                   setSelectedSeason(e.target.value);
@@ -742,8 +816,9 @@ export default function VizualisationPage() {
             <div className="flex flex-col gap-2">
               <Label>Player</Label>
               <input
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                className="nl-field"
                 placeholder="Start typing a player name..."
+                autoComplete="off"
                 value={playerQuery}
                 onChange={(e) => {
                   setPlayerQuery(e.target.value);
@@ -772,6 +847,7 @@ export default function VizualisationPage() {
                 onBlur={() => setTimeout(() => setShowResults(false), 150)}
               />
             </div>
+            </div>
             {showResults && playerQuery.trim().length >= 2 ? (
               <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl">
                 {playerOptions.length === 0 ? (
@@ -794,11 +870,21 @@ export default function VizualisationPage() {
           </div>
         </Card>
 
-        <Card>
+        <Card className="nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Output filters</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Tune the visual reference group</h2>
+            </div>
+            <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+              {activeFilterCount} custom filters
+            </span>
+          </div>
+          <div className="space-y-4 p-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <Label>Context</Label>
-              <Select value={context} onChange={(e) => setContext(e.target.value)}>
+              <Select id="visual-context" value={context} onChange={(e) => setContext(e.target.value)}>
                 <option value="League">League</option>
                 <option value="Global">Global</option>
               </Select>
@@ -808,7 +894,7 @@ export default function VizualisationPage() {
               <button
                 type="button"
                 onClick={() => setPositionsOpen((prev) => !prev)}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-left text-slate-100"
+                className="nl-field text-left"
                 ref={positionsButtonRef}
               >
                 {positionsSummary || "All"}
@@ -819,11 +905,13 @@ export default function VizualisationPage() {
               <Label>Minimum minutes played</Label>
               <input
                 type="number"
+                inputMode="numeric"
                 min="0"
-                step="30"
+                max="10000"
+                step="1"
                 value={minMinutes}
-                onChange={(e) => setMinMinutes(Number(e.target.value))}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                onChange={(e) => updateMinMinutes(e.target.value)}
+                className="nl-field tabular-nums"
               />
             </div>
             <div className="flex flex-col gap-2">
@@ -844,6 +932,19 @@ export default function VizualisationPage() {
             Scout Analyst Engine: {reason}
           </p>
           ) : null}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {[
+              ["Season", formatFilterValue(selectedSeason, "All seasons")],
+              ["Context", context],
+              ["Positions", positionsSummary || "All"],
+              ["Minutes", `${minMinutes}+`],
+            ].map(([label, value]) => (
+              <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+              </span>
+            ))}
+          </div>
+          </div>
         </Card>
 
         {error && (
@@ -886,15 +987,31 @@ export default function VizualisationPage() {
             });
             const labels = metricsToPlot.map(formatMetricLabel);
             const valuesToPlot = metricsToPlot.map((metric) => percentiles[metric]);
+            const highMetricsCount = metricsToPlot.filter((metric) => (percentiles[metric] ?? 0) >= GLOBAL_THRESHOLD).length;
 
             return (
               <div key={sectionKey}>
                 <div className="border-t border-white/5 my-6" />
-                <h3 className="text-xl font-semibold text-white mb-4">{section.title}</h3>
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="nl-kicker">Visualization</p>
+                    <h3 className="mt-1 text-xl font-semibold text-white">{section.title}</h3>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+                      {metricsToPlot.length} selected
+                    </span>
+                    <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                      {highMetricsCount} above P75
+                    </span>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card>
+                  <Card className="overflow-hidden p-0">
                     {metricsToPlot.length === 0 ? (
-                      <p className="text-slate-400">No metrics to display with current filters.</p>
+                      <div className="p-5">
+                        <p className="text-slate-400">No metrics to display with current filters.</p>
+                      </div>
                     ) : (
                       <div className="w-full">
                         <PizzaChart
@@ -906,9 +1023,14 @@ export default function VizualisationPage() {
                       </div>
                     )}
                   </Card>
-                  <Card>
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-sm uppercase tracking-[0.2em] text-slate-400">Metrics</h4>
+                  <Card className="overflow-hidden p-0">
+                    <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-white">Metric selection</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          Toggle the signals displayed in this export.
+                        </p>
+                      </div>
                       <label className="flex items-center gap-2 text-xs text-slate-300">
                         <input
                           type="checkbox"
@@ -924,16 +1046,26 @@ export default function VizualisationPage() {
                         Show only +75 percentile values
                       </label>
                     </div>
-                    <div className="max-h-[360px] overflow-auto space-y-2">
+                    <div className="max-h-[630px] overflow-auto p-3">
+                      <div className="space-y-2">
                       {availableMetrics.map((metric) => {
                         const isChecked = currentSelection.includes(metric);
                         const percentile = percentiles[metric];
                         const value = values[metric];
+                        const isHigh = (percentile ?? 0) >= GLOBAL_THRESHOLD;
                         return (
-                          <label key={metric} className="flex items-center justify-between gap-3 text-sm text-slate-200">
-                            <span className="flex items-center gap-2">
+                          <label
+                            key={metric}
+                            className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2 text-sm transition ${
+                              isChecked
+                                ? "border-[#3A8967]/35 bg-[#2F7D5C]/12 text-white"
+                                : "border-white/10 bg-white/[0.025] text-slate-300 hover:border-white/20 hover:bg-white/[0.045]"
+                            }`}
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
                               <input
                                 type="checkbox"
+                                className="accent-[#3A8967]"
                                 checked={isChecked}
                                 onChange={() => {
                                   setSectionSelections((prev) => {
@@ -945,14 +1077,19 @@ export default function VizualisationPage() {
                                   });
                                 }}
                               />
-                              {formatMetricLabel(metric)}
+                              <span className="truncate">{formatMetricLabel(metric)}</span>
                             </span>
-                            <span className="text-xs text-slate-400">
-                              {percentile != null ? Math.round(percentile) : "--"} / {value != null ? Number(value).toFixed(2) : "--"}
+                            <span className={`rounded-md border px-2 py-1 text-xs font-semibold tabular-nums ${
+                              isHigh
+                                ? "border-[#3A8967]/35 bg-[#2F7D5C]/15 text-[#8CC7A7]"
+                                : "border-white/10 bg-white/[0.03] text-slate-500"
+                            }`}>
+                              P{percentile != null ? Math.round(percentile) : "--"} · {value != null ? Number(value).toFixed(2) : "--"}
                             </span>
                           </label>
                         );
                       })}
+                      </div>
                     </div>
                   </Card>
                 </div>

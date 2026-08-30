@@ -4,6 +4,16 @@ import dynamic from "next/dynamic";
 import { fetchJson, fetchJsonCached } from "@/lib/api";
 import { METRIC_LABELS } from "@/lib/metricLabels";
 import { POSITIONS_GLOSSARY } from "@/lib/positionsGlossary";
+import {
+  DEFAULT_MIN_MINUTES,
+  DEFAULT_SCOUTING_COMPETITION,
+  DEFAULT_SCOUTING_SEASON,
+  formatFilterValue,
+  parseIntegerInput,
+  sortCompetitionNames,
+  sortPositions,
+  withDefaultSeason,
+} from "@/lib/scoutingFilters";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -19,9 +29,12 @@ const Label = ({ children }) => (
   </label>
 );
 
-const Select = ({ value, onChange, children }) => (
+const Select = ({ value, onChange, children, id, name, ariaLabel }) => (
   <select
-    className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+    id={id}
+    name={name || id}
+    aria-label={ariaLabel}
+    className="nl-field"
     value={value}
     onChange={onChange}
   >
@@ -59,47 +72,38 @@ const percentile = (values, p) => {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * weight;
 };
 
-const seasonSortKey = (value) => {
-  if (!value) return -Infinity;
-  const raw = String(value).trim();
-  if (!raw) return -Infinity;
-  const range = raw.match(/^(\d{4})\s*[\/-]\s*(\d{2,4})$/);
-  if (range) {
-    const start = Number(range[1]);
-    const endRaw = range[2];
-    let end = Number(endRaw.length === 2 ? `${range[1].slice(0, 2)}${endRaw}` : endRaw.slice(-4));
-    if (end < start) end += 100;
-    return start * 10000 + end;
+const axisRange = (values) => {
+  const numeric = values.filter(Number.isFinite);
+  if (!numeric.length) return [0, 1];
+  const min = Math.min(...numeric);
+  const max = Math.max(...numeric);
+  if (min === max) {
+    const pad = Math.max(Math.abs(min) * 0.1, 1);
+    return [min - pad, max + pad];
   }
-  const single = raw.match(/^(\d{4})$/);
-  if (single) {
-    const year = Number(single[1]);
-    return year * 10000 + year;
-  }
-  const digits = raw.match(/(\d{4})/g);
-  if (digits?.length) return Number(digits[0]) * 10000 + Number(digits[digits.length - 1]);
-  return -Infinity;
+  const pad = (max - min) * 0.08;
+  return [min - pad, max + pad];
 };
 
-const sortSeasonValues = (values) =>
-  [...(values || [])].sort((a, b) => {
-    const diff = seasonSortKey(b) - seasonSortKey(a);
-    if (diff !== 0) return diff;
-    return String(b || "").localeCompare(String(a || ""), undefined, { sensitivity: "base" });
-  });
+const isGoodValue = (value, threshold, lowerIsBetter) => {
+  if (!Number.isFinite(value) || !Number.isFinite(threshold)) return false;
+  return lowerIsBetter ? value <= threshold : value >= threshold;
+};
+
+const rowKey = (row) => `${row.name || ""}|${row.team || ""}|${row.competition_name || ""}`;
 
 export default function StatsResearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [leagueOptions, setLeagueOptions] = useState(["All leagues"]);
-  const [selectedLeague, setSelectedLeague] = useState("All leagues");
+  const [leagueOptions, setLeagueOptions] = useState([DEFAULT_SCOUTING_COMPETITION, "All leagues"]);
+  const [selectedLeague, setSelectedLeague] = useState(DEFAULT_SCOUTING_COMPETITION);
   const [seasons, setSeasons] = useState([]);
-  const [selectedSeason, setSelectedSeason] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(DEFAULT_SCOUTING_SEASON);
   const [positions, setPositions] = useState([]);
   const [positionsOpen, setPositionsOpen] = useState(false);
   const [positionsAll, setPositionsAll] = useState(true);
   const [selectedPositions, setSelectedPositions] = useState([]);
-  const [minMinutes, setMinMinutes] = useState(270);
+  const [minMinutes, setMinMinutes] = useState(DEFAULT_MIN_MINUTES);
   const [metrics, setMetrics] = useState([]);
   const [lowerIsBetter, setLowerIsBetter] = useState(new Set());
   const [metricX, setMetricX] = useState("");
@@ -121,26 +125,12 @@ export default function StatsResearchPage() {
           fetchJsonCached("/meta/stats-research/metrics"),
         ]);
         const compNames = (competitions || []).map((item) => item.name).filter(Boolean);
-        const unique = [];
-        const seen = new Set();
-        compNames.forEach((name) => {
-          if (seen.has(name)) return;
-          seen.add(name);
-          if (name === "Big 5 Leagues" || name === "Big 10 Competitions" || name === "First Divisions Only" || name === "Second Divisions Only") {
-            if ((competitions || []).find((item) => item.name === name)?.seasons?.length) {
-              unique.push(name);
-            }
-            return;
-          }
-          unique.push(name);
-        });
-        setLeagueOptions(["All leagues", ...unique]);
-        setSeasons(sortSeasonValues((seasonsData || []).filter(Boolean)));
-        const positionList = (positionsData || []).map((code) => ({
+        setLeagueOptions([...sortCompetitionNames(compNames), "All leagues"]);
+        setSeasons(withDefaultSeason(seasonsData || []));
+        const positionList = sortPositions(positionsData || []).map((code) => ({
           code,
           label: POSITIONS_GLOSSARY[code] || code,
         }));
-        positionList.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
         setPositions(positionList);
         const metricList = Array.from(
           new Set((metricsData?.metrics || []).filter(Boolean))
@@ -243,7 +233,7 @@ export default function StatsResearchPage() {
       const metricXVal = Number(row.metric_x);
       const metricYVal = Number(row.metric_y);
       if (!Number.isFinite(metricXVal) || !Number.isFinite(metricYVal)) return;
-      const key = `${row.name || ""}|${row.team || ""}|${row.competition_name || ""}`;
+      const key = rowKey(row);
       const existing = unique.get(key);
       if (!existing) {
         unique.set(key, {
@@ -267,16 +257,17 @@ export default function StatsResearchPage() {
   const highlightInfo = useMemo(() => {
     const valuesX = normalizedRows.map((row) => row.metric_x);
     const valuesY = normalizedRows.map((row) => row.metric_y);
-    const thresholdX = percentile(valuesX, 85);
-    const thresholdY = percentile(valuesY, 50);
+    const medianX = percentile(valuesX, 50);
+    const medianY = percentile(valuesY, 50);
     const xLower = lowerIsBetter.has(metricX);
     const yLower = lowerIsBetter.has(metricY);
-    let highlights = [];
-    if (thresholdX !== null && thresholdY !== null && !xLower && !yLower) {
-      highlights = normalizedRows.filter(
-        (row) => row.metric_x >= thresholdX && row.metric_y >= thresholdY
-      );
-    }
+    const thresholdX = percentile(valuesX, xLower ? 25 : 75);
+    const thresholdY = percentile(valuesY, yLower ? 25 : 75);
+    let highlights = normalizedRows.filter(
+      (row) =>
+        isGoodValue(row.metric_x, thresholdX, xLower) &&
+        isGoodValue(row.metric_y, thresholdY, yLower)
+    );
     if (normalizedRows.length > 0) {
       const bestRow = normalizedRows.reduce((acc, row) => {
         if (!acc) return row;
@@ -291,14 +282,28 @@ export default function StatsResearchPage() {
     }
     const unique = new Map();
     highlights.forEach((row) => {
-      const key = `${row.name || ""}|${row.team || ""}|${row.competition_name || ""}`;
+      const key = rowKey(row);
       if (!unique.has(key)) {
         unique.set(key, row);
       }
     });
-    const limited = Array.from(unique.values()).slice(0, 20);
-    const keys = new Set(unique.keys());
-    return { highlights: limited, keys };
+    const highlightedRows = Array.from(unique.values()).sort((a, b) => {
+      const xRank = xLower ? a.metric_x - b.metric_x : b.metric_x - a.metric_x;
+      if (xRank !== 0) return xRank;
+      return yLower ? a.metric_y - b.metric_y : b.metric_y - a.metric_y;
+    });
+    const keys = new Set(highlightedRows.map(rowKey));
+    return {
+      highlights: highlightedRows,
+      labelKeys: new Set(highlightedRows.slice(0, 14).map(rowKey)),
+      keys,
+      medianX,
+      medianY,
+      thresholdX,
+      thresholdY,
+      xLower,
+      yLower,
+    };
   }, [normalizedRows, lowerIsBetter, metricX, metricY]);
 
   const chartTitle = useMemo(() => {
@@ -317,51 +322,104 @@ export default function StatsResearchPage() {
   }, [metricXLabel, metricYLabel, selectedLeague, selectedSeason, positionsAll, selectedPositions, minMinutes]);
 
   const scatterData = useMemo(() => {
-    const baseCustom = normalizedRows.map((row) => [
+    const baseRows = normalizedRows.filter((row) => !highlightInfo.keys.has(rowKey(row)));
+    const highlightedRows = highlightInfo.highlights;
+    const toCustom = (row) => [
       row.name || "Unknown",
       row.team || "Unknown",
       row.competition_name || "Unknown",
-    ]);
-    const highlightCustom = highlightInfo.highlights.map((row) => [
-      row.name || "Unknown",
-      row.team || "Unknown",
-      row.competition_name || "Unknown",
-    ]);
+      row.calendar || selectedSeason || "Unknown season",
+      row.player_id || "",
+    ];
     const baseTrace = {
-      x: normalizedRows.map((row) => row.metric_x),
-      y: normalizedRows.map((row) => row.metric_y),
+      x: baseRows.map((row) => row.metric_x),
+      y: baseRows.map((row) => row.metric_y),
       type: "scatter",
       mode: "markers",
-      marker: { color: "#60A5FA", size: 9, opacity: 0.35 },
-      customdata: baseCustom,
+      name: "Cohort",
+      marker: {
+        color: "rgba(160,168,163,0.42)",
+        size: 8,
+        opacity: 0.72,
+        line: { color: "rgba(255,255,255,0.10)", width: 0.8 },
+      },
+      customdata: baseRows.map(toCustom),
       hovertemplate:
-        "<b>%{customdata[0]}</b><br>%{customdata[1]} - %{customdata[2]}" +
-        `<br>${metricXLabel}: %{x:.2f}<br>${metricYLabel}: %{y:.2f}<extra></extra>`,
+        "<b>%{customdata[0]}</b><br>" +
+        "%{customdata[1]} · %{customdata[2]}<br>" +
+        "%{customdata[3]}<br><br>" +
+        `<span style="color:#A0A8A3">${metricXLabel}</span>: %{x:.2f}<br>` +
+        `<span style="color:#A0A8A3">${metricYLabel}</span>: %{y:.2f}` +
+        "<extra></extra>",
     };
     const highlightTrace = {
-      x: highlightInfo.highlights.map((row) => row.metric_x),
-      y: highlightInfo.highlights.map((row) => row.metric_y),
+      x: highlightedRows.map((row) => row.metric_x),
+      y: highlightedRows.map((row) => row.metric_y),
       type: "scatter",
       mode: "markers+text",
-      text: highlightInfo.highlights.map((row) => row.name || ""),
+      name: "Target quadrant",
+      text: highlightedRows.map((row) => (highlightInfo.labelKeys.has(rowKey(row)) ? row.name || "" : "")),
       textposition: "top center",
-      textfont: { color: "#F8FAFC", size: 11 },
-      marker: { color: "#34D399", size: 12, opacity: 0.95, line: { color: "#064E3B", width: 1.5 } },
-      customdata: highlightCustom,
+      textfont: { color: "#DDF3E8", size: 10, family: "Inter, system-ui, sans-serif" },
+      marker: {
+        color: "#559A78",
+        size: 11,
+        opacity: 0.96,
+        line: { color: "rgba(221,243,232,0.78)", width: 1.25 },
+      },
+      customdata: highlightedRows.map(toCustom),
       hovertemplate:
-        "<b>%{customdata[0]}</b><br>%{customdata[1]} - %{customdata[2]}" +
-        `<br>${metricXLabel}: %{x:.2f}<br>${metricYLabel}: %{y:.2f}<extra></extra>`,
+        "<b>%{customdata[0]}</b><br>" +
+        "%{customdata[1]} · %{customdata[2]}<br>" +
+        "%{customdata[3]}<br><br>" +
+        `<span style="color:#8CC7A7">Target quadrant</span><br>` +
+        `<span style="color:#A0A8A3">${metricXLabel}</span>: %{x:.2f}<br>` +
+        `<span style="color:#A0A8A3">${metricYLabel}</span>: %{y:.2f}` +
+        "<extra></extra>",
       showlegend: false,
     };
     return [baseTrace, highlightTrace];
-  }, [normalizedRows, highlightInfo, metricXLabel, metricYLabel]);
+  }, [normalizedRows, highlightInfo, metricXLabel, metricYLabel, selectedSeason]);
 
   const plotLayout = useMemo(() => {
     const xValues = normalizedRows.map((row) => row.metric_x).filter(Number.isFinite);
     const yValues = normalizedRows.map((row) => row.metric_y).filter(Number.isFinite);
-    const medianX = percentile(xValues, 50);
-    const medianY = percentile(yValues, 50);
+    const [xMin, xMax] = axisRange(xValues);
+    const [yMin, yMax] = axisRange(yValues);
+    const medianX = highlightInfo.medianX;
+    const medianY = highlightInfo.medianY;
+    const thresholdX = highlightInfo.thresholdX;
+    const thresholdY = highlightInfo.thresholdY;
     const shapes = [];
+    const annotations = [];
+    if (Number.isFinite(thresholdX) && Number.isFinite(thresholdY)) {
+      shapes.push({
+        type: "rect",
+        xref: "x",
+        yref: "y",
+        x0: highlightInfo.xLower ? xMin : thresholdX,
+        x1: highlightInfo.xLower ? thresholdX : xMax,
+        y0: highlightInfo.yLower ? yMin : thresholdY,
+        y1: highlightInfo.yLower ? thresholdY : yMax,
+        fillcolor: "rgba(85,154,120,0.08)",
+        line: { width: 0 },
+        layer: "below",
+      });
+      annotations.push({
+        text: "Target quadrant",
+        x: highlightInfo.xLower ? xMin : xMax,
+        y: highlightInfo.yLower ? yMin : yMax,
+        xref: "x",
+        yref: "y",
+        xanchor: highlightInfo.xLower ? "left" : "right",
+        yanchor: highlightInfo.yLower ? "bottom" : "top",
+        showarrow: false,
+        font: { size: 11, color: "#8CC7A7" },
+        bgcolor: "rgba(47,125,92,0.14)",
+        bordercolor: "rgba(85,154,120,0.22)",
+        borderpad: 4,
+      });
+    }
     if (Number.isFinite(medianX)) {
       shapes.push({
         type: "line",
@@ -371,7 +429,17 @@ export default function StatsResearchPage() {
         y1: 1,
         xref: "x",
         yref: "paper",
-        line: { color: "rgba(148,163,184,0.45)", width: 1.5, dash: "dot" },
+        line: { color: "rgba(243,245,244,0.38)", width: 1.25, dash: "dot" },
+      });
+      annotations.push({
+        text: `Median ${metricXLabel}`,
+        x: medianX,
+        y: 1.01,
+        xref: "x",
+        yref: "paper",
+        showarrow: false,
+        font: { size: 10, color: "rgba(243,245,244,0.58)" },
+        yanchor: "bottom",
       });
     }
     if (Number.isFinite(medianY)) {
@@ -383,21 +451,59 @@ export default function StatsResearchPage() {
         y1: medianY,
         xref: "paper",
         yref: "y",
-        line: { color: "rgba(148,163,184,0.45)", width: 1.5, dash: "dot" },
+        line: { color: "rgba(243,245,244,0.38)", width: 1.25, dash: "dot" },
+      });
+      annotations.push({
+        text: `Median ${metricYLabel}`,
+        x: 1.01,
+        y: medianY,
+        xref: "paper",
+        yref: "y",
+        showarrow: false,
+        font: { size: 10, color: "rgba(243,245,244,0.58)" },
+        xanchor: "left",
       });
     }
     return {
-      title: { text: chartTitle, font: { size: 14, color: "#E2E8F0" } },
-      plot_bgcolor: "#0F172A",
-      paper_bgcolor: "#0F172A",
-      font: { color: "#E2E8F0" },
-      margin: { l: 40, r: 20, t: 60, b: 40 },
-      xaxis: { title: metricXLabel, gridcolor: "rgba(255,255,255,0.08)" },
-      yaxis: { title: metricYLabel, gridcolor: "rgba(255,255,255,0.08)" },
+      autosize: true,
+      plot_bgcolor: "rgba(5,7,6,0)",
+      paper_bgcolor: "rgba(5,7,6,0)",
+      font: { color: "#A0A8A3", family: "Inter, system-ui, sans-serif" },
+      margin: { l: 56, r: 48, t: 26, b: 54 },
+      hovermode: "closest",
+      dragmode: "zoom",
+      clickmode: "event+select",
+      hoverlabel: {
+        bgcolor: "#0A0C0B",
+        bordercolor: "#3A8967",
+        font: { color: "#F3F5F4", size: 12 },
+        align: "left",
+      },
+      xaxis: {
+        title: { text: metricXLabel, font: { size: 12, color: "#DDE3DF" } },
+        range: [xMin, xMax],
+        gridcolor: "rgba(255,255,255,0.055)",
+        zeroline: false,
+        linecolor: "rgba(255,255,255,0.14)",
+        tickcolor: "rgba(255,255,255,0.14)",
+        tickfont: { size: 11, color: "#8D968F" },
+        ticks: "outside",
+      },
+      yaxis: {
+        title: { text: metricYLabel, font: { size: 12, color: "#DDE3DF" } },
+        range: [yMin, yMax],
+        gridcolor: "rgba(255,255,255,0.055)",
+        zeroline: false,
+        linecolor: "rgba(255,255,255,0.14)",
+        tickcolor: "rgba(255,255,255,0.14)",
+        tickfont: { size: 11, color: "#8D968F" },
+        ticks: "outside",
+      },
       showlegend: false,
       shapes,
+      annotations,
     };
-  }, [chartTitle, metricXLabel, metricYLabel, normalizedRows]);
+  }, [highlightInfo, metricXLabel, metricYLabel, normalizedRows]);
 
   const tableRows = normalizedRows
     .map((row) => ({
@@ -431,6 +537,25 @@ export default function StatsResearchPage() {
     ? "All"
     : selectedPositions.map((code) => POSITIONS_GLOSSARY[code] || code).join(", ");
 
+  const activeFilterCount = [
+    selectedLeague !== DEFAULT_SCOUTING_COMPETITION,
+    selectedSeason !== DEFAULT_SCOUTING_SEASON,
+    !positionsAll,
+    minMinutes !== DEFAULT_MIN_MINUTES,
+  ].filter(Boolean).length;
+
+  const resetFilters = () => {
+    setSelectedLeague(DEFAULT_SCOUTING_COMPETITION);
+    setSelectedSeason(DEFAULT_SCOUTING_SEASON);
+    setPositionsAll(true);
+    setSelectedPositions([]);
+    setMinMinutes(DEFAULT_MIN_MINUTES);
+  };
+
+  const updateMinMinutes = (value) => {
+    setMinMinutes(parseIntegerInput(value, 0));
+  };
+
   const handleTableSort = (key) => {
     setTableSort((prev) => {
       if (prev.key === key) {
@@ -439,6 +564,12 @@ export default function StatsResearchPage() {
       const defaultDir = key === "player" ? "asc" : "desc";
       return { key, dir: defaultDir };
     });
+  };
+
+  const openPointReport = (event) => {
+    const playerId = event?.points?.[0]?.customdata?.[4];
+    if (!playerId) return;
+    window.open(`/report/${playerId}`, "_blank", "noopener,noreferrer");
   };
 
   const renderPositionsMenu = () => {
@@ -500,11 +631,30 @@ export default function StatsResearchPage() {
           </p>
         </header>
 
-        <Card>
+        <Card className="nl-filter-bar p-0">
+          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="nl-kicker">Research filters</p>
+              <h2 className="mt-1 text-lg font-semibold text-white">Define the analytical cohort</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                {normalizedRows.length} players
+              </span>
+              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+                {activeFilterCount} custom filters
+              </span>
+              <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetFilters}>
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4 p-4">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
             <div className="flex flex-col gap-2">
               <Label>League</Label>
-              <Select value={selectedLeague} onChange={(e) => setSelectedLeague(e.target.value)}>
+              <Select id="stats-research-league" value={selectedLeague} onChange={(e) => setSelectedLeague(e.target.value)}>
                 {leagueOptions.map((league) => (
                   <option key={league} value={league}>
                     {league}
@@ -514,7 +664,7 @@ export default function StatsResearchPage() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Season</Label>
-              <Select value={selectedSeason} onChange={(e) => setSelectedSeason(e.target.value)}>
+              <Select id="stats-research-season" value={selectedSeason} onChange={(e) => setSelectedSeason(e.target.value)}>
                 <option value="">All seasons</option>
                 {seasons.map((season) => (
                   <option key={season} value={season}>
@@ -528,7 +678,7 @@ export default function StatsResearchPage() {
               <button
                 type="button"
                 onClick={() => setPositionsOpen((prev) => !prev)}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-left text-slate-100"
+                className="nl-field text-left"
                 ref={positionsButtonRef}
               >
                 {positionsSummary || "All"}
@@ -539,11 +689,13 @@ export default function StatsResearchPage() {
               <Label>Minimum minutes</Label>
               <input
                 type="number"
+                inputMode="numeric"
                 min="0"
-                step="30"
+                max="10000"
+                step="1"
                 value={minMinutes}
-                onChange={(e) => setMinMinutes(Number(e.target.value))}
-                className="bg-slate-900/60 border border-slate-700 rounded-md px-3 py-2 text-slate-100"
+                onChange={(e) => updateMinMinutes(e.target.value)}
+                className="nl-field tabular-nums"
               />
             </div>
           </div>
@@ -579,10 +731,23 @@ export default function StatsResearchPage() {
                 setMetricX(metricY);
                 setMetricY(metricX);
               }}
-              className="px-3 py-2 rounded-md text-xs uppercase tracking-[0.2em] border border-slate-700 text-slate-200 hover:border-slate-500"
+              className="nl-button-secondary px-3 py-2 text-xs"
             >
               Inverse Axis
             </button>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {[
+              ["League", formatFilterValue(selectedLeague, "All leagues")],
+              ["Season", formatFilterValue(selectedSeason, "All seasons")],
+              ["Positions", positionsSummary || "All"],
+              ["Minutes", `${minMinutes}+`],
+            ].map(([label, value]) => (
+              <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+              </span>
+            ))}
+          </div>
           </div>
         </Card>
 
@@ -602,13 +767,36 @@ export default function StatsResearchPage() {
           </Card>
         ) : (
           <>
-            <Card>
-              <div className="h-[560px]">
+            <Card className="overflow-hidden p-0">
+              <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-white">{chartTitle}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    Median guides, target quadrant and Q3 highlights are computed from the current cohort.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+                    {normalizedRows.length} plotted
+                  </span>
+                  <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                    {highlightInfo.highlights.length} target
+                  </span>
+                </div>
+              </div>
+              <div className="h-[590px] px-2 py-3">
                 <Plot
                   data={scatterData}
                   layout={plotLayout}
                   style={{ width: "100%", height: "100%" }}
-                  config={{ displayModeBar: false, responsive: true }}
+                  config={{
+                    displayModeBar: "hover",
+                    displaylogo: false,
+                    responsive: true,
+                    scrollZoom: true,
+                    modeBarButtonsToRemove: ["lasso2d", "select2d"],
+                  }}
+                  onClick={openPointReport}
                 />
               </div>
             </Card>

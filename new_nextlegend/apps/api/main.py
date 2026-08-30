@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, Query, HTTPException, Request
+from fastapi import FastAPI, Depends, Query, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -9,6 +9,9 @@ from pathlib import Path
 import os
 import secrets
 import hashlib
+import smtplib
+import ssl
+from email.message import EmailMessage
 from datetime import datetime, timedelta, timezone
 from passlib.context import CryptContext
 import ipaddress
@@ -16,6 +19,11 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+import mimetypes
+import uuid
+import boto3
+from botocore.client import Config
+from botocore.exceptions import ClientError
 
 from settings import settings
 from db import get_session, SessionLocal
@@ -123,7 +131,16 @@ def _auth_json_response(request: Request, detail: str, status_code: int = 401) -
 
 @app.middleware("http")
 async def auth_middleware(request, call_next):
-    public_paths = {"/", "/health", "/image-proxy", "/auth/login", "/auth/logout", "/auth/me"}
+    public_paths = {
+        "/",
+        "/health",
+        "/image-proxy",
+        "/auth/login",
+        "/auth/logout",
+        "/auth/me",
+        "/auth/password/forgot",
+        "/auth/password/reset",
+    }
     if request.method == "OPTIONS":
         return await call_next(request)
     if request.url.path in public_paths or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
@@ -146,8 +163,11 @@ PROSPECT_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS prospects (
     id SERIAL PRIMARY KEY,
     player_id INT UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+    player_season_id INT REFERENCES player_seasons(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS player_season_id INT REFERENCES player_seasons(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS club_needs (
     id SERIAL PRIMARY KEY,
@@ -172,6 +192,7 @@ CREATE TABLE IF NOT EXISTS club_need_players (
 );
 
 CREATE INDEX IF NOT EXISTS prospects_player_id_idx ON prospects(player_id);
+CREATE INDEX IF NOT EXISTS prospects_player_season_id_idx ON prospects(player_season_id);
 CREATE INDEX IF NOT EXISTS club_needs_stage_order_idx ON club_needs(priority_stage, sort_order);
 CREATE INDEX IF NOT EXISTS club_need_players_order_idx ON club_need_players(club_need_id, sort_order);
 """
@@ -222,6 +243,17 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
 
 CREATE INDEX IF NOT EXISTS auth_sessions_user_id_idx ON auth_sessions(user_id);
 CREATE INDEX IF NOT EXISTS auth_users_email_idx ON auth_users(email);
+
+CREATE TABLE IF NOT EXISTS auth_password_reset_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES auth_users(username) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS auth_password_reset_tokens_user_idx ON auth_password_reset_tokens(user_id);
+CREATE INDEX IF NOT EXISTS auth_password_reset_tokens_expires_idx ON auth_password_reset_tokens(expires_at);
 """
 
 MERCATO_SCHEMA_SQL = """
@@ -327,6 +359,36 @@ CREATE TABLE IF NOT EXISTS hq_priority_items (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS hq_calendar_events (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    event_type TEXT NOT NULL DEFAULT 'team',
+    agent_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    location TEXT,
+    color TEXT,
+    related_page TEXT,
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    updated_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE hq_calendar_events ADD COLUMN IF NOT EXISTS event_type TEXT NOT NULL DEFAULT 'team';
+ALTER TABLE hq_calendar_events ADD COLUMN IF NOT EXISTS agent_names JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE hq_calendar_events ADD COLUMN IF NOT EXISTS end_date DATE;
+ALTER TABLE hq_calendar_events ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE hq_calendar_events ADD COLUMN IF NOT EXISTS color TEXT;
+ALTER TABLE hq_calendar_events ADD COLUMN IF NOT EXISTS related_page TEXT;
+ALTER TABLE hq_calendar_events ADD COLUMN IF NOT EXISTS updated_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL;
+UPDATE hq_calendar_events SET end_date = start_date WHERE end_date IS NOT NULL AND end_date < start_date;
+ALTER TABLE hq_calendar_events DROP CONSTRAINT IF EXISTS hq_calendar_events_valid_date_range;
+ALTER TABLE hq_calendar_events
+ADD CONSTRAINT hq_calendar_events_valid_date_range
+CHECK (end_date IS NULL OR end_date >= start_date);
+
 CREATE TABLE IF NOT EXISTS hd_players (
     id SERIAL PRIMARY KEY,
     player_id INT REFERENCES players(id) ON DELETE SET NULL,
@@ -341,6 +403,7 @@ CREATE TABLE IF NOT EXISTS hd_players (
     next_step TEXT,
     assigned_agent TEXT,
     photo_url TEXT,
+    birth_date DATE,
     player_phone TEXT,
     player_email TEXT,
     entourage_phone TEXT,
@@ -348,6 +411,8 @@ CREATE TABLE IF NOT EXISTS hd_players (
     season_objectives TEXT,
     eyeball_url TEXT,
     transfermarkt_url TEXT,
+    is_young_player BOOLEAN NOT NULL DEFAULT FALSE,
+    manual_performance JSONB NOT NULL DEFAULT '{}'::jsonb,
     contract_status TEXT,
     mandate_status TEXT,
     medical_status TEXT,
@@ -367,6 +432,9 @@ ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS entourage_email TEXT;
 ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS season_objectives TEXT;
 ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS eyeball_url TEXT;
 ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS transfermarkt_url TEXT;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS is_young_player BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS manual_performance JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE hd_players ADD COLUMN IF NOT EXISTS birth_date DATE;
 
 CREATE TABLE IF NOT EXISTS hd_player_documents (
     id SERIAL PRIMARY KEY,
@@ -382,6 +450,36 @@ CREATE TABLE IF NOT EXISTS hd_player_documents (
     notes TEXT,
     created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hd_player_prospect_clubs (
+    id SERIAL PRIMARY KEY,
+    hd_player_id INT NOT NULL REFERENCES hd_players(id) ON DELETE CASCADE,
+    club_id INT REFERENCES clubs(id) ON DELETE SET NULL,
+    club_name TEXT NOT NULL,
+    competition_name TEXT,
+    status TEXT,
+    offer TEXT,
+    contact TEXT,
+    notes TEXT,
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS hd_player_manual_transfers (
+    id SERIAL PRIMARY KEY,
+    hd_player_id INT NOT NULL REFERENCES hd_players(id) ON DELETE CASCADE,
+    transfer_date DATE,
+    transfer_type TEXT,
+    transfer_fee TEXT,
+    team_in_name TEXT,
+    team_out_name TEXT,
+    league_name TEXT,
+    notes TEXT,
+    created_by_agent_id TEXT REFERENCES auth_users(username) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS player_transfer_history (
@@ -408,6 +506,8 @@ CREATE TABLE IF NOT EXISTS player_transfer_history (
 );
 
 CREATE INDEX IF NOT EXISTS hq_priority_items_agent_date_idx ON hq_priority_items(agent_name, start_date);
+CREATE INDEX IF NOT EXISTS hq_calendar_events_date_idx ON hq_calendar_events(start_date, end_date);
+CREATE INDEX IF NOT EXISTS hq_calendar_events_created_by_idx ON hq_calendar_events(created_by_agent_id);
 CREATE INDEX IF NOT EXISTS hd_players_player_id_idx ON hd_players(player_id);
 CREATE INDEX IF NOT EXISTS hd_players_agent_priority_idx ON hd_players(assigned_agent, priority);
 CREATE UNIQUE INDEX IF NOT EXISTS hd_players_active_player_unique_idx ON hd_players(player_id)
@@ -415,6 +515,8 @@ WHERE player_id IS NOT NULL AND status <> 'archived';
 CREATE UNIQUE INDEX IF NOT EXISTS hd_players_active_name_unique_idx ON hd_players(LOWER(BTRIM(display_name)))
 WHERE status <> 'archived';
 CREATE INDEX IF NOT EXISTS hd_player_documents_hd_player_idx ON hd_player_documents(hd_player_id);
+CREATE INDEX IF NOT EXISTS hd_player_prospect_clubs_hd_player_idx ON hd_player_prospect_clubs(hd_player_id);
+CREATE INDEX IF NOT EXISTS hd_player_manual_transfers_hd_player_idx ON hd_player_manual_transfers(hd_player_id);
 CREATE INDEX IF NOT EXISTS player_transfer_history_source_player_idx ON player_transfer_history(source_player_id);
 CREATE INDEX IF NOT EXISTS player_transfer_history_linked_player_idx ON player_transfer_history(linked_player_id);
 CREATE INDEX IF NOT EXISTS player_transfer_history_normalized_name_idx ON player_transfer_history(normalized_player_name);
@@ -763,6 +865,21 @@ def _ensure_auth_schema(session: Session) -> None:
                 """
             )
         )
+    if not _table_exists(session, "auth_password_reset_tokens"):
+        _drop_orphan_type(session, "auth_password_reset_tokens")
+        session.execute(
+            text(
+                """
+                CREATE TABLE auth_password_reset_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES auth_users(username) ON DELETE CASCADE,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    used_at TIMESTAMPTZ
+                )
+                """
+            )
+        )
     if _table_exists(session, "auth_sessions"):
         session.execute(
             text("CREATE INDEX IF NOT EXISTS auth_sessions_user_id_idx ON auth_sessions(user_id)")
@@ -770,6 +887,13 @@ def _ensure_auth_schema(session: Session) -> None:
     if _table_exists(session, "auth_users"):
         session.execute(
             text("CREATE INDEX IF NOT EXISTS auth_users_email_idx ON auth_users(email)")
+        )
+    if _table_exists(session, "auth_password_reset_tokens"):
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS auth_password_reset_tokens_user_idx ON auth_password_reset_tokens(user_id)")
+        )
+        session.execute(
+            text("CREATE INDEX IF NOT EXISTS auth_password_reset_tokens_expires_idx ON auth_password_reset_tokens(expires_at)")
         )
     session.commit()
     _seed_auth_users(session)
@@ -1091,6 +1215,70 @@ def _fetch_user(session: Session, identifier: str) -> Optional[dict[str, str]]:
     return _row_to_dict(row) if row else None
 
 
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _frontend_base_url(request: Request) -> str:
+    configured = os.getenv("FRONTEND_BASE_URL") or os.getenv("PUBLIC_APP_URL") or os.getenv("APP_URL")
+    if configured:
+        return configured.rstrip("/")
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/")
+    return "http://localhost:3000"
+
+
+def _smtp_configured() -> bool:
+    return bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_FROM_EMAIL"))
+
+
+def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    if not _smtp_configured():
+        print(f"[auth] SMTP not configured. Password reset link for {to_email}: {reset_url}")
+        return False
+
+    host = os.getenv("SMTP_HOST", "")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASSWORD") or os.getenv("SMTP_PASS")
+    from_email = os.getenv("SMTP_FROM_EMAIL", "")
+    from_name = os.getenv("SMTP_FROM_NAME", "Next Legend")
+    use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+    use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+
+    message = EmailMessage()
+    message["Subject"] = "Reset your Next Legend password"
+    message["From"] = f"{from_name} <{from_email}>"
+    message["To"] = to_email
+    message.set_content(
+        "\n".join(
+            [
+                "A password reset was requested for your Next Legend account.",
+                "",
+                f"Reset link: {reset_url}",
+                "",
+                "This link expires in 30 minutes. If you did not request this, you can ignore this email.",
+            ]
+        )
+    )
+
+    context = ssl.create_default_context()
+    if use_ssl:
+        with smtplib.SMTP_SSL(host, port, context=context, timeout=12) as server:
+            if username and password:
+                server.login(username, password)
+            server.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=12) as server:
+            if use_tls:
+                server.starttls(context=context)
+            if username and password:
+                server.login(username, password)
+            server.send_message(message)
+    return True
+
+
 def _authenticate_user(session: Session, username: str, password: str) -> Optional[dict[str, str]]:
     entry = _fetch_user(session, username)
     if not entry:
@@ -1164,6 +1352,7 @@ def _get_session_user(session: Session, session_id: str) -> Optional[dict[str, s
 
 class ProspectToggle(BaseModel):
     player_id: int
+    player_season_id: Optional[int] = None
 
 
 class ClubNeedCreate(BaseModel):
@@ -1205,6 +1394,18 @@ class HqPriorityItemPayload(BaseModel):
     related_page: Optional[str] = None
 
 
+class HqCalendarEventPayload(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    event_type: Optional[str] = "team"
+    agent_names: Optional[List[str]] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    location: Optional[str] = None
+    color: Optional[str] = None
+    related_page: Optional[str] = None
+
+
 class HdPlayerPayload(BaseModel):
     player_id: Optional[int] = None
     display_name: Optional[str] = None
@@ -1218,6 +1419,7 @@ class HdPlayerPayload(BaseModel):
     next_step: Optional[str] = None
     assigned_agent: Optional[str] = None
     photo_url: Optional[str] = None
+    birth_date: Optional[str] = None
     player_phone: Optional[str] = None
     player_email: Optional[str] = None
     entourage_phone: Optional[str] = None
@@ -1225,6 +1427,8 @@ class HdPlayerPayload(BaseModel):
     season_objectives: Optional[str] = None
     eyeball_url: Optional[str] = None
     transfermarkt_url: Optional[str] = None
+    is_young_player: Optional[bool] = None
+    manual_performance: Optional[dict[str, Any]] = None
     contract_status: Optional[str] = None
     mandate_status: Optional[str] = None
     medical_status: Optional[str] = None
@@ -1241,6 +1445,26 @@ class HdPlayerDocumentPayload(BaseModel):
     storage_url: Optional[str] = None
     content_type: Optional[str] = None
     size_bytes: Optional[int] = None
+    notes: Optional[str] = None
+
+
+class HdPlayerProspectClubPayload(BaseModel):
+    club_id: Optional[int] = None
+    club_name: str
+    competition_name: Optional[str] = None
+    status: Optional[str] = None
+    offer: Optional[str] = None
+    contact: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class HdPlayerManualTransferPayload(BaseModel):
+    transfer_date: Optional[str] = None
+    transfer_type: Optional[str] = None
+    transfer_fee: Optional[str] = None
+    team_in_name: Optional[str] = None
+    team_out_name: Optional[str] = None
+    league_name: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -1326,6 +1550,25 @@ class AuthUserResponse(BaseModel):
     display_name: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = None
+
+
+class AuthProfileUpdate(BaseModel):
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class AuthPasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class AuthPasswordForgotRequest(BaseModel):
+    identifier: str
+
+
+class AuthPasswordResetRequest(BaseModel):
+    token: str
+    new_password: str
 
 
 class AdminUser(BaseModel):
@@ -1472,9 +1715,203 @@ def auth_me(request: Request, session: Session = Depends(get_session)):
     )
 
 
+@app.get("/auth/profile", response_model=AuthUserResponse)
+def auth_profile(request: Request, session: Session = Depends(get_session)):
+    user = getattr(request.state, "user", None) or {}
+    if not user.get("username"):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return AuthUserResponse(
+        username=user.get("username"),
+        display_name=user.get("display_name") or user.get("username"),
+        email=user.get("email"),
+        role=user.get("role"),
+    )
+
+
+@app.patch("/auth/profile", response_model=AuthUserResponse)
+def auth_update_profile(
+    payload: AuthProfileUpdate,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_auth_schema(session)
+    user = getattr(request.state, "user", None) or {}
+    username = user.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    updates: dict[str, object] = {}
+    if payload.display_name is not None:
+        updates["display_name"] = payload.display_name.strip() or username
+    if payload.email is not None:
+        email = payload.email.strip().lower() if payload.email else None
+        if email:
+            existing = session.execute(
+                text(
+                    """
+                    SELECT username
+                    FROM auth_users
+                    WHERE lower(email) = :email AND lower(username) <> :username
+                    """
+                ),
+                {"email": email, "username": username.lower()},
+            ).fetchone()
+            if existing:
+                raise HTTPException(status_code=400, detail="Email is already used")
+        updates["email"] = email
+
+    if not updates:
+        return AuthUserResponse(
+            username=username,
+            display_name=user.get("display_name") or username,
+            email=user.get("email"),
+            role=user.get("role"),
+        )
+
+    set_clause = ", ".join([f"{key} = :{key}" for key in updates.keys()])
+    row = session.execute(
+        text(
+            f"""
+            UPDATE auth_users
+            SET {set_clause}, updated_at = NOW()
+            WHERE username = :username
+            RETURNING username, display_name, email, role
+            """
+        ),
+        {"username": username, **updates},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+    return AuthUserResponse(**_row_to_dict(row))
+
+
+@app.post("/auth/password/change")
+def auth_change_password(
+    payload: AuthPasswordChangeRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_auth_schema(session)
+    user = getattr(request.state, "user", None) or {}
+    username = user.get("username")
+    if not username:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must contain at least 8 characters")
+    if len(payload.new_password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=400, detail="Password exceeds 72 bytes")
+    entry = _fetch_user(session, username)
+    if not entry or not _verify_password(payload.current_password, entry["password_hash"], entry.get("password_algo")):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    session_id = request.cookies.get(AUTH_COOKIE_NAME)
+    session.execute(
+        text(
+            """
+            UPDATE auth_users
+            SET password_hash = :password_hash,
+                password_algo = 'bcrypt',
+                updated_at = NOW()
+            WHERE username = :username
+            """
+        ),
+        {"username": username, "password_hash": _hash_password(payload.new_password, "bcrypt")},
+    )
+    session.execute(
+        text(
+            """
+            DELETE FROM auth_sessions
+            WHERE user_id = :username AND (:session_id IS NULL OR id <> :session_id)
+            """
+        ),
+        {"username": username, "session_id": session_id},
+    )
+    session.commit()
+    return {"updated": True}
+
+
+@app.post("/auth/password/forgot")
+def auth_forgot_password(
+    payload: AuthPasswordForgotRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_auth_schema(session)
+    session.execute(
+        text("DELETE FROM auth_password_reset_tokens WHERE used_at IS NOT NULL OR expires_at < NOW()")
+    )
+    identifier = payload.identifier.strip()
+    user = _fetch_user(session, identifier) if identifier else None
+    if user and user.get("email"):
+        token = secrets.token_urlsafe(36)
+        reset_url = f"{_frontend_base_url(request)}/login?reset_token={urllib.parse.quote(token)}"
+        session.execute(
+            text(
+                """
+                INSERT INTO auth_password_reset_tokens (token_hash, user_id, created_at, expires_at, used_at)
+                VALUES (:token_hash, :user_id, NOW(), NOW() + INTERVAL '30 minutes', NULL)
+                """
+            ),
+            {"token_hash": _token_hash(token), "user_id": user["username"]},
+        )
+        session.commit()
+        try:
+            _send_password_reset_email(user["email"], reset_url)
+        except Exception as exc:
+            print(f"[auth] Failed to send password reset email to {user['email']}: {exc}")
+    else:
+        session.commit()
+    return {"sent": True}
+
+
+@app.post("/auth/password/reset")
+def auth_reset_password(payload: AuthPasswordResetRequest, session: Session = Depends(get_session)):
+    _ensure_auth_schema(session)
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must contain at least 8 characters")
+    if len(payload.new_password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=400, detail="Password exceeds 72 bytes")
+    row = session.execute(
+        text(
+            """
+            SELECT token_hash, user_id
+            FROM auth_password_reset_tokens
+            WHERE token_hash = :token_hash
+              AND used_at IS NULL
+              AND expires_at >= NOW()
+            """
+        ),
+        {"token_hash": _token_hash(payload.token)},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail="Reset link is invalid or expired")
+    session.execute(
+        text(
+            """
+            UPDATE auth_users
+            SET password_hash = :password_hash,
+                password_algo = 'bcrypt',
+                updated_at = NOW()
+            WHERE username = :username
+            """
+        ),
+        {"username": row.user_id, "password_hash": _hash_password(payload.new_password, "bcrypt")},
+    )
+    session.execute(
+        text("UPDATE auth_password_reset_tokens SET used_at = NOW() WHERE token_hash = :token_hash"),
+        {"token_hash": row.token_hash},
+    )
+    session.execute(
+        text("DELETE FROM auth_sessions WHERE user_id = :username"),
+        {"username": row.user_id},
+    )
+    session.commit()
+    return {"updated": True}
+
+
 def _require_admin(request: Request) -> None:
     user = getattr(request.state, "user", None) or {}
-    if user.get("role") != "admin":
+    if user.get("role") != "admin" or str(user.get("username") or "").strip().lower() != ADMIN_USERNAME:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
@@ -1685,8 +2122,15 @@ def ai_player_report(request: AIPlayerReportRequest, session: Session = Depends(
 
 
 @app.get("/ai/conversations", response_model=AIConversationList)
-def ai_conversations(user_id: str = Query(...), session: Session = Depends(get_session)):
+def ai_conversations(
+    request: Request,
+    user_id: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     rows = session.execute(
         text(
             """
@@ -1696,7 +2140,7 @@ def ai_conversations(user_id: str = Query(...), session: Session = Depends(get_s
             ORDER BY updated_at DESC
             """
         ),
-        {"user_id": user_id},
+        {"user_id": current_user_id},
     ).fetchall()
     items = [AIConversation(**_row_to_dict(row)) for row in rows]
     return AIConversationList(items=items)
@@ -1705,9 +2149,13 @@ def ai_conversations(user_id: str = Query(...), session: Session = Depends(get_s
 @app.post("/ai/conversations", response_model=AIConversation)
 def ai_conversation_create(
     payload: AIConversationCreate,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     row = session.execute(
         text(
             """
@@ -1717,7 +2165,7 @@ def ai_conversation_create(
             """
         ),
         {
-            "user_id": payload.user_id,
+            "user_id": current_user_id,
             "title": payload.title,
             "mode": payload.mode or "scout",
         },
@@ -1729,7 +2177,8 @@ def ai_conversation_create(
 
 
 @app.get("/ai/users")
-def ai_users(session: Session = Depends(get_session)):
+def ai_users(request: Request, session: Session = Depends(get_session)):
+    _require_admin(request)
     _ensure_ai_schema(session)
     rows = session.execute(
         text(
@@ -1755,9 +2204,13 @@ def ai_users(session: Session = Depends(get_session)):
 def ai_conversation_update(
     conversation_id: int,
     payload: AIConversationUpdate,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     row = session.execute(
         text(
             """
@@ -1769,7 +2222,7 @@ def ai_conversation_update(
         ),
         {
             "conversation_id": conversation_id,
-            "user_id": payload.user_id,
+            "user_id": current_user_id,
             "title": payload.title,
         },
     ).fetchone()
@@ -1782,10 +2235,14 @@ def ai_conversation_update(
 @app.get("/ai/conversations/{conversation_id}", response_model=AIConversationDetail)
 def ai_conversation_detail(
     conversation_id: int,
-    user_id: str = Query(...),
+    request: Request,
+    user_id: Optional[str] = Query(None),
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     convo = session.execute(
         text(
             """
@@ -1794,7 +2251,7 @@ def ai_conversation_detail(
             WHERE id = :conversation_id AND user_id = :user_id
             """
         ),
-        {"conversation_id": conversation_id, "user_id": user_id},
+        {"conversation_id": conversation_id, "user_id": current_user_id},
     ).fetchone()
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -1819,10 +2276,12 @@ def ai_conversation_detail(
 
 @app.get("/ai/usage", response_model=AIUsageResponse)
 def ai_usage(
+    request: Request,
     user_id: str = Query(...),
     conversation_id: Optional[int] = Query(None),
     session: Session = Depends(get_session),
 ):
+    _require_admin(request)
     _ensure_ai_schema(session)
     sql = """
     SELECT m.payload
@@ -1852,9 +2311,13 @@ def ai_usage(
 def ai_conversation_message(
     conversation_id: int,
     payload: AIMessageCreate,
+    request: Request,
     session: Session = Depends(get_session),
 ):
     _ensure_ai_schema(session)
+    current_user_id = _current_user_id(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
     convo = session.execute(
         text(
             """
@@ -1863,7 +2326,7 @@ def ai_conversation_message(
             WHERE id = :conversation_id AND user_id = :user_id
             """
         ),
-        {"conversation_id": conversation_id, "user_id": payload.user_id},
+        {"conversation_id": conversation_id, "user_id": current_user_id},
     ).fetchone()
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -3379,6 +3842,73 @@ def _player_transfer_history(session: Session, payload: dict[str, Any]) -> list[
     return items[:30]
 
 
+def _s3_client():
+    endpoint = os.getenv("S3_ENDPOINT") or "http://minio:9000"
+    access_key = os.getenv("S3_ACCESS_KEY") or os.getenv("MINIO_ROOT_USER")
+    secret_key = os.getenv("S3_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD")
+    if not access_key or not secret_key:
+        raise HTTPException(status_code=500, detail="Object storage credentials are not configured")
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=Config(signature_version="s3v4"),
+        region_name=os.getenv("S3_REGION") or "us-east-1",
+    )
+
+
+def _s3_bucket() -> str:
+    bucket = os.getenv("S3_BUCKET") or "nextlegend"
+    if not bucket:
+        raise HTTPException(status_code=500, detail="Object storage bucket is not configured")
+    return bucket
+
+
+def _ensure_s3_bucket(client, bucket: str) -> None:
+    try:
+        client.head_bucket(Bucket=bucket)
+    except ClientError:
+        client.create_bucket(Bucket=bucket)
+
+
+def _storage_proxy_url(request: Request, file_key: str) -> str:
+    quoted = urllib.parse.quote(file_key, safe="")
+    public_base = os.getenv("PUBLIC_API_BASE_URL") or os.getenv("API_PUBLIC_BASE_URL")
+    if public_base:
+        base_url = public_base.rstrip("/")
+    else:
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+        base_url = "http://localhost:8000" if host in {"api", "api:8000"} else f"{proto}://{host}".rstrip("/")
+    return f"{base_url}/hd-players/files/{quoted}"
+
+
+def _manual_transfer_rows(session: Session, hd_player_id: int) -> list[dict[str, Any]]:
+    rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM hd_player_manual_transfers
+            WHERE hd_player_id = :hd_player_id
+            ORDER BY transfer_date DESC NULLS LAST, id DESC
+            """
+        ),
+        {"hd_player_id": hd_player_id},
+    ).fetchall()
+    items = []
+    for row in rows:
+        item = _row_to_dict(row)
+        item["source"] = "manual"
+        item["player_name"] = ""
+        item["team_in_logo_url"] = _club_logo_url(item.get("team_in_name"))
+        item["team_out_logo_url"] = _club_logo_url(item.get("team_out_name"))
+        item["team_context_logo_url"] = _club_logo_url(item.get("team_in_name") or item.get("team_out_name"))
+        item["match_type"] = "manual"
+        items.append(item)
+    return items
+
+
 def _resolve_llm_model_name(llm) -> str:
     for attr in ("model_name", "model"):
         value = getattr(llm, attr, None)
@@ -3677,10 +4207,15 @@ def _load_opta_power_rankings() -> tuple[
                 continue
             rating = row.get("rating")
             rank = row.get("rank")
+            parsed_rating = float(rating) if rating else 0.0
+            parsed_rank = int(rank) if rank else 0
+            existing = clubs.get(normalized)
+            if existing and float(existing.get("rating") or 0.0) >= parsed_rating:
+                continue
             clubs[normalized] = {
                 "team": team,
-                "rating": float(rating) if rating else 0.0,
-                "rank": int(rank) if rank else 0,
+                "rating": parsed_rating,
+                "rank": parsed_rank,
             }
 
     sorted_clubs = sorted(
@@ -3703,6 +4238,43 @@ def _resolve_target_club(text: str) -> Optional[dict[str, float | int | str]]:
         if normalized and normalized in normalized_text:
             return data
     return None
+
+
+def _club_power_for_team(team: Optional[str]) -> dict[str, float | int | str | None]:
+    if not team:
+        return {"rating": None, "rank": None, "matched_team": None}
+    clubs, _ = _load_opta_power_rankings()
+    normalized = _normalize_name(team)
+    data = clubs.get(normalized) if normalized else None
+    if data is None:
+        data = _resolve_target_club(team)
+    if not data:
+        return {"rating": None, "rank": None, "matched_team": None}
+    return {
+        "rating": float(data.get("rating") or 0.0),
+        "rank": int(data.get("rank") or 0) or None,
+        "matched_team": data.get("team"),
+    }
+
+
+def _player_search_relevance(item: dict, query: str) -> int:
+    query_norm = _normalize_name(query)
+    name_norm = _normalize_name(str(item.get("name") or ""))
+    if query_norm and name_norm == query_norm:
+        return 5
+    if query_norm and name_norm.startswith(query_norm):
+        return 4
+    query_tokens = [_normalize_name(token) for token in re.split(r"\s+", query) if len(token) >= 2]
+    if query_tokens and all(token and token in name_norm for token in query_tokens):
+        return 3
+    if query_tokens:
+        words = [_normalize_name(part) for part in re.split(r"\s+", str(item.get("name") or "")) if part]
+        if all(any(word.startswith(token) for word in words) for token in query_tokens):
+            return 2
+    haystack = _normalize_name(" ".join(str(item.get(key) or "") for key in ("team", "competition_name", "calendar")))
+    if query_norm and query_norm in haystack:
+        return 1
+    return 0
 
 
 def _club_strength_thresholds(target_rating: float) -> tuple[Optional[float], Optional[float]]:
@@ -4570,37 +5142,62 @@ def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]
         return {"global": {}, "league": {}}
 
     contexts: dict[str, Any] = {"global": {}, "league": {}}
+    max_matches = 0.0
+    if competition_id is not None:
+        try:
+            max_matches = float(
+                session.execute(
+                    text(
+                        """
+                        SELECT COALESCE(MAX(matches_played), 0)
+                        FROM player_seasons
+                        WHERE season_id = :season_id
+                          AND competition_id = :competition_id
+                        """
+                    ),
+                    {"season_id": season_id, "competition_id": competition_id},
+                ).scalar()
+                or 0
+            )
+        except Exception:
+            max_matches = 0.0
+    min_minutes = max(90.0, min(900.0, max_matches * 90.0 * 0.25)) if max_matches > 0 else 90.0
+
     queries = {
         "global": (
             """
             SELECT
                 pmp.position_group,
                 pmp.metric_key,
-                AVG(pmp.raw_value) AS avg_raw,
-                AVG(pmp.percentile) AS avg_percentile,
+                ARRAY_AGG(pmp.raw_value) FILTER (WHERE pmp.raw_value IS NOT NULL) AS raw_values,
+                BOOL_OR(pmp.lower_is_better) AS lower_is_better,
                 COUNT(*) AS sample_size
             FROM player_metric_percentiles_global pmp
+            JOIN player_seasons ps ON ps.id = pmp.player_season_id
             WHERE pmp.season_id = :season_id
               AND pmp.raw_value IS NOT NULL
+              AND COALESCE(ps.minutes_played, 0) >= :min_minutes
             GROUP BY pmp.position_group, pmp.metric_key
             """,
-            {"season_id": season_id},
+            {"season_id": season_id, "min_minutes": min_minutes},
         ),
         "league": (
             """
             SELECT
                 pmp.position_group,
                 pmp.metric_key,
-                AVG(pmp.raw_value) AS avg_raw,
-                AVG(pmp.percentile) AS avg_percentile,
+                ARRAY_AGG(pmp.raw_value) FILTER (WHERE pmp.raw_value IS NOT NULL) AS raw_values,
+                BOOL_OR(pmp.lower_is_better) AS lower_is_better,
                 COUNT(*) AS sample_size
             FROM player_metric_percentiles_league pmp
+            JOIN player_seasons ps ON ps.id = pmp.player_season_id
             WHERE pmp.season_id = :season_id
               AND pmp.competition_id = :competition_id
               AND pmp.raw_value IS NOT NULL
+              AND COALESCE(ps.minutes_played, 0) >= :min_minutes
             GROUP BY pmp.position_group, pmp.metric_key
             """,
-            {"season_id": season_id, "competition_id": competition_id},
+            {"season_id": season_id, "competition_id": competition_id, "min_minutes": min_minutes},
         ),
     }
 
@@ -4619,10 +5216,17 @@ def _build_report_average_contexts(session: Session, ps: dict) -> dict[str, Any]
                 continue
             group = contexts[context].setdefault(str(position_group), {"metrics": {}, "sample_size": 0})
             sample_size = int(item.get("sample_size") or 0)
+            raw_values = [float(value) for value in (item.get("raw_values") or []) if value is not None]
+            avg_raw = sum(raw_values) / len(raw_values) if raw_values else None
+            lower_is_better = bool(item.get("lower_is_better"))
+            avg_percentile = _percentile_rank(raw_values, avg_raw) if avg_raw is not None else None
+            if avg_percentile is not None and lower_is_better:
+                avg_percentile = 100.0 - avg_percentile
             group["sample_size"] = max(int(group.get("sample_size") or 0), sample_size)
+            group["min_minutes"] = min_minutes
             group["metrics"][str(metric_key)] = {
-                "raw": item.get("avg_raw"),
-                "percentile": item.get("avg_percentile"),
+                "raw": avg_raw,
+                "percentile": avg_percentile,
                 "sample_size": sample_size,
             }
     return contexts
@@ -5500,6 +6104,212 @@ def _mercato_request_payload(session: Session, request_id: int) -> Optional[dict
     return request_payload
 
 
+def _clean_agent_names(values: Optional[List[str]]) -> list[str]:
+    cleaned: list[str] = []
+    for value in values or []:
+        item = _clean_text(value)
+        if item and item not in cleaned:
+            cleaned.append(item)
+    return cleaned
+
+
+def _validate_date_range(start_date: Optional[str], end_date: Optional[str]) -> None:
+    if start_date and end_date and end_date < start_date:
+        raise HTTPException(status_code=400, detail="End date cannot be earlier than start date")
+
+
+def _can_manage_hq_calendar_event(request: Request, row: Any) -> bool:
+    user = getattr(request.state, "user", None) or {}
+    if user.get("role") == "admin":
+        return True
+    return bool(user.get("username") and row.created_by_agent_id == user.get("username"))
+
+
+def _hq_calendar_event_payload(request: Request, row: Any) -> dict[str, Any]:
+    item = _row_to_dict(row)
+    item["source"] = "event"
+    item["can_edit"] = _can_manage_hq_calendar_event(request, row)
+    if not isinstance(item.get("agent_names"), list):
+        item["agent_names"] = []
+    return item
+
+
+@app.get("/hq/calendar-events")
+def hq_calendar_events(
+    request: Request,
+    start: Optional[str] = Query(None),
+    end: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+):
+    _ensure_agency_ops_schema(session)
+    start_value = start or "1900-01-01"
+    end_value = end or "2999-12-31"
+    event_rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM hq_calendar_events
+            WHERE start_date <= NULLIF(:end_date, '')::date
+              AND COALESCE(end_date, start_date) >= NULLIF(:start_date, '')::date
+            ORDER BY start_date ASC, id ASC
+            """
+        ),
+        {"start_date": start_value, "end_date": end_value},
+    ).fetchall()
+    task_rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM hq_priority_items
+            WHERE end_date IS NOT NULL
+              AND end_date >= NULLIF(:start_date, '')::date
+              AND end_date <= NULLIF(:end_date, '')::date
+              AND COALESCE(status, 'todo') NOT IN ('done', 'completed')
+            ORDER BY end_date ASC, id ASC
+            """
+        ),
+        {"start_date": start_value, "end_date": end_value},
+    ).fetchall()
+    items = [_hq_calendar_event_payload(request, row) for row in event_rows]
+    for row in task_rows:
+        task = _row_to_dict(row)
+        items.append(
+            {
+                "id": f"task-{task['id']}",
+                "task_id": task["id"],
+                "source": "task",
+                "title": task["title"],
+                "description": task.get("description"),
+                "event_type": "task_due",
+                "agent_names": [task.get("agent_name") or "Yannis"],
+                "start_date": task.get("end_date"),
+                "end_date": task.get("end_date"),
+                "location": None,
+                "color": task.get("color"),
+                "related_page": task.get("related_page") or "/",
+                "priority": task.get("priority"),
+                "status": task.get("status"),
+                "can_edit": False,
+            }
+        )
+    items.sort(key=lambda item: (str(item.get("start_date") or ""), str(item.get("id") or "")))
+    return {"items": items}
+
+
+@app.post("/hq/calendar-events")
+def create_hq_calendar_event(payload: HqCalendarEventPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    title = _clean_text(payload.title)
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required")
+    if not payload.start_date:
+        raise HTTPException(status_code=400, detail="Start date is required")
+    _validate_date_range(payload.start_date, payload.end_date)
+    row = session.execute(
+        text(
+            """
+            INSERT INTO hq_calendar_events (
+              title, description, event_type, agent_names, start_date, end_date,
+              location, color, related_page, created_by_agent_id, updated_by_agent_id,
+              created_at, updated_at
+            ) VALUES (
+              :title, :description, :event_type, CAST(:agent_names AS JSONB),
+              NULLIF(:start_date, '')::date, NULLIF(:end_date, '')::date,
+              :location, :color, :related_page, :user_id, :user_id, NOW(), NOW()
+            )
+            RETURNING *
+            """
+        ),
+        {
+            "title": title,
+            "description": _clean_text(payload.description),
+            "event_type": _clean_text(payload.event_type) or "team",
+            "agent_names": json.dumps(_clean_agent_names(payload.agent_names)),
+            "start_date": payload.start_date or "",
+            "end_date": payload.end_date or "",
+            "location": _clean_text(payload.location),
+            "color": _clean_text(payload.color),
+            "related_page": _clean_text(payload.related_page),
+            "user_id": _current_user_id(request),
+        },
+    ).fetchone()
+    session.commit()
+    return _hq_calendar_event_payload(request, row)
+
+
+@app.patch("/hq/calendar-events/{event_id}")
+def update_hq_calendar_event(event_id: int, payload: HqCalendarEventPayload, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    existing = session.execute(
+        text("SELECT start_date, end_date, created_by_agent_id FROM hq_calendar_events WHERE id = :event_id"),
+        {"event_id": event_id},
+    ).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Calendar event not found")
+    if not _can_manage_hq_calendar_event(request, existing):
+        raise HTTPException(status_code=403, detail="You can only manage events you created")
+    allowed = {
+        "title",
+        "description",
+        "event_type",
+        "agent_names",
+        "start_date",
+        "end_date",
+        "location",
+        "color",
+        "related_page",
+    }
+    data = payload.model_dump(exclude_unset=True)
+    next_start_date = data.get("start_date", str(existing.start_date) if existing.start_date else "")
+    next_end_date = data.get("end_date", str(existing.end_date) if existing.end_date else "")
+    _validate_date_range(next_start_date, next_end_date)
+    set_parts = []
+    params: dict[str, Any] = {"event_id": event_id, "user_id": _current_user_id(request)}
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        if key == "agent_names":
+            params[key] = json.dumps(_clean_agent_names(value))
+            set_parts.append("agent_names = CAST(:agent_names AS JSONB)")
+        elif key in {"start_date", "end_date"}:
+            params[key] = value or ""
+            set_parts.append(f"{key} = NULLIF(:{key}, '')::date")
+        else:
+            params[key] = value
+            set_parts.append(f"{key} = :{key}")
+    if not set_parts:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    row = session.execute(
+        text(
+            f"""
+            UPDATE hq_calendar_events
+            SET {', '.join(set_parts)}, updated_by_agent_id = :user_id, updated_at = NOW()
+            WHERE id = :event_id
+            RETURNING *
+            """
+        ),
+        params,
+    ).fetchone()
+    session.commit()
+    return _hq_calendar_event_payload(request, row)
+
+
+@app.delete("/hq/calendar-events/{event_id}")
+def delete_hq_calendar_event(event_id: int, request: Request, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    existing = session.execute(
+        text("SELECT created_by_agent_id FROM hq_calendar_events WHERE id = :event_id"),
+        {"event_id": event_id},
+    ).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Calendar event not found")
+    if not _can_manage_hq_calendar_event(request, existing):
+        raise HTTPException(status_code=403, detail="You can only manage events you created")
+    session.execute(text("DELETE FROM hq_calendar_events WHERE id = :event_id"), {"event_id": event_id})
+    session.commit()
+    return {"deleted": True}
+
+
 @app.get("/hq/priorities")
 def hq_priorities(session: Session = Depends(get_session)):
     _ensure_agency_ops_schema(session)
@@ -5621,7 +6431,7 @@ def hd_players(q: Optional[str] = Query(None), agent: Optional[str] = Query(None
     SELECT hp.*, p.name AS linked_player_name
     FROM hd_players hp
     LEFT JOIN players p ON p.id = hp.player_id
-    WHERE 1=1
+    WHERE COALESCE(hp.status, 'active') <> 'archived'
     """
     params: dict[str, Any] = {}
     if q:
@@ -5665,6 +6475,7 @@ def _hd_player_payload(session: Session, hd_player_id: int) -> Optional[dict[str
             FROM hd_players hp
             LEFT JOIN players p ON p.id = hp.player_id
             WHERE hp.id = :hd_player_id
+              AND COALESCE(hp.status, 'active') <> 'archived'
             """
         ),
         {"hd_player_id": hd_player_id},
@@ -5672,6 +6483,8 @@ def _hd_player_payload(session: Session, hd_player_id: int) -> Optional[dict[str
     if not row:
         return None
     payload = _row_to_dict(row)
+    if payload.get("manual_performance") is None:
+        payload["manual_performance"] = {}
     doc_rows = session.execute(
         text(
             """
@@ -5684,6 +6497,18 @@ def _hd_player_payload(session: Session, hd_player_id: int) -> Optional[dict[str
         {"hd_player_id": hd_player_id},
     ).fetchall()
     payload["documents"] = [_row_to_dict(doc_row) for doc_row in doc_rows]
+    manual_prospect_rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM hd_player_prospect_clubs
+            WHERE hd_player_id = :hd_player_id
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+            """
+        ),
+        {"hd_player_id": hd_player_id},
+    ).fetchall()
+    payload["manual_prospect_clubs"] = [_row_to_dict(prospect_row) for prospect_row in manual_prospect_rows]
     payload["mercato_prospects"] = []
     if payload.get("player_id"):
         prospect_rows = session.execute(
@@ -5715,8 +6540,71 @@ def _hd_player_payload(session: Session, hd_player_id: int) -> Optional[dict[str
             {"player_id": payload["player_id"]},
         ).fetchall()
         payload["mercato_prospects"] = [_row_to_dict(prospect_row) for prospect_row in prospect_rows]
-    payload["transfer_history"] = _player_transfer_history(session, payload)
+    transfer_history = [*_manual_transfer_rows(session, hd_player_id), *_player_transfer_history(session, payload)]
+    payload["transfer_history"] = sorted(
+        transfer_history,
+        key=lambda item: (str(item.get("transfer_date") or ""), int(item.get("id") or 0)),
+        reverse=True,
+    )[:40]
     return payload
+
+
+@app.get("/hd-players/files/{file_key:path}")
+def get_hd_player_file(file_key: str):
+    client = _s3_client()
+    bucket = _s3_bucket()
+    key = urllib.parse.unquote(file_key)
+    try:
+        obj = client.get_object(Bucket=bucket, Key=key)
+    except ClientError:
+        raise HTTPException(status_code=404, detail="File not found")
+    content = obj["Body"].read()
+    content_type = obj.get("ContentType") or mimetypes.guess_type(key)[0] or "application/octet-stream"
+    file_name = key.rsplit("/", 1)[-1] or "file"
+    disposition = "inline" if content_type.startswith("image/") or "pdf" in content_type else "attachment"
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{file_name}"'},
+    )
+
+
+@app.post("/hd-players/{hd_player_id}/upload")
+async def upload_hd_player_file(
+    hd_player_id: int,
+    request: Request,
+    purpose: str = Query("document"),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+):
+    _ensure_agency_ops_schema(session)
+    player_row = session.execute(
+        text("SELECT id FROM hd_players WHERE id = :hd_player_id"),
+        {"hd_player_id": hd_player_id},
+    ).fetchone()
+    if not player_row:
+        raise HTTPException(status_code=404, detail="HD player not found")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    max_bytes = 20 * 1024 * 1024
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail="Uploaded file is too large")
+    clean_purpose = re.sub(r"[^a-z0-9_-]+", "-", purpose.lower()).strip("-") or "document"
+    clean_name = re.sub(r"[^A-Za-z0-9._-]+", "-", file.filename or "upload").strip("-") or "upload"
+    key = f"{os.getenv('S3_PREFIX', 'new_nextlegend').strip('/')}/hd-players/{hd_player_id}/{clean_purpose}/{uuid.uuid4().hex}-{clean_name}"
+    content_type = file.content_type or mimetypes.guess_type(clean_name)[0] or "application/octet-stream"
+    client = _s3_client()
+    bucket = _s3_bucket()
+    _ensure_s3_bucket(client, bucket)
+    client.put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    return {
+        "file_key": key,
+        "storage_url": _storage_proxy_url(request, key),
+        "file_name": file.filename,
+        "content_type": content_type,
+        "size_bytes": len(raw),
+    }
 
 
 @app.get("/hd-players/{hd_player_id}")
@@ -5741,15 +6629,17 @@ def create_hd_player(payload: HdPlayerPayload, request: Request, session: Sessio
             INSERT INTO hd_players (
               player_id, display_name, position, current_club, contract_expiry,
               current_club_situation, plan, priority, demanded_transfer_fee, next_step,
-              assigned_agent, photo_url, player_phone, player_email, entourage_phone, entourage_email,
-              season_objectives, eyeball_url, transfermarkt_url, contract_status, mandate_status, medical_status,
+              assigned_agent, photo_url, birth_date, player_phone, player_email, entourage_phone, entourage_email,
+              season_objectives, eyeball_url, transfermarkt_url, is_young_player, manual_performance,
+              contract_status, mandate_status, medical_status,
               market_notes, scouting_notes, status, created_by_agent_id, updated_by_agent_id,
               created_at, updated_at
             ) VALUES (
               :player_id, :display_name, :position, :current_club, NULLIF(:contract_expiry, '')::date,
               :current_club_situation, :plan, :priority, :demanded_transfer_fee, :next_step,
-              :assigned_agent, :photo_url, :player_phone, :player_email, :entourage_phone, :entourage_email,
-              :season_objectives, :eyeball_url, :transfermarkt_url, :contract_status, :mandate_status, :medical_status,
+              :assigned_agent, :photo_url, NULLIF(:birth_date, '')::date, :player_phone, :player_email, :entourage_phone, :entourage_email,
+              :season_objectives, :eyeball_url, :transfermarkt_url, :is_young_player, CAST(:manual_performance AS JSONB),
+              :contract_status, :mandate_status, :medical_status,
               :market_notes, :scouting_notes, :status, :user_id, :user_id, NOW(), NOW()
             )
             RETURNING *
@@ -5759,7 +6649,10 @@ def create_hd_player(payload: HdPlayerPayload, request: Request, session: Sessio
             **payload.model_dump(),
             "display_name": display_name,
             "contract_expiry": payload.contract_expiry or "",
+            "birth_date": payload.birth_date or "",
             "priority": payload.priority or "B",
+            "is_young_player": bool(payload.is_young_player),
+            "manual_performance": json.dumps(payload.manual_performance or {}),
             "status": payload.status or "active",
             "user_id": _current_user_id(request),
         },
@@ -5778,9 +6671,13 @@ def update_hd_player(hd_player_id: int, payload: HdPlayerPayload, request: Reque
     for key, value in data.items():
         if key not in allowed:
             continue
-        params[key] = value if value is not None else None
-        if key == "contract_expiry":
-            set_parts.append("contract_expiry = NULLIF(:contract_expiry, '')::date")
+        if key == "status":
+            _require_admin(request)
+        params[key] = json.dumps(value or {}) if key == "manual_performance" else value if value is not None else None
+        if key in {"contract_expiry", "birth_date"}:
+            set_parts.append(f"{key} = NULLIF(:{key}, '')::date")
+        elif key == "manual_performance":
+            set_parts.append("manual_performance = CAST(:manual_performance AS JSONB)")
         else:
             set_parts.append(f"{key} = :{key}")
     if not set_parts:
@@ -5877,6 +6774,121 @@ def delete_hd_player_document(document_id: int, session: Session = Depends(get_s
     if not row:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"deleted": True}
+
+
+@app.post("/hd-players/{hd_player_id}/prospect-clubs")
+def create_hd_player_prospect_club(
+    hd_player_id: int,
+    payload: HdPlayerProspectClubPayload,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_agency_ops_schema(session)
+    club_name = _clean_text(payload.club_name)
+    if not club_name:
+        raise HTTPException(status_code=400, detail="Club name is required")
+    row = session.execute(
+        text(
+            """
+            INSERT INTO hd_player_prospect_clubs (
+              hd_player_id, club_id, club_name, competition_name, status, offer,
+              contact, notes, created_by_agent_id, created_at, updated_at
+            ) VALUES (
+              :hd_player_id, :club_id, :club_name, :competition_name, :status, :offer,
+              :contact, :notes, :user_id, NOW(), NOW()
+            )
+            RETURNING *
+            """
+        ),
+        {
+            **payload.model_dump(),
+            "hd_player_id": hd_player_id,
+            "club_name": club_name,
+            "user_id": _current_user_id(request),
+        },
+    ).fetchone()
+    session.commit()
+    return _row_to_dict(row)
+
+
+@app.delete("/hd-players/prospect-clubs/{prospect_id}")
+def delete_hd_player_prospect_club(prospect_id: int, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    row = session.execute(
+        text("DELETE FROM hd_player_prospect_clubs WHERE id = :prospect_id RETURNING id"),
+        {"prospect_id": prospect_id},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Prospect club not found")
+    return {"deleted": True}
+
+
+@app.post("/hd-players/{hd_player_id}/transfers")
+def create_hd_player_manual_transfer(
+    hd_player_id: int,
+    payload: HdPlayerManualTransferPayload,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_agency_ops_schema(session)
+    row = session.execute(
+        text(
+            """
+            INSERT INTO hd_player_manual_transfers (
+              hd_player_id, transfer_date, transfer_type, transfer_fee, team_in_name,
+              team_out_name, league_name, notes, created_by_agent_id, created_at, updated_at
+            ) VALUES (
+              :hd_player_id, NULLIF(:transfer_date, '')::date, :transfer_type, :transfer_fee,
+              :team_in_name, :team_out_name, :league_name, :notes, :user_id, NOW(), NOW()
+            )
+            RETURNING *
+            """
+        ),
+        {
+            **payload.model_dump(),
+            "transfer_date": payload.transfer_date or "",
+            "hd_player_id": hd_player_id,
+            "user_id": _current_user_id(request),
+        },
+    ).fetchone()
+    session.commit()
+    return _row_to_dict(row)
+
+
+@app.delete("/hd-players/transfers/{transfer_id}")
+def delete_hd_player_manual_transfer(transfer_id: int, session: Session = Depends(get_session)):
+    _ensure_agency_ops_schema(session)
+    row = session.execute(
+        text("DELETE FROM hd_player_manual_transfers WHERE id = :transfer_id RETURNING id"),
+        {"transfer_id": transfer_id},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="Manual transfer not found")
+    return {"deleted": True}
+
+
+@app.delete("/hd-players/{hd_player_id}")
+def archive_hd_player(hd_player_id: int, request: Request, session: Session = Depends(get_session)):
+    _require_admin(request)
+    _ensure_agency_ops_schema(session)
+    row = session.execute(
+        text(
+            """
+            UPDATE hd_players
+            SET status = 'archived', updated_by_agent_id = :user_id, updated_at = NOW()
+            WHERE id = :hd_player_id
+              AND COALESCE(status, 'active') <> 'archived'
+            RETURNING id
+            """
+        ),
+        {"hd_player_id": hd_player_id, "user_id": _current_user_id(request)},
+    ).fetchone()
+    session.commit()
+    if not row:
+        raise HTTPException(status_code=404, detail="HD player not found")
+    return {"archived": True, "id": hd_player_id}
 
 
 @app.get("/mercato/requests/export.xlsx")
@@ -7222,7 +8234,7 @@ def search_players(
         return []
     where_clause = " AND ".join(token_clauses)
 
-    fetch_limit = min(500, max(limit * 20, limit))
+    fetch_limit = min(2500, max(limit * 60, 500))
     params["fetch_limit"] = fetch_limit
     sql = f"""
     SELECT DISTINCT ON (p.id, ps.calendar, c.name, ps.team_in_selected_period)
@@ -7252,8 +8264,16 @@ def search_players(
     """
     rows = session.execute(text(sql), params).fetchall()
     items = [_row_to_dict(row) for row in rows]
+    for item in items:
+        club_power = _club_power_for_team(item.get("team"))
+        item["club_power_rating"] = club_power["rating"]
+        item["club_power_rank"] = club_power["rank"]
+        item["club_power_matched_team"] = club_power["matched_team"]
+        item["_search_relevance"] = _player_search_relevance(item, cleaned)
     items.sort(
         key=lambda item: (
+            float(item.get("club_power_rating") or -1),
+            int(item.get("_search_relevance") or 0),
             _season_sort_key_desc(item.get("calendar")),
             float(item.get("minutes_played") or -1),
             str(item.get("name") or ""),
@@ -7265,6 +8285,7 @@ def search_players(
     trimmed = items[:limit]
     for item in trimmed:
         item.pop("minutes_played", None)
+        item.pop("_search_relevance", None)
     return trimmed
 
 
@@ -7278,12 +8299,33 @@ def prospect_ids(session: Session = Depends(get_session)):
 @app.post("/prospects")
 def add_prospect(payload: ProspectToggle, session: Session = Depends(get_session)):
     _ensure_prospect_schema(session)
+    if payload.player_season_id is not None:
+        season_row = session.execute(
+            text("SELECT player_id FROM player_seasons WHERE id = :player_season_id"),
+            {"player_season_id": payload.player_season_id},
+        ).fetchone()
+        if not season_row:
+            raise HTTPException(status_code=404, detail="Player season not found")
+        if int(season_row.player_id) != int(payload.player_id):
+            raise HTTPException(status_code=400, detail="Player season does not belong to this player")
     result = session.execute(
-        text("INSERT INTO prospects (player_id) VALUES (:player_id) ON CONFLICT DO NOTHING"),
-        {"player_id": payload.player_id},
-    )
+        text(
+            """
+            INSERT INTO prospects (player_id, player_season_id)
+            VALUES (:player_id, :player_season_id)
+            ON CONFLICT (player_id) DO UPDATE
+            SET player_season_id = COALESCE(EXCLUDED.player_season_id, prospects.player_season_id)
+            RETURNING (xmax = 0) AS inserted
+            """
+        ),
+        {"player_id": payload.player_id, "player_season_id": payload.player_season_id},
+    ).fetchone()
     session.commit()
-    return {"player_id": payload.player_id, "added": result.rowcount > 0}
+    return {
+        "player_id": payload.player_id,
+        "player_season_id": payload.player_season_id,
+        "added": bool(result.inserted) if result else False,
+    }
 
 
 @app.get("/prospects/page", response_model=RankingPage)
@@ -7306,6 +8348,7 @@ def prospects_page(
     FROM prospects pr
     JOIN players p ON p.id = pr.player_id
     JOIN player_seasons ps ON ps.player_id = p.id
+      AND (pr.player_season_id IS NULL OR ps.id = pr.player_season_id)
     JOIN competitions c ON c.id = ps.competition_id
     LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
     """ + _ranking_pct_fallback_join() + """

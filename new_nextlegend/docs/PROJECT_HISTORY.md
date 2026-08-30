@@ -71,21 +71,31 @@ Current policy:
 
 The one-time historical backfill has already been completed. `scripts/backfill_vps_from_existing_csvs.sh` is retained only for exceptional recovery.
 
-## HD Workspace Redesign
-The product evolved from pure scouting screens into an agency workspace.
+## HD Workspace And Premium SaaS Redesign
+The product evolved from pure scouting screens into an agency workspace with a dark premium SaaS interface.
 
 Current top-level product areas:
-- `HQ`: priorities and operational cockpit.
+- `HQ`: operational cockpit with team agenda, upcoming events, and Jira-style task board.
 - `HD PLAYERS`: represented players, notes, documents, contacts, objectives.
-- `MERCATO 2026`: workbook-style needs, candidates, assignments, and export.
+- `MERCATO 2026`: workbook-style needs, candidates, assignments, and export. The module currently remains hidden from normal navigation.
 - `SCOUTING`: legacy scouting features grouped under a scouting shell.
+- `AI Assistant`: user-scoped scouting conversations, candidate briefs, and admin-only usage monitoring.
 
 Related API-managed tables:
 - `hq_priority_items`;
+- `hq_calendar_events`;
 - `hd_players`;
 - `hd_player_documents`;
+- `hd_player_prospect_clubs`;
 - `club_needs`;
 - `club_need_players`.
+
+Important UX conventions established during the redesign:
+- left navigation is the product shell and must stay collapsible;
+- dark surfaces, subtle borders, muted green accents, and compact data density are the visual baseline;
+- scouting modules use consistent filter bars and `nl-field` controls;
+- AI side context belongs under conversation memory in the left column, not in a third right column;
+- user-facing app copy should stay professional and avoid implementation vocabulary.
 
 ## Transfer History And Club Logos
 Club logos are generated from the Wyscout club source into JSON files used by both frontend and API exports.
@@ -101,6 +111,13 @@ The AI assistant uses a controlled flow:
 3. LLM writes scout-facing prioritization and explanation.
 
 Do not let the LLM generate arbitrary SQL for production execution.
+
+AI conversation history is scoped to the authenticated session user. Frontend `user_id` query parameters are not trusted as authorization boundaries. Usage monitoring and AI user tooling are admin-only for `yrachid`.
+
+## Reports And Prospects
+The report page supports scout-facing exports and full PDF export. Scout PNG exports intentionally omit the global Next Legend score, while the PDF is designed to carry the full report content across multiple pages.
+
+Prospects can be added from reports and should remain visible in the Prospect page regardless of whether they originate from manual HD player workflows or scouting report flows. Prospect competition filters default to `All`.
 
 ## Current Documentation Policy
 Old session handoffs and interview notes were intentionally removed from `docs/`.

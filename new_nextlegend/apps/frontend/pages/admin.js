@@ -38,7 +38,7 @@ export default function AdminPage() {
   });
   const [editing, setEditing] = useState(null);
 
-  const isAdmin = me?.role === "admin";
+  const isPrimaryAdmin = me?.username === "yrachid" && me?.role === "admin";
 
   const loadUsers = async () => {
     setLoading(true);
@@ -71,10 +71,10 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin) {
+    if (isPrimaryAdmin) {
       loadUsers();
     }
-  }, [isAdmin]);
+  }, [isPrimaryAdmin]);
 
   const handleCreate = async (event) => {
     event.preventDefault();
@@ -159,7 +159,7 @@ export default function AdminPage() {
     );
   }
 
-  if (!isAdmin) {
+  if (!isPrimaryAdmin) {
     return (
       <main className="nl-page px-4 py-12">
         <div className="max-w-4xl mx-auto">
@@ -240,7 +240,8 @@ export default function AdminPage() {
                         <button
                           type="button"
                           onClick={() => handleDelete(user.username)}
-                          className="text-xs text-red-400 hover:text-red-200"
+                          disabled={user.username === "yrachid"}
+                          className="text-xs text-red-400 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-35"
                         >
                           Delete
                         </button>
@@ -258,16 +259,21 @@ export default function AdminPage() {
           <form onSubmit={handleCreate} className="mt-4 grid gap-4 md:grid-cols-2">
             <Field label="Username">
               <input
+                id="admin-create-username"
+                name="username"
                 className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                 value={creating.username}
                 onChange={(event) =>
                   setCreating((prev) => ({ ...prev, username: event.target.value }))
                 }
+                autoComplete="username"
                 required
               />
             </Field>
             <Field label="Display name">
               <input
+                id="admin-create-display-name"
+                name="display_name"
                 className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                 value={creating.display_name}
                 onChange={(event) =>
@@ -280,16 +286,21 @@ export default function AdminPage() {
             </Field>
             <Field label="Email">
               <input
+                id="admin-create-email"
+                name="email"
                 type="email"
                 className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                 value={creating.email}
                 onChange={(event) =>
                   setCreating((prev) => ({ ...prev, email: event.target.value }))
                 }
+                autoComplete="email"
               />
             </Field>
             <Field label="Role">
               <select
+                id="admin-create-role"
+                name="role"
                 className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                 value={creating.role}
                 onChange={(event) =>
@@ -297,17 +308,19 @@ export default function AdminPage() {
                 }
               >
                 <option value="user">User</option>
-                <option value="admin">Admin</option>
               </select>
             </Field>
             <Field label="Password">
               <input
+                id="admin-create-password"
+                name="password"
                 type="password"
                 className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                 value={creating.password}
                 onChange={(event) =>
                   setCreating((prev) => ({ ...prev, password: event.target.value }))
                 }
+                autoComplete="new-password"
                 required
               />
             </Field>
@@ -328,8 +341,19 @@ export default function AdminPage() {
               Edit user: {editing.username}
             </h2>
             <form onSubmit={handleSave} className="mt-4 grid gap-4 md:grid-cols-2">
+              <input
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+                name="username"
+                autoComplete="username"
+                value={editing.username || ""}
+                readOnly
+              />
               <Field label="Display name">
                 <input
+                  id="admin-edit-display-name"
+                  name="display_name"
                   className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                   value={editing.display_name || ""}
                   onChange={(event) =>
@@ -342,6 +366,8 @@ export default function AdminPage() {
               </Field>
               <Field label="Email">
                 <input
+                  id="admin-edit-email"
+                  name="email"
                   type="email"
                   className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                   value={editing.email || ""}
@@ -352,6 +378,8 @@ export default function AdminPage() {
               </Field>
               <Field label="Role">
                 <select
+                  id="admin-edit-role"
+                  name="role"
                   className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                   value={editing.role || "user"}
                   onChange={(event) =>
@@ -359,11 +387,13 @@ export default function AdminPage() {
                   }
                 >
                   <option value="user">User</option>
-                  <option value="admin">Admin</option>
+                  {editing.username === "yrachid" ? <option value="admin">Admin</option> : null}
                 </select>
               </Field>
               <Field label="Reset password">
                 <input
+                  id="admin-edit-password"
+                  name="password"
                   type="password"
                   className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
                   value={editing.password || ""}
@@ -371,6 +401,7 @@ export default function AdminPage() {
                     setEditing((prev) => ({ ...prev, password: event.target.value }))
                   }
                   placeholder="Leave blank to keep"
+                  autoComplete="new-password"
                 />
               </Field>
               <div className="flex items-end gap-3">
