@@ -135,7 +135,7 @@ Safe reconciliation plan:
     cd ~/nextlegend/new_nextlegend
     docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --build db minio api frontend caddy
     curl -I https://api.nextlegend.fr/
-    curl -I https://api.nextlegend.fr/health
+    curl -s -o /tmp/api-health.out -w "%{http_code}\n" https://api.nextlegend.fr/health
     curl -sk -o /tmp/front.out -w "%{http_code}\n" https://app.nextlegend.fr
     ```
 
@@ -182,12 +182,13 @@ docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f 
 ## Health Checks
 ```bash
 curl -I https://api.nextlegend.fr/
-curl -I https://api.nextlegend.fr/health
+curl -s -o /tmp/api-health.out -w "%{http_code}\n" https://api.nextlegend.fr/health
 curl -sk -o /tmp/front.out -w "%{http_code}\n" https://app.nextlegend.fr
 ```
 
 Expected:
 - API root returns 200.
+- API health returns 200.
 - API health returns 200.
 - Frontend returns 200.
 - Login succeeds and persists after refresh.
