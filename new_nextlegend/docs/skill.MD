@@ -81,7 +81,7 @@ Use the checks that match the changed surface. If Docker or network access is re
 Production smoke checks:
 ```bash
 curl -I https://api.nextlegend.fr/
-curl -I https://api.nextlegend.fr/health
+curl -s -o /tmp/api-health.out -w "%{http_code}\n" https://api.nextlegend.fr/health
 curl -sk -o /tmp/front.out -w "%{http_code}\n" https://app.nextlegend.fr
 ```
 
