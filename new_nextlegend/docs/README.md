@@ -39,7 +39,7 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipe
 
 # prod health checks
 curl -I https://api.nextlegend.fr/
-curl -I https://api.nextlegend.fr/health
+curl -s -o /tmp/api-health.out -w "%{http_code}\n" https://api.nextlegend.fr/health
 ```
 
 Main code entry points:
