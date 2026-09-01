@@ -63,6 +63,8 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Snapshot default cadence is biweekly, controlled by `SCORE_SNAPSHOT_CADENCE=biweekly`; monthly is allowed if the product decision changes.
 - Store both the visible score and the important scoring metrics in snapshot tables so future scoring-model changes remain auditable.
 - Each snapshot stores `scoring_model_version` and a scoring model hash; do not remove those fields when editing scoring.
+- Before the next current-season run, deploy `main` containing the snapshot schema/writer, then run the enriched load with `PIPELINE_REPLACE_INPUT_SLICES=0` and `SCORE_SNAPSHOT_ENABLED=1`.
+- Routine current-season loads are pure upserts on `player_id + competition_id + season_id + club_id`; do not purge slices when the goal is to preserve players absent from the latest provider export.
 - In production, do not run the full raw pipeline on the current VPS. Use local-compute then PRD-load.
 
 ## Data Model Rules

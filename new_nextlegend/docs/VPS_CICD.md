@@ -243,6 +243,37 @@ Score snapshot behavior:
 - rerunning a job inside the same biweekly/monthly bucket updates that bucket instead of creating duplicates;
 - full fact-table replacement truncates snapshot tables because player-season IDs are rebuilt.
 
+Next current-season run requirement:
+1. Deploy `main` first so the API/pipeline code contains the snapshot schema and writer.
+2. Confirm the three snapshot tables exist:
+   ```bash
+   cd ~/nextlegend/new_nextlegend
+   docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
+     sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT to_regclass('\''public.scoring_snapshot_runs'\''), to_regclass('\''public.player_score_snapshots'\''), to_regclass('\''public.player_metric_snapshots'\'');"'
+   ```
+3. Run the current-season enriched load with pure incremental upsert:
+   ```bash
+   cd ~/nextlegend/new_nextlegend
+   DOCKER_COMPOSE_FILE=infra/compose/docker-compose-prod.yml \
+   DATA_FRESHNESS_EXPECT_CALENDARS="2026/2027 2026" \
+   SCORE_SNAPSHOT_ENABLED=1 \
+   SCORE_SNAPSHOT_SEASONS="2026/2027,2026" \
+   SCORE_SNAPSHOT_CADENCE=biweekly \
+   PIPELINE_REPLACE_INPUT_SLICES=0 \
+   ./scripts/load_current_season_enriched.sh
+   ```
+4. Validate that a snapshot run was written:
+   ```bash
+   docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
+     sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT snapshot_key, season_label, rows_snapshotted, metric_rows_snapshotted, scoring_model_version FROM scoring_snapshot_runs ORDER BY id DESC LIMIT 5;"'
+   ```
+
+Do not use `PIPELINE_REPLACE_INPUT_SLICES=1` for routine current-season refreshes when the product goal is to preserve players already visible in the app but absent from the latest provider export. The current-season upsert key is:
+
+```text
+player_id + competition_id + season_id + club_id
+```
+
 PRD current-season enriched load:
 
 ```bash
