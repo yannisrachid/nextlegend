@@ -23,6 +23,10 @@ erDiagram
   player_seasons ||--o{ player_metric_percentiles_league : player_season_id
   player_seasons ||--o{ player_similarity : player_a_season_id
   player_seasons ||--o{ player_similarity : player_b_season_id
+  seasons ||--o{ scoring_snapshot_runs : season_id
+  scoring_snapshot_runs ||--o{ player_score_snapshots : snapshot_run_id
+  player_seasons ||--o{ player_score_snapshots : player_season_id
+  player_score_snapshots ||--o{ player_metric_snapshots : score_snapshot_id
 
   players ||--o{ prospects : player_id
   clubs ||--o{ club_needs : club_id
@@ -244,6 +248,84 @@ Used for:
 - home monitoring;
 - pipeline status;
 - artifact traceability.
+
+Owned by: pipeline.
+
+### `scoring_snapshot_runs`
+
+Snapshot batch header for current-season score tracking.
+
+Purpose:
+- identify one scored snapshot period;
+- store the scoring model version/hash used for that period;
+- keep row counts for auditability.
+
+Default cadence is biweekly. A repeated run in the same cadence bucket updates the same snapshot instead of duplicating it.
+
+Important fields:
+- `run_id`
+- `snapshot_key`
+- `snapshot_date`
+- `season_id`
+- `season_label`
+- `cadence`
+- `scoring_model_version`
+- `scoring_model_hash`
+- `rows_snapshotted`
+- `metric_rows_snapshotted`
+
+Owned by: pipeline.
+
+### `player_score_snapshots`
+
+One row per player-season inside a scoring snapshot.
+
+Purpose:
+- track score evolution during the current season;
+- preserve the score context at the time of the run;
+- support later analysis when the scoring model changes.
+
+Important fields:
+- `snapshot_run_id`
+- `player_season_id`
+- `player_id`
+- `competition_id`
+- `club_id`
+- `position`
+- `position_group`
+- `minutes_played`
+- `matches_played`
+- `minutes_possible`
+- `minutes_ratio`
+- `global_score_adjusted`
+- `assigned_role_pct_league`
+- `assigned_role_pct_global`
+- `league_strength_factor`
+- `team_strength_z`
+- `club_strength_modifier`
+- `minutes_regularity_modifier`
+
+Owned by: pipeline.
+
+### `player_metric_snapshots`
+
+Long-format snapshot of the metrics used by the scoring model for each player score snapshot.
+
+Purpose:
+- store raw values and percentiles for the important scoring inputs;
+- preserve metric weights and families from the active scoring model;
+- allow future recalculation/comparison after scoring model changes.
+
+Important fields:
+- `score_snapshot_id`
+- `metric_key`
+- `raw_value`
+- `percentile_global`
+- `percentile_league`
+- `metric_weight`
+- `metric_family`
+- `lower_is_better`
+- `scoring_model_version`
 
 Owned by: pipeline.
 
