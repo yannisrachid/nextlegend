@@ -79,6 +79,41 @@ class ScoreHistoryPoint(BaseModel):
     global_score_adjusted: Optional[float] = None
 
 
+class ScoreSnapshotMetric(BaseModel):
+    metric_key: str
+    raw_value: Optional[float] = None
+    percentile_global: Optional[float] = None
+    percentile_league: Optional[float] = None
+    metric_weight: Optional[float] = None
+    metric_family: Optional[str] = None
+    lower_is_better: bool = False
+
+
+class ScoreSnapshotPoint(BaseModel):
+    score_snapshot_id: int
+    snapshot_key: str
+    snapshot_date: date
+    snapshot_at: Optional[datetime] = None
+    calendar: str
+    competition_name: Optional[str] = None
+    team: Optional[str] = None
+    position: Optional[str] = None
+    position_group: Optional[str] = None
+    minutes_played: Optional[float] = None
+    matches_played: Optional[float] = None
+    minutes_possible: Optional[float] = None
+    minutes_ratio: Optional[float] = None
+    global_score_adjusted: Optional[float] = None
+    assigned_role_pct_league: Optional[float] = None
+    assigned_role_pct_global: Optional[float] = None
+    league_strength_factor: Optional[float] = None
+    team_strength_z: Optional[float] = None
+    club_strength_modifier: Optional[float] = None
+    minutes_regularity_modifier: Optional[float] = None
+    scoring_model_version: Optional[str] = None
+    metrics: list[ScoreSnapshotMetric] = []
+
+
 class TransferHistoryItem(BaseModel):
     id: int
     source: str = "transferts.xlsx"
@@ -116,6 +151,7 @@ class Report(BaseModel):
     summary: dict[str, Optional[float]]
     available_seasons: list[ReportSeasonOption] = []
     score_history: list[ScoreHistoryPoint] = []
+    score_snapshots: list[ScoreSnapshotPoint] = []
     season_metric_history: list[dict[str, Any]] = []
     transfer_history: list[TransferHistoryItem] = []
     similarities_enabled: bool = False

@@ -115,6 +115,9 @@ services:
       PIPELINE_INPUT_KIND: raw
       PIPELINE_REPLACE_TABLES: 0
       PIPELINE_REPLACE_INPUT_SLICES: 0
+      SCORE_SNAPSHOT_ENABLED: 1
+      SCORE_SNAPSHOT_SEASONS: "2026/2027,2026"
+      SCORE_SNAPSHOT_CADENCE: biweekly
       S3_PREFIX: new_nextlegend
       ARCHIVE_RETAIN_RUNS: 8
       MERCATO_LEAGUE_LEVELS_PATH: /config/mercato_league_levels.json
@@ -146,6 +149,9 @@ services:
       PIPELINE_INPUT_URI: /workspace/data/wyscout_players_final.csv
       PIPELINE_INPUT_KIND: raw
       TARGET_FINAL_CSV: /workspace/data/wyscout_players_final.csv
+      SCORE_SNAPSHOT_ENABLED: 1
+      SCORE_SNAPSHOT_SEASONS: "2026/2027,2026"
+      SCORE_SNAPSHOT_CADENCE: biweekly
     depends_on:
       db:
         condition: service_healthy

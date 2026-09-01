@@ -818,6 +818,7 @@ const buildFullReportPdfHtml = ({
   similarities,
   comparisonReport,
   scoreHistory,
+  scoreSnapshots,
   metricsSummary,
   context,
   referenceGroup,
@@ -1037,6 +1038,17 @@ const buildFullReportPdfHtml = ({
     </section>
 
     <section class="section">
+      <div class="kicker">In-season snapshots</div>
+      <h2>Current season score tracking</h2>
+      <table>
+        <thead><tr><th>Snapshot</th><th>Club</th><th>Competition</th><th class="num">Minutes</th><th class="num">Coverage</th><th class="num">Score</th></tr></thead>
+        <tbody>
+          ${(scoreSnapshots || []).map((row) => `<tr><td>${escapeHtml(row.snapshot_date || row.snapshot_key || "-")}</td><td>${escapeHtml(row.team || "-")}</td><td>${escapeHtml(row.competition_name || "-")}</td><td class="num">${escapeHtml(formatValue(row.minutes_played, "integer"))}</td><td class="num">${escapeHtml(row.minutes_ratio == null ? "-" : `${Math.round(Number(row.minutes_ratio) * 100)}%`)}</td><td class="num">${escapeHtml(formatValue(row.global_score_adjusted, "score"))}</td></tr>`).join("") || `<tr><td colspan="6">No in-season snapshot available yet.</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
       <div class="kicker">Data coverage</div>
       <p>Configured report metrics available: ${escapeHtml(metricsSummary.available.length)}. Missing or unavailable for this player/provider: ${escapeHtml(metricsSummary.missing.length)}. Missing data is shown as "-" and is never converted to zero.</p>
     </section>
@@ -1058,6 +1070,13 @@ const sortSeasons = (items = []) =>
     if (diff !== 0) return diff;
     return Number(b.minutes_played || 0) - Number(a.minutes_played || 0);
   });
+
+const formatSnapshotLabel = (value, fallback) => {
+  if (!value) return fallback || "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback || String(value);
+  return new Intl.DateTimeFormat("en", { day: "2-digit", month: "short" }).format(date);
+};
 
 function ScoreHistory({ data }) {
   if (!data?.length) return null;
@@ -1083,6 +1102,60 @@ function ScoreHistory({ data }) {
             <Line type="monotone" dataKey="global_score_adjusted" stroke="#559A78" strokeWidth={2.5} dot={{ r: 4, fill: "#080B0A", stroke: "#8CC7A7", strokeWidth: 2 }} connectNulls />
           </LineChart>
         </ResponsiveContainer>
+      </div>
+    </ReportCard>
+  );
+}
+
+function InSeasonScoreSnapshots({ data }) {
+  if (!data?.length) return null;
+  const first = data.find((row) => row.global_score_adjusted != null);
+  const latest = [...data].reverse().find((row) => row.global_score_adjusted != null);
+  const delta = first && latest
+    ? Number(latest.global_score_adjusted || 0) - Number(first.global_score_adjusted || 0)
+    : null;
+  return (
+    <ReportCard>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="nl-kicker">In-season snapshots</p>
+          <h3 className="mt-2 text-xl font-black text-white">Current season score tracking</h3>
+          <p className="mt-1 max-w-xl text-sm text-[#A0A8A3]">
+            Biweekly model snapshots with score, minutes coverage and stored scoring metrics.
+          </p>
+        </div>
+        {delta != null ? (
+          <span className={`rounded-md border px-3 py-1 text-xs font-black ${delta >= 0 ? "border-[#3A8967]/35 bg-[#2F7D5C]/15 text-[#8CC7A7]" : "border-red-400/25 bg-red-500/10 text-red-200"}`}>
+            {delta >= 0 ? "+" : ""}{delta.toFixed(1)} since first snapshot
+          </span>
+        ) : null}
+      </div>
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 12, right: 18, left: 0, bottom: 8 }}>
+            <CartesianGrid stroke="rgba(255,255,255,0.10)" strokeDasharray="3 3" />
+            <XAxis dataKey="label" stroke="#6F7772" tick={{ fill: "#A0A8A3", fontSize: 12 }} />
+            <YAxis domain={[50, 100]} stroke="#6F7772" tick={{ fill: "#A0A8A3", fontSize: 12 }} />
+            <Tooltip
+              contentStyle={{ background: "#080B0A", border: "1px solid rgba(255,255,255,0.10)", borderRadius: 8, color: "#F3F5F4", boxShadow: "0 20px 45px rgba(0,0,0,0.34)" }}
+              labelStyle={{ color: "#8CC7A7" }}
+              formatter={(value, name) => {
+                if (name === "global_score_adjusted") return [value == null ? "-" : Number(value).toFixed(1), "Score"];
+                return [value == null ? "-" : `${Math.round(Number(value) * 100)}%`, "Minutes coverage"];
+              }}
+            />
+            <Line type="monotone" dataKey="global_score_adjusted" stroke="#559A78" strokeWidth={2.6} dot={{ r: 4, fill: "#080B0A", stroke: "#8CC7A7", strokeWidth: 2 }} connectNulls />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        {data.slice(-3).map((row) => (
+          <div key={`${row.snapshot_key}-${row.snapshot_date}`} className="rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#6F7772]">{row.label}</p>
+            <p className="mt-1 text-sm font-black text-white">{formatValue(row.global_score_adjusted, "score")} score</p>
+            <p className="text-xs text-[#A0A8A3]">{formatValue(row.minutes_played, "integer")} min - {row.minutes_ratio == null ? "-" : `${Math.round(Number(row.minutes_ratio) * 100)}%`} coverage</p>
+          </div>
+        ))}
       </div>
     </ReportCard>
   );
@@ -1388,6 +1461,7 @@ export default function ReportPage() {
         similarities,
         comparisonReport,
         scoreHistory,
+        scoreSnapshots,
         metricsSummary,
         context: percentileContext,
         referenceGroup: selectedReferenceGroup,
@@ -1432,6 +1506,17 @@ export default function ReportPage() {
   const profileCategoriesData = useMemo(() => buildProfileCategories(metrics, percentileContext), [metrics, percentileContext]);
   const characteristics = useMemo(() => buildCharacteristics(metrics, positionGroup, percentileContext), [metrics, positionGroup, percentileContext]);
   const scoreHistory = useMemo(() => (report?.score_history || []).map((row) => ({ ...row, global_score_adjusted: row.global_score_adjusted == null ? null : Number(row.global_score_adjusted) })), [report?.score_history]);
+  const scoreSnapshots = useMemo(
+    () =>
+      (report?.score_snapshots || []).map((row) => ({
+        ...row,
+        label: formatSnapshotLabel(row.snapshot_date, row.snapshot_key),
+        global_score_adjusted: row.global_score_adjusted == null ? null : Number(row.global_score_adjusted),
+        minutes_played: row.minutes_played == null ? null : Number(row.minutes_played),
+        minutes_ratio: row.minutes_ratio == null ? null : Number(row.minutes_ratio),
+      })),
+    [report?.score_snapshots]
+  );
   const metricsSummary = useMemo(() => availableMetricsSummary(metrics), [metrics]);
   const tmFields = report?.tm_fields || {};
   const tmProfileUrl = toAbsoluteUrl(report?.player?.tm_profile_url || tmFields.tm_profile_url);
@@ -1686,12 +1771,13 @@ export default function ReportPage() {
               }}
             />
 
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-3">
               <PlayerSeasonRadarComparison
                 report={report}
                 context={percentileContext}
               />
               <ScoreHistory data={scoreHistory} />
+              <InSeasonScoreSnapshots data={scoreSnapshots} />
             </div>
 
             <ReportCard>
