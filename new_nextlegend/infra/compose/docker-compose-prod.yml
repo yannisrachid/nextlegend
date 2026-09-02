@@ -65,6 +65,7 @@ services:
       minio:
         condition: service_started
     volumes:
+      - ../../jobs/pipeline:/jobs/pipeline:ro
       - ../../helpers/csv:/helpers/csv:ro
       - ../../config:/config:ro
 

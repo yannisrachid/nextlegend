@@ -51,6 +51,7 @@ services:
         condition: service_started
     volumes:
       - ../../apps/api:/app
+      - ../../jobs/pipeline:/jobs/pipeline:ro
       - ../../helpers/csv:/helpers/csv:ro
       - ../../config:/config:ro
 
