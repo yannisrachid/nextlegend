@@ -115,6 +115,8 @@ _AGENCY_OPS_SCHEMA_LOCK = threading.Lock()
 _AGENCY_OPS_SCHEMA_READY = False
 _CRM_SCHEMA_LOCK = threading.Lock()
 _CRM_SCHEMA_READY = False
+_YOUTH_SCHEMA_LOCK = threading.Lock()
+_YOUTH_SCHEMA_READY = False
 
 
 def _auth_json_response(request: Request, detail: str, status_code: int = 401) -> JSONResponse:
@@ -607,6 +609,76 @@ CREATE INDEX IF NOT EXISTS crm_prospects_contact_idx ON crm_prospects (contact_i
 CREATE INDEX IF NOT EXISTS crm_prospects_stage_idx ON crm_prospects (stage);
 """
 
+YOUTH_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS youth_player_rankings (
+    id BIGSERIAL PRIMARY KEY,
+    provider TEXT NOT NULL DEFAULT 'eyeball',
+    provider_player_id TEXT NOT NULL,
+    source_row_hash TEXT NOT NULL,
+    provider_player_url TEXT,
+    season INT NOT NULL,
+    calendar TEXT,
+    is_current_season BOOLEAN NOT NULL DEFAULT FALSE,
+    country_code TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    display_name TEXT NOT NULL,
+    birth_year INT,
+    birth_date TEXT,
+    age INT,
+    age_category TEXT,
+    championship TEXT,
+    club_name TEXT,
+    team_name TEXT,
+    team_level INT,
+    position TEXT,
+    primary_position TEXT,
+    position_group TEXT,
+    strong_foot TEXT,
+    height_cm DOUBLE PRECISION,
+    weight_kg DOUBLE PRECISION,
+    games_count DOUBLE PRECISION,
+    minutes_played DOUBLE PRECISION,
+    rating DOUBLE PRECISION,
+    score DOUBLE PRECISION,
+    score_raw DOUBLE PRECISION,
+    score_percentile_global DOUBLE PRECISION,
+    score_percentile_age_category DOUBLE PRECISION,
+    score_percentile_birth_year DOUBLE PRECISION,
+    score_percentile_championship DOUBLE PRECISION,
+    metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+    metric_percentiles JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    imported_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(provider, season, source_row_hash)
+);
+
+CREATE INDEX IF NOT EXISTS youth_player_rankings_score_idx
+    ON youth_player_rankings(season, score DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS youth_player_rankings_context_idx
+    ON youth_player_rankings(season, championship, age_category, birth_year, position_group);
+CREATE INDEX IF NOT EXISTS youth_player_rankings_player_idx
+    ON youth_player_rankings(provider_player_id);
+CREATE INDEX IF NOT EXISTS youth_player_rankings_search_idx
+    ON youth_player_rankings(LOWER(display_name), LOWER(club_name), LOWER(championship));
+ALTER TABLE youth_player_rankings ADD COLUMN IF NOT EXISTS calendar TEXT;
+ALTER TABLE youth_player_rankings ADD COLUMN IF NOT EXISTS is_current_season BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE youth_player_rankings ADD COLUMN IF NOT EXISTS birth_date TEXT;
+
+CREATE TABLE IF NOT EXISTS youth_prospects (
+    id SERIAL PRIMARY KEY,
+    provider TEXT NOT NULL DEFAULT 'eyeball',
+    season INT NOT NULL,
+    source_row_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(provider, season, source_row_hash)
+);
+
+CREATE INDEX IF NOT EXISTS youth_prospects_lookup_idx
+    ON youth_prospects(provider, season, source_row_hash);
+"""
+
 
 class CrmClubPayload(BaseModel):
     name: str
@@ -1059,6 +1131,20 @@ def _ensure_crm_schema(session: Session) -> None:
         _CRM_SCHEMA_READY = True
 
 
+def _ensure_youth_schema(session: Session) -> None:
+    global _YOUTH_SCHEMA_READY
+    if _YOUTH_SCHEMA_READY:
+        return
+    with _YOUTH_SCHEMA_LOCK:
+        if _YOUTH_SCHEMA_READY:
+            return
+        statements = [chunk.strip() for chunk in YOUTH_SCHEMA_SQL.split(";") if chunk.strip()]
+        for statement in statements:
+            session.execute(text(statement))
+        session.commit()
+        _YOUTH_SCHEMA_READY = True
+
+
 def _hash_password(password: str, algo: str = "bcrypt") -> str:
     if algo == "bcrypt":
         return PASSWORD_CONTEXT.hash(password)
@@ -1449,6 +1535,10 @@ def _get_session_user(session: Session, session_id: str) -> Optional[dict[str, s
 class ProspectToggle(BaseModel):
     player_id: int
     player_season_id: Optional[int] = None
+
+
+class YouthProspectToggle(BaseModel):
+    youth_id: int
 
 
 class ClubNeedCreate(BaseModel):
@@ -8128,6 +8218,53 @@ def meta_stats_research_metrics(session: Session = Depends(get_session)):
     }
 
 
+YOUTH_STATS_EXCLUDED_METRICS = {
+    "club_strength_modifier",
+    "competition_cap",
+    "competition_modifier",
+    "metric_score",
+    "minutes_confidence",
+    "minutes_regularity_modifier",
+    "production_bonus",
+    "scoring_model_version",
+    "scoring_position_group",
+    "team_strength_z",
+}
+
+YOUTH_STATS_LOWER_IS_BETTER = {
+    "goals_conceded_per_90",
+}
+
+
+def _youth_stats_metric_keys(session: Session) -> list[str]:
+    _ensure_youth_schema(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT DISTINCT jsonb_object_keys(metrics) AS metric
+            FROM youth_player_rankings
+            WHERE metrics IS NOT NULL
+              AND metrics <> '{}'::jsonb
+            """
+        )
+    ).fetchall()
+    metrics = []
+    for row in rows:
+        metric = str(row.metric or "").strip()
+        if not metric or metric in YOUTH_STATS_EXCLUDED_METRICS:
+            continue
+        metrics.append(metric)
+    return sorted(set(metrics))
+
+
+@app.get("/youth/meta/stats-research/metrics")
+def youth_meta_stats_research_metrics(session: Session = Depends(get_session)):
+    return {
+        "metrics": _youth_stats_metric_keys(session),
+        "lower_is_better": sorted(YOUTH_STATS_LOWER_IS_BETTER),
+    }
+
+
 @app.get("/meta/league-translation/leagues")
 def meta_league_translation_leagues():
     return _league_translation_leagues()
@@ -8393,6 +8530,559 @@ def search_players(
         item.pop("minutes_played", None)
         item.pop("_search_relevance", None)
     return trimmed
+
+
+def _apply_youth_filters(
+    sql: str,
+    params: dict[str, Any],
+    *,
+    season: Optional[int],
+    championship: Optional[str],
+    age_category: Optional[str],
+    birth_year: Optional[int],
+    position_group: Optional[str],
+    position: Optional[str],
+    club: Optional[str],
+    min_minutes: Optional[float],
+) -> tuple[str, dict[str, Any]]:
+    if season:
+        sql += " AND season = :season"
+        params["season"] = season
+    if championship and championship.lower() != "all":
+        sql += " AND championship = :championship"
+        params["championship"] = championship
+    if age_category and age_category.lower() != "all":
+        sql += " AND age_category = :age_category"
+        params["age_category"] = age_category
+    if birth_year:
+        sql += " AND birth_year = :birth_year"
+        params["birth_year"] = birth_year
+    if position_group and position_group.lower() != "all":
+        sql += " AND position_group = :position_group"
+        params["position_group"] = position_group
+    if position and position.lower() != "all":
+        sql += " AND position ILIKE :position_like"
+        params["position_like"] = f"%{position}%"
+    if club:
+        sql += " AND club_name ILIKE :club"
+        params["club"] = f"%{club.strip()}%"
+    if min_minutes is not None:
+        sql += " AND COALESCE(minutes_played, 0) >= :min_minutes"
+        params["min_minutes"] = min_minutes
+    return sql, params
+
+
+def _youth_row_payload(row: Any) -> dict[str, Any]:
+    payload = _row_to_dict(row)
+    payload["metrics"] = payload.get("metrics") or {}
+    payload["metric_percentiles"] = payload.get("metric_percentiles") or {}
+    raw_payload = payload.get("raw_payload") or {}
+    payload["birth_date"] = (
+        payload.get("birth_date")
+        or raw_payload.get("birthDate")
+        or raw_payload.get("birthdate")
+        or raw_payload.get("dateOfBirth")
+        or raw_payload.get("birthday")
+    )
+    payload["nationality_code"] = (
+        raw_payload.get("nationality_countryCode")
+        or raw_payload.get("nationality2_countryCode")
+        or payload.get("country_code")
+    )
+    payload["nationality_label"] = (
+        raw_payload.get("nationality_countryLabel")
+        or raw_payload.get("nationality2_countryLabel")
+        or payload.get("country_code")
+    )
+    return payload
+
+
+def _average_youth_contexts(session: Session, player: dict[str, Any]) -> dict[str, Any]:
+    contexts = {
+        "global": "season = :season AND position_group = :position_group",
+        "league": "season = :season AND position_group = :position_group AND championship = :championship",
+    }
+    output: dict[str, Any] = {}
+    metric_keys = set((player.get("metrics") or {}).keys())
+    for context, where_sql in contexts.items():
+        rows = session.execute(
+            text(
+                f"""
+                SELECT metrics, metric_percentiles, minutes_played
+                FROM youth_player_rankings
+                WHERE {where_sql}
+                """
+            ),
+            {
+                "season": player.get("season"),
+                "position_group": player.get("position_group"),
+                "championship": player.get("championship"),
+            },
+        ).fetchall()
+        sums: dict[str, float] = {}
+        pct_sums: dict[str, float] = {}
+        counts: dict[str, int] = {}
+        pct_counts: dict[str, int] = {}
+        min_minutes_values = []
+        for row in rows:
+            row_dict = _row_to_dict(row)
+            row_metrics = row_dict.get("metrics") or {}
+            row_percentiles = row_dict.get("metric_percentiles") or {}
+            minutes = row_dict.get("minutes_played")
+            if minutes is not None:
+                min_minutes_values.append(float(minutes))
+            metric_keys.update(row_metrics.keys())
+            for key, value in row_metrics.items():
+                if value is None:
+                    continue
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    continue
+                sums[key] = sums.get(key, 0.0) + numeric
+                counts[key] = counts.get(key, 0) + 1
+                pct_value = (row_percentiles.get(key) or {}).get("global_position" if context == "global" else "championship")
+                if pct_value is not None:
+                    pct_sums[key] = pct_sums.get(key, 0.0) + float(pct_value)
+                    pct_counts[key] = pct_counts.get(key, 0) + 1
+        metrics = {
+            key: {
+                "raw": round(sums[key] / counts[key], 4) if counts.get(key) else None,
+                "percentile": round(pct_sums[key] / pct_counts[key], 4) if pct_counts.get(key) else None,
+            }
+            for key in sorted(metric_keys)
+        }
+        output[context] = {
+            player.get("position_group") or "Unknown": {
+                "sample_size": len(rows),
+                "min_minutes": min(min_minutes_values) if min_minutes_values else None,
+                "metrics": metrics,
+            }
+        }
+    return output
+
+
+@app.get("/youth/meta")
+def youth_meta(session: Session = Depends(get_session)):
+    _ensure_youth_schema(session)
+    row = session.execute(
+        text(
+            """
+            SELECT
+              array_agg(DISTINCT season ORDER BY season DESC) FILTER (WHERE season IS NOT NULL) AS seasons,
+              array_agg(DISTINCT championship ORDER BY championship) FILTER (WHERE championship IS NOT NULL AND championship <> '') AS championships,
+              array_agg(DISTINCT age_category ORDER BY age_category) FILTER (WHERE age_category IS NOT NULL AND age_category <> '') AS age_categories,
+              array_agg(DISTINCT birth_year ORDER BY birth_year DESC) FILTER (WHERE birth_year IS NOT NULL) AS birth_years,
+              array_agg(DISTINCT position_group ORDER BY position_group) FILTER (WHERE position_group IS NOT NULL AND position_group <> '') AS position_groups,
+              array_agg(DISTINCT primary_position ORDER BY primary_position) FILTER (WHERE primary_position IS NOT NULL AND primary_position <> '') AS positions
+            FROM youth_player_rankings
+            """
+        )
+    ).fetchone()
+    counts = session.execute(
+        text(
+            """
+            SELECT
+              COUNT(*) AS rows,
+              COUNT(DISTINCT provider_player_id) AS players,
+              COUNT(DISTINCT club_name) AS clubs,
+              COUNT(DISTINCT championship) AS championships
+            FROM youth_player_rankings
+            """
+        )
+    ).fetchone()
+    return {
+        **_row_to_dict(row),
+        "counts": _row_to_dict(counts),
+    }
+
+
+@app.get("/youth/ranking/page")
+def youth_ranking_page(
+    season: Optional[int] = Query(2027),
+    championship: Optional[str] = Query(None),
+    age_category: Optional[str] = Query(None),
+    birth_year: Optional[int] = Query(None),
+    position_group: Optional[str] = Query(None),
+    position: Optional[str] = Query(None),
+    club: Optional[str] = Query(None),
+    min_minutes: Optional[float] = Query(90, ge=0),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    base_sql = """
+    FROM youth_player_rankings
+    WHERE score IS NOT NULL
+    """
+    params: dict[str, Any] = {}
+    base_sql, params = _apply_youth_filters(
+        base_sql,
+        params,
+        season=season,
+        championship=championship,
+        age_category=age_category,
+        birth_year=birth_year,
+        position_group=position_group,
+        position=position,
+        club=club,
+        min_minutes=min_minutes,
+    )
+    total = session.execute(text("SELECT COUNT(*) " + base_sql), params).scalar() or 0
+    rows = session.execute(
+        text(
+            """
+            SELECT
+              id, provider, provider_player_id, provider_player_url, season, calendar, is_current_season,
+              display_name, birth_year, birth_date, age, age_category, championship,
+              club_name, team_name, team_level, position, primary_position,
+              position_group, strong_foot, height_cm, weight_kg, games_count,
+              minutes_played, rating, score, score_raw,
+              score_percentile_global, score_percentile_age_category,
+              score_percentile_birth_year, score_percentile_championship,
+              COALESCE(raw_payload->>'nationality_countryCode', raw_payload->>'nationality2_countryCode', country_code) AS nationality_code,
+              COALESCE(raw_payload->>'nationality_countryLabel', raw_payload->>'nationality2_countryLabel', country_code) AS nationality_label
+            """
+            + base_sql
+            + """
+            ORDER BY score DESC NULLS LAST, minutes_played DESC NULLS LAST, rating DESC NULLS LAST
+            OFFSET :offset LIMIT :limit
+            """
+        ),
+        {**params, "offset": offset, "limit": limit},
+    ).fetchall()
+    return {
+        "items": [_row_to_dict(row) for row in rows],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@app.get("/youth/players")
+def youth_search_players(
+    q: str = Query(..., min_length=1),
+    season: Optional[int] = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    cleaned = q.strip()
+    if len(cleaned) < 2:
+        return []
+    params: dict[str, Any] = {"q": f"%{cleaned}%", "limit": limit}
+    sql = """
+    SELECT
+      id, provider_player_id, display_name, club_name, championship, calendar,
+      age_category, birth_year, birth_date, position, position_group, minutes_played, score,
+      COALESCE(raw_payload->>'nationality_countryCode', raw_payload->>'nationality2_countryCode', country_code) AS nationality_code,
+      COALESCE(raw_payload->>'nationality_countryLabel', raw_payload->>'nationality2_countryLabel', country_code) AS nationality_label
+    FROM youth_player_rankings
+    WHERE (display_name ILIKE :q OR club_name ILIKE :q OR championship ILIKE :q)
+    """
+    if season:
+        sql += " AND season = :season"
+        params["season"] = season
+    sql += """
+    ORDER BY score DESC NULLS LAST, minutes_played DESC NULLS LAST, display_name
+    LIMIT :limit
+    """
+    rows = session.execute(text(sql), params).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+@app.get("/youth/players/{youth_id}/report")
+def youth_player_report(youth_id: int, session: Session = Depends(get_session)):
+    _ensure_youth_schema(session)
+    row = session.execute(
+        text("SELECT * FROM youth_player_rankings WHERE id = :id"),
+        {"id": youth_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Youth player not found")
+    player = _youth_row_payload(row)
+    season_rows = session.execute(
+        text(
+            """
+            SELECT *
+            FROM youth_player_rankings
+            WHERE provider = :provider
+              AND provider_player_id = :provider_player_id
+            ORDER BY season DESC, minutes_played DESC NULLS LAST, score DESC NULLS LAST, id DESC
+            """
+        ),
+        {
+            "provider": player.get("provider") or "eyeball",
+            "provider_player_id": player.get("provider_player_id"),
+        },
+    ).fetchall()
+    season_payloads = [_youth_row_payload(item) for item in season_rows]
+    score_rows_by_season: dict[int, dict[str, Any]] = {}
+    for item in season_payloads:
+        season_value = item.get("season")
+        if season_value is None:
+            continue
+        current = score_rows_by_season.get(int(season_value))
+        if not current:
+            score_rows_by_season[int(season_value)] = item
+            continue
+        current_minutes = current.get("minutes_played") or 0
+        item_minutes = item.get("minutes_played") or 0
+        current_score = current.get("score") or 0
+        item_score = item.get("score") or 0
+        if (item_minutes, item_score) > (current_minutes, current_score):
+            score_rows_by_season[int(season_value)] = item
+    score_history = [
+        score_rows_by_season[season_value]
+        for season_value in sorted(score_rows_by_season)
+    ]
+    available_seasons = [
+        score_rows_by_season[season_value]
+        for season_value in sorted(score_rows_by_season, reverse=True)
+    ]
+    similar_rows = session.execute(
+        text(
+            """
+            SELECT
+              id, display_name, club_name, championship, calendar, age_category, birth_year,
+              position, position_group, minutes_played, rating, score,
+              score_percentile_age_category, score_percentile_championship,
+              COALESCE(raw_payload->>'nationality_countryCode', raw_payload->>'nationality2_countryCode', country_code) AS nationality_code,
+              COALESCE(raw_payload->>'nationality_countryLabel', raw_payload->>'nationality2_countryLabel', country_code) AS nationality_label
+            FROM youth_player_rankings
+            WHERE id <> :id
+              AND season = :season
+              AND position_group = :position_group
+              AND (
+                championship = :championship
+                OR age_category = :age_category
+                OR birth_year = :birth_year
+              )
+            ORDER BY
+              CASE WHEN championship = :championship THEN 0 ELSE 1 END,
+              ABS(COALESCE(score, 0) - COALESCE(:score, 0)),
+              score DESC NULLS LAST
+            LIMIT 12
+            """
+        ),
+        {
+            "id": youth_id,
+            "season": player.get("season"),
+            "position_group": player.get("position_group"),
+            "championship": player.get("championship"),
+            "age_category": player.get("age_category"),
+            "birth_year": player.get("birth_year"),
+            "score": player.get("score"),
+        },
+    ).fetchall()
+    metrics = player.get("metrics") or {}
+    metric_percentiles = player.get("metric_percentiles") or {}
+    key_metrics = sorted(
+        [
+            {
+                "key": key,
+                "value": metrics.get(key),
+                **(metric_percentiles.get(key) or {}),
+            }
+            for key in metrics
+            if metrics.get(key) is not None and metric_percentiles.get(key)
+        ],
+        key=lambda item: item.get("global_position") or 0,
+        reverse=True,
+    )[:12]
+    return {
+        "player": player,
+        "metrics": metrics,
+        "metric_percentiles": metric_percentiles,
+        "key_metrics": key_metrics,
+        "similar_players": [_row_to_dict(row) for row in similar_rows],
+        "available_seasons": available_seasons,
+        "score_history": score_history,
+        "season_metric_history": score_history,
+        "average_contexts": _average_youth_contexts(session, player),
+        "summary": {
+            "score": player.get("score"),
+            "global": player.get("score_percentile_global"),
+            "age_category": player.get("score_percentile_age_category"),
+            "birth_year": player.get("score_percentile_birth_year"),
+            "championship": player.get("score_percentile_championship"),
+        },
+    }
+
+
+def _youth_prospect_identity(session: Session, youth_id: int) -> dict[str, Any]:
+    _ensure_youth_schema(session)
+    row = session.execute(
+        text(
+            """
+            SELECT id, provider, season, source_row_hash
+            FROM youth_player_rankings
+            WHERE id = :youth_id
+            """
+        ),
+        {"youth_id": youth_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Youth player not found")
+    return _row_to_dict(row)
+
+
+@app.get("/youth/prospects/ids")
+def youth_prospect_ids(season: Optional[int] = Query(None), session: Session = Depends(get_session)):
+    _ensure_youth_schema(session)
+    sql = """
+    SELECT y.id
+    FROM youth_prospects yp
+    JOIN youth_player_rankings y
+      ON y.provider = yp.provider
+     AND y.season = yp.season
+     AND y.source_row_hash = yp.source_row_hash
+    WHERE 1=1
+    """
+    params: dict[str, Any] = {}
+    if season:
+        sql += " AND y.season = :season"
+        params["season"] = season
+    rows = session.execute(text(sql), params).fetchall()
+    return {"youth_ids": [int(row.id) for row in rows]}
+
+
+@app.post("/youth/prospects")
+def add_youth_prospect(payload: YouthProspectToggle, session: Session = Depends(get_session)):
+    identity = _youth_prospect_identity(session, payload.youth_id)
+    result = session.execute(
+        text(
+            """
+            INSERT INTO youth_prospects (provider, season, source_row_hash)
+            VALUES (:provider, :season, :source_row_hash)
+            ON CONFLICT (provider, season, source_row_hash) DO NOTHING
+            RETURNING id
+            """
+        ),
+        {
+            "provider": identity["provider"],
+            "season": identity["season"],
+            "source_row_hash": identity["source_row_hash"],
+        },
+    ).fetchone()
+    session.commit()
+    return {"youth_id": payload.youth_id, "is_prospect": True, "added": bool(result)}
+
+
+@app.get("/youth/prospects/page")
+def youth_prospects_page(
+    season: Optional[int] = Query(2027),
+    championship: Optional[str] = Query(None),
+    age_category: Optional[str] = Query(None),
+    birth_year: Optional[int] = Query(None),
+    position_group: Optional[str] = Query(None),
+    position: Optional[str] = Query(None),
+    club: Optional[str] = Query(None),
+    min_minutes: Optional[float] = Query(0, ge=0),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    base_sql = """
+    FROM (
+      SELECT y.*, yp.created_at AS prospect_created_at
+      FROM youth_prospects yp
+      JOIN youth_player_rankings y
+        ON y.provider = yp.provider
+       AND y.season = yp.season
+       AND y.source_row_hash = yp.source_row_hash
+    ) youth_player_rankings
+    WHERE score IS NOT NULL
+    """
+    params: dict[str, Any] = {}
+    base_sql, params = _apply_youth_filters(
+        base_sql,
+        params,
+        season=season,
+        championship=championship,
+        age_category=age_category,
+        birth_year=birth_year,
+        position_group=position_group,
+        position=position,
+        club=club,
+        min_minutes=min_minutes,
+    )
+    total = session.execute(text("SELECT COUNT(*) " + base_sql), params).scalar() or 0
+    rows = session.execute(
+        text(
+            """
+            SELECT
+              id, provider, provider_player_id, provider_player_url, season, calendar, is_current_season,
+              display_name, birth_year, birth_date, age, age_category, championship,
+              club_name, team_name, team_level, position, primary_position,
+              position_group, strong_foot, height_cm, weight_kg, games_count,
+              minutes_played, rating, score, score_raw,
+              score_percentile_global, score_percentile_age_category,
+              score_percentile_birth_year, score_percentile_championship,
+              prospect_created_at,
+              COALESCE(raw_payload->>'nationality_countryCode', raw_payload->>'nationality2_countryCode', country_code) AS nationality_code,
+              COALESCE(raw_payload->>'nationality_countryLabel', raw_payload->>'nationality2_countryLabel', country_code) AS nationality_label
+            """
+            + base_sql
+            + """
+            ORDER BY prospect_created_at DESC NULLS LAST, score DESC NULLS LAST, minutes_played DESC NULLS LAST
+            OFFSET :offset LIMIT :limit
+            """
+        ),
+        {**params, "offset": offset, "limit": limit},
+    ).fetchall()
+    return {
+        "items": [_row_to_dict(row) for row in rows],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@app.get("/youth/prospects/{youth_id}")
+def youth_prospect_status(youth_id: int, session: Session = Depends(get_session)):
+    identity = _youth_prospect_identity(session, youth_id)
+    exists = session.execute(
+        text(
+            """
+            SELECT 1
+            FROM youth_prospects
+            WHERE provider = :provider
+              AND season = :season
+              AND source_row_hash = :source_row_hash
+            """
+        ),
+        {
+            "provider": identity["provider"],
+            "season": identity["season"],
+            "source_row_hash": identity["source_row_hash"],
+        },
+    ).fetchone()
+    return {"youth_id": youth_id, "is_prospect": bool(exists)}
+
+
+@app.delete("/youth/prospects/{youth_id}")
+def remove_youth_prospect(youth_id: int, session: Session = Depends(get_session)):
+    identity = _youth_prospect_identity(session, youth_id)
+    result = session.execute(
+        text(
+            """
+            DELETE FROM youth_prospects
+            WHERE provider = :provider
+              AND season = :season
+              AND source_row_hash = :source_row_hash
+            """
+        ),
+        {
+            "provider": identity["provider"],
+            "season": identity["season"],
+            "source_row_hash": identity["source_row_hash"],
+        },
+    )
+    session.commit()
+    return {"youth_id": youth_id, "removed": result.rowcount > 0}
 
 
 @app.get("/prospects/ids")
@@ -8914,5 +9604,92 @@ def stats_research(
     """
     sql += f' ORDER BY metric_x DESC NULLS LAST, metric_y DESC NULLS LAST LIMIT :limit'
 
+    rows = session.execute(text(sql), params).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+@app.get("/youth/stats-research")
+def youth_stats_research(
+    metric_x: str = Query(..., min_length=1),
+    metric_y: str = Query(..., min_length=1),
+    league: Optional[str] = Query(None),
+    season: Optional[int] = Query(None),
+    positions: Optional[str] = Query(None),
+    min_minutes: float = Query(90, ge=0),
+    limit: int = Query(5000, ge=1, le=20000),
+    session: Session = Depends(get_session),
+):
+    available = _youth_stats_metric_keys(session)
+    if metric_x not in available or metric_y not in available:
+        raise HTTPException(status_code=400, detail="Invalid metric selection")
+
+    numeric_pattern = r"^-?[0-9]+(\.[0-9]+)?$"
+    sql = """
+    WITH base AS (
+      SELECT DISTINCT ON (provider_player_id, season, championship, club_name)
+        id AS player_id,
+        display_name AS name,
+        club_name AS team,
+        championship AS competition_name,
+        calendar,
+        position,
+        primary_position,
+        position_group,
+        minutes_played,
+        age,
+        birth_year,
+        age_category,
+        CASE
+          WHEN metrics ->> :metric_x_key ~ :numeric_pattern
+          THEN (metrics ->> :metric_x_key)::double precision
+          ELSE NULL
+        END AS metric_x,
+        CASE
+          WHEN metrics ->> :metric_y_key ~ :numeric_pattern
+          THEN (metrics ->> :metric_y_key)::double precision
+          ELSE NULL
+        END AS metric_y
+      FROM youth_player_rankings
+      WHERE metrics ->> :metric_x_key ~ :numeric_pattern
+        AND metrics ->> :metric_y_key ~ :numeric_pattern
+    """
+    params: dict[str, Any] = {
+        "metric_x_key": metric_x,
+        "metric_y_key": metric_y,
+        "numeric_pattern": numeric_pattern,
+        "limit": limit,
+    }
+    if league and league not in {"All leagues", "All"}:
+        sql += " AND championship = :league"
+        params["league"] = league
+    if min_minutes is not None:
+        sql += " AND COALESCE(minutes_played, 0) >= :min_minutes"
+        params["min_minutes"] = min_minutes
+    if season:
+        sql += " AND season = :season"
+        params["season"] = season
+    if positions:
+        pos_list = [position.strip() for position in positions.split(",") if position.strip()]
+        if pos_list:
+            params["positions"] = pos_list
+            params["pos_patterns"] = [f"%{position}%" for position in pos_list]
+            sql += """
+            AND (
+              primary_position = ANY(:positions)
+              OR position_group = ANY(:positions)
+              OR position ILIKE ANY(:pos_patterns)
+            )
+            """
+    sql += """
+      ORDER BY provider_player_id, season, championship, club_name,
+        minutes_played DESC NULLS LAST, score DESC NULLS LAST, id DESC
+    )
+    SELECT *
+    FROM base
+    WHERE metric_x IS NOT NULL
+      AND metric_y IS NOT NULL
+    ORDER BY metric_x DESC NULLS LAST, metric_y DESC NULLS LAST
+    LIMIT :limit
+    """
     rows = session.execute(text(sql), params).fetchall()
     return [_row_to_dict(row) for row in rows]

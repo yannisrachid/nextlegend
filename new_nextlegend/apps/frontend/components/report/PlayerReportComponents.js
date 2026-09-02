@@ -205,12 +205,13 @@ export function SeasonSelector({ seasons, selectedSeasonId, onSelect }) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
       {seasons.map((season) => {
-        const active = String(season.player_season_id) === String(selectedSeasonId);
+        const seasonId = season.player_season_id ?? season.id;
+        const active = String(seasonId) === String(selectedSeasonId);
         return (
           <button
-            key={season.player_season_id}
+            key={seasonId}
             type="button"
-            onClick={() => onSelect(String(season.player_season_id))}
+            onClick={() => onSelect(String(seasonId))}
             className={`flex min-w-[210px] items-center gap-3 rounded-lg border px-3 py-3 text-left transition ${active ? "border-[#3A8967]/45 bg-[#2F7D5C]/18 shadow-sm" : "border-white/10 bg-white/[0.035] hover:border-[#3A8967]/35 hover:bg-white/[0.055]"}`}
           >
             <ClubLogo name={season.team} className="h-10 w-10 rounded-xl" />
@@ -225,7 +226,7 @@ export function SeasonSelector({ seasons, selectedSeasonId, onSelect }) {
   );
 }
 
-export function SeasonStatistics({ report, metrics }) {
+export function SeasonStatistics({ report, metrics, hideExpectedMetrics = false }) {
   const player = report?.player || {};
   const stats = [
     { label: "Season", value: player.calendar, format: "text" },
@@ -240,7 +241,7 @@ export function SeasonStatistics({ report, metrics }) {
     { label: "Prog passes /90", value: metrics.progressive_passes_per_90, format: "number" },
     { label: "Prog runs /90", value: metrics.progressive_runs_per_90, format: "number" },
     { label: "Def actions /90", value: metrics.successful_def_actions_per_90, format: "number" },
-  ];
+  ].filter((stat) => !hideExpectedMetrics || !["xG", "xA"].includes(stat.label));
   return (
     <ReportCard className="border-[#3A8967]/25 bg-[#080B0A]">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
