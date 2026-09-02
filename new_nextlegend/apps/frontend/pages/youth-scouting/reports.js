@@ -142,6 +142,41 @@ function average(values) {
   return numeric.reduce((sum, value) => sum + value, 0) / numeric.length;
 }
 
+function reportSeasonId(season) {
+  return season?.player_season_id ?? season?.id ?? season?.player_id;
+}
+
+function sortReportSeasons(seasons = []) {
+  const bySeason = new Map();
+  seasons.forEach((season) => {
+    const seasonId = reportSeasonId(season);
+    if (!seasonId) return;
+    const seasonKey = Number(season.season);
+    const key = Number.isFinite(seasonKey) ? String(seasonKey) : String(season.calendar || seasonId);
+    const existing = bySeason.get(key);
+    if (!existing) {
+      bySeason.set(key, season);
+      return;
+    }
+    const existingMinutes = Number(existing.minutes_played ?? -1);
+    const currentMinutes = Number(season.minutes_played ?? -1);
+    const existingScore = Number(existing.global_score_adjusted ?? existing.score ?? -1);
+    const currentScore = Number(season.global_score_adjusted ?? season.score ?? -1);
+    if (
+      currentMinutes > existingMinutes ||
+      (currentMinutes === existingMinutes && currentScore > existingScore) ||
+      (currentMinutes === existingMinutes && currentScore === existingScore && Number(seasonId) > Number(reportSeasonId(existing)))
+    ) {
+      bySeason.set(key, season);
+    }
+  });
+  return Array.from(bySeason.values()).sort((a, b) => {
+    const seasonDiff = Number(b.season || 0) - Number(a.season || 0);
+    if (seasonDiff) return seasonDiff;
+    return Number(reportSeasonId(b) || 0) - Number(reportSeasonId(a) || 0);
+  });
+}
+
 function pctFor(percentiles, youthKey, context = "global") {
   const row = percentiles?.[youthKey] || {};
   return context === "league" ? row.championship ?? row.global_position : row.global_position;
@@ -267,9 +302,9 @@ function buildAdaptedReport(rawReport) {
   const adaptedPositionGroup = player.position_group || normalizePositionGroup(null, player.position);
   const metrics = buildMetrics(rawReport);
   const adaptedPlayer = adaptPlayerRow(player);
-  const availableSeasons = (rawReport.available_seasons || [player]).map(adaptPlayerRow).filter(Boolean);
+  const availableSeasons = sortReportSeasons((rawReport.available_seasons || [player]).map(adaptPlayerRow).filter(Boolean));
   const seasonMetricHistory = (rawReport.season_metric_history || rawReport.score_history || [player]).map(buildSeasonMetricRow).filter(Boolean);
-  const scoreHistory = (rawReport.score_history || [player]).map(adaptPlayerRow).filter(Boolean);
+  const scoreHistory = sortReportSeasons((rawReport.score_history || [player]).map(adaptPlayerRow).filter(Boolean)).reverse();
   const radarMetrics = Array.from(new Set([
     ...YOUTH_TO_REPORT_METRICS.map(([, target]) => target),
     ...DERIVED_METRICS.map((item) => item.key),
@@ -314,7 +349,7 @@ function adaptSimilarRows(rows = []) {
   }));
 }
 
-function YouthScoreHistory({ data }) {
+function YouthScoreHistory({ data, onSelect }) {
   const sorted = [...(data || [])].sort((a, b) => Number(a.season || 0) - Number(b.season || 0));
   const values = sorted.map((row) => Number(row.global_score_adjusted)).filter(Number.isFinite);
   const min = values.length ? Math.min(...values) : 0;
@@ -352,15 +387,23 @@ function YouthScoreHistory({ data }) {
               ))}
             </svg>
             <div className="mt-3 space-y-2">
-              {points.map((row) => (
-                <div key={row.player_season_id} className="flex items-center justify-between gap-4 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2">
+              {points.map((row) => {
+                const seasonId = reportSeasonId(row);
+                const Wrapper = seasonId && onSelect ? "button" : "div";
+                return (
+                <Wrapper
+                  key={seasonId || row.calendar}
+                  type={Wrapper === "button" ? "button" : undefined}
+                  onClick={seasonId && onSelect ? () => onSelect(String(seasonId)) : undefined}
+                  className="flex w-full items-center justify-between gap-4 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-left transition hover:border-[#3A8967]/35 hover:bg-[#2F7D5C]/10"
+                >
                   <div className="min-w-0">
                     <p className="text-sm font-black text-white">{row.calendar}</p>
                     <p className="truncate text-xs text-[#6F7772]">{[row.team, row.competition_name].filter(Boolean).join(" - ") || "-"}</p>
                   </div>
                   <p className="text-xl font-black text-[#8CC7A7]">{formatValue(row.global_score_adjusted, "score")}</p>
-                </div>
-              ))}
+                </Wrapper>
+              );})}
             </div>
           </>
         ) : <p className="text-sm text-slate-500">No imported history for this player yet.</p>}
@@ -424,8 +467,6 @@ export default function YouthReportsPage() {
       .then((data) => {
         if (cancelled) return;
         setMeta(data);
-        const latestSeason = Number(data?.seasons?.[0]);
-        if (Number.isFinite(latestSeason)) setSearchSeason(latestSeason);
       })
       .catch((err) => console.error(err));
     return () => {
@@ -510,6 +551,11 @@ export default function YouthReportsPage() {
     };
   }, [selectedPlayerId]);
 
+  const report = useMemo(() => buildAdaptedReport(rawReport), [rawReport]);
+  const selectedSeasonId = report?.player?.player_season_id || "";
+  const seasons = report?.available_seasons || [];
+  const scoreHistory = report?.score_history || [];
+
   useEffect(() => {
     if (compareQuery.trim().length < 2) {
       setCompareResults([]);
@@ -536,7 +582,6 @@ export default function YouthReportsPage() {
     return () => clearTimeout(handle);
   }, [compareQuery, selectedComparisonLabel, report?.player?.season, searchSeason]);
 
-  const report = useMemo(() => buildAdaptedReport(rawReport), [rawReport]);
   const metrics = report?.metrics || {};
   const positionGroup = normalizePositionGroup(report?.player?.assigned_role, report?.player?.position);
   const profileCategoriesData = useMemo(() => buildProfileCategories(metrics, percentileContext), [metrics, percentileContext]);
@@ -601,9 +646,6 @@ export default function YouthReportsPage() {
     }
   };
 
-  const selectedSeasonId = report?.player?.player_season_id || "";
-  const seasons = report?.available_seasons || [];
-  const scoreHistory = report?.score_history || [];
   const searchSeasons = meta?.seasons?.length ? meta.seasons : [DEFAULT_SEASON];
 
   return (
@@ -693,7 +735,19 @@ export default function YouthReportsPage() {
                 <label htmlFor="youth-report-search-season" className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
                   Search season
                 </label>
-                <select id="youth-report-search-season" className="nl-field mt-2" value={searchSeason} onChange={(event) => setSearchSeason(Number(event.target.value))}>
+                <select
+                  id="youth-report-search-season"
+                  className="nl-field mt-2"
+                  value={searchSeason}
+                  onChange={(event) => {
+                    setSearchSeason(event.target.value);
+                    setPlayerResults([]);
+                    if (!selectedPlayerId) {
+                      setShowPlayerResults(playerQuery.trim().length >= 2);
+                    }
+                  }}
+                >
+                  <option value="">All seasons</option>
                   {searchSeasons.map((season) => (
                     <option key={season} value={season}>{formatYouthSeason(season)}</option>
                   ))}
@@ -718,6 +772,28 @@ export default function YouthReportsPage() {
                 }}
                 onSelect={selectPlayer}
               />
+              {report && seasons.length > 1 ? (
+                <div className="rounded-lg border border-[#3A8967]/25 bg-[#2F7D5C]/10 p-3">
+                  <label htmlFor="youth-report-season" className="text-[10px] font-black uppercase tracking-[0.16em] text-[#8CC7A7]">
+                    Report season
+                  </label>
+                  <select
+                    id="youth-report-season"
+                    className="nl-field mt-2"
+                    value={selectedSeasonId}
+                    onChange={(event) => selectSeason(event.target.value)}
+                  >
+                    {seasons.map((season) => {
+                      const seasonId = reportSeasonId(season);
+                      return (
+                        <option key={seasonId} value={seasonId}>
+                          {[season.calendar, season.team, season.competition_name].filter(Boolean).join(" - ")}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
@@ -727,7 +803,20 @@ export default function YouthReportsPage() {
 
         {report ? (
           <>
-            <SeasonSelector seasons={seasons} selectedSeasonId={selectedSeasonId} onSelect={selectSeason} />
+            {seasons.length > 1 ? (
+              <ReportCard className="relative z-10 overflow-visible">
+                <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <p className="nl-kicker">Available reports</p>
+                    <h2 className="mt-2 text-xl font-black text-white">Season history</h2>
+                  </div>
+                  <p className="text-xs font-semibold text-slate-500">Click a season to open the full report.</p>
+                </div>
+                <SeasonSelector seasons={seasons} selectedSeasonId={selectedSeasonId} onSelect={selectSeason} />
+              </ReportCard>
+            ) : (
+              <SeasonSelector seasons={seasons} selectedSeasonId={selectedSeasonId} onSelect={selectSeason} />
+            )}
             <SeasonStatistics report={report} metrics={metrics} hideExpectedMetrics />
 
             <div className="grid gap-4 xl:grid-cols-[0.82fr_1.18fr_1fr]">
@@ -776,7 +865,7 @@ export default function YouthReportsPage() {
 
             <div className="grid gap-4 xl:grid-cols-3">
               <PlayerSeasonRadarComparison report={report} context={percentileContext} />
-              <YouthScoreHistory data={scoreHistory} />
+              <YouthScoreHistory data={scoreHistory} onSelect={selectSeason} />
               <YouthContextCard player={report.player} />
             </div>
 

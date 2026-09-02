@@ -27,6 +27,7 @@ const SCOUTING_NAV = [
 const YOUTH_NAV = [
   { href: "/youth-scouting/ranking", label: "Youth Ranking", icon: "target" },
   { href: "/youth-scouting/reports", label: "Youth Reports", icon: "file" },
+  { href: "/youth-scouting/research", label: "Youth Research", icon: "search" },
   { href: "/youth-scouting/prospects", label: "Youth Prospects", icon: "spark" },
 ];
 
@@ -49,6 +50,7 @@ const ROUTE_META = [
   { match: /^\/ai/, title: "AI Assistant", eyebrow: "Scouting", desc: "Structured scouting briefs." },
   { match: /^\/youth-scouting\/ranking/, title: "Youth Ranking", eyebrow: "Youth Scouting", desc: "Eyeball cohorts, age context and youth score." },
   { match: /^\/youth-scouting\/reports/, title: "Youth Reports", eyebrow: "Youth Scouting", desc: "Youth player dossiers and percentile evidence." },
+  { match: /^\/youth-scouting\/research/, title: "Youth Research", eyebrow: "Youth Scouting", desc: "Eyeball metric discovery and youth statistical patterns." },
   { match: /^\/youth-scouting\/prospects/, title: "Youth Prospects", eyebrow: "Youth Scouting", desc: "Tracked youth watchlist and development targets." },
   { match: /^\/youth-scouting/, title: "Youth Scouting", eyebrow: "Development", desc: "Young player rankings and reports." },
   { match: /^\/admin/, title: "Access Control", eyebrow: "Admin", desc: "Users and permissions." },

@@ -8218,6 +8218,53 @@ def meta_stats_research_metrics(session: Session = Depends(get_session)):
     }
 
 
+YOUTH_STATS_EXCLUDED_METRICS = {
+    "club_strength_modifier",
+    "competition_cap",
+    "competition_modifier",
+    "metric_score",
+    "minutes_confidence",
+    "minutes_regularity_modifier",
+    "production_bonus",
+    "scoring_model_version",
+    "scoring_position_group",
+    "team_strength_z",
+}
+
+YOUTH_STATS_LOWER_IS_BETTER = {
+    "goals_conceded_per_90",
+}
+
+
+def _youth_stats_metric_keys(session: Session) -> list[str]:
+    _ensure_youth_schema(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT DISTINCT jsonb_object_keys(metrics) AS metric
+            FROM youth_player_rankings
+            WHERE metrics IS NOT NULL
+              AND metrics <> '{}'::jsonb
+            """
+        )
+    ).fetchall()
+    metrics = []
+    for row in rows:
+        metric = str(row.metric or "").strip()
+        if not metric or metric in YOUTH_STATS_EXCLUDED_METRICS:
+            continue
+        metrics.append(metric)
+    return sorted(set(metrics))
+
+
+@app.get("/youth/meta/stats-research/metrics")
+def youth_meta_stats_research_metrics(session: Session = Depends(get_session)):
+    return {
+        "metrics": _youth_stats_metric_keys(session),
+        "lower_is_better": sorted(YOUTH_STATS_LOWER_IS_BETTER),
+    }
+
+
 @app.get("/meta/league-translation/leagues")
 def meta_league_translation_leagues():
     return _league_translation_leagues()
@@ -8716,7 +8763,7 @@ def youth_ranking_page(
 @app.get("/youth/players")
 def youth_search_players(
     q: str = Query(..., min_length=1),
-    season: Optional[int] = Query(2027),
+    season: Optional[int] = Query(None),
     limit: int = Query(20, ge=1, le=50),
     session: Session = Depends(get_session),
 ):
@@ -8770,9 +8817,9 @@ def youth_player_report(youth_id: int, session: Session = Depends(get_session)):
             "provider_player_id": player.get("provider_player_id"),
         },
     ).fetchall()
-    available_seasons = [_youth_row_payload(item) for item in season_rows]
+    season_payloads = [_youth_row_payload(item) for item in season_rows]
     score_rows_by_season: dict[int, dict[str, Any]] = {}
-    for item in available_seasons:
+    for item in season_payloads:
         season_value = item.get("season")
         if season_value is None:
             continue
@@ -8789,6 +8836,10 @@ def youth_player_report(youth_id: int, session: Session = Depends(get_session)):
     score_history = [
         score_rows_by_season[season_value]
         for season_value in sorted(score_rows_by_season)
+    ]
+    available_seasons = [
+        score_rows_by_season[season_value]
+        for season_value in sorted(score_rows_by_season, reverse=True)
     ]
     similar_rows = session.execute(
         text(
@@ -9553,5 +9604,92 @@ def stats_research(
     """
     sql += f' ORDER BY metric_x DESC NULLS LAST, metric_y DESC NULLS LAST LIMIT :limit'
 
+    rows = session.execute(text(sql), params).fetchall()
+    return [_row_to_dict(row) for row in rows]
+
+
+@app.get("/youth/stats-research")
+def youth_stats_research(
+    metric_x: str = Query(..., min_length=1),
+    metric_y: str = Query(..., min_length=1),
+    league: Optional[str] = Query(None),
+    season: Optional[int] = Query(None),
+    positions: Optional[str] = Query(None),
+    min_minutes: float = Query(90, ge=0),
+    limit: int = Query(5000, ge=1, le=20000),
+    session: Session = Depends(get_session),
+):
+    available = _youth_stats_metric_keys(session)
+    if metric_x not in available or metric_y not in available:
+        raise HTTPException(status_code=400, detail="Invalid metric selection")
+
+    numeric_pattern = r"^-?[0-9]+(\.[0-9]+)?$"
+    sql = """
+    WITH base AS (
+      SELECT DISTINCT ON (provider_player_id, season, championship, club_name)
+        id AS player_id,
+        display_name AS name,
+        club_name AS team,
+        championship AS competition_name,
+        calendar,
+        position,
+        primary_position,
+        position_group,
+        minutes_played,
+        age,
+        birth_year,
+        age_category,
+        CASE
+          WHEN metrics ->> :metric_x_key ~ :numeric_pattern
+          THEN (metrics ->> :metric_x_key)::double precision
+          ELSE NULL
+        END AS metric_x,
+        CASE
+          WHEN metrics ->> :metric_y_key ~ :numeric_pattern
+          THEN (metrics ->> :metric_y_key)::double precision
+          ELSE NULL
+        END AS metric_y
+      FROM youth_player_rankings
+      WHERE metrics ->> :metric_x_key ~ :numeric_pattern
+        AND metrics ->> :metric_y_key ~ :numeric_pattern
+    """
+    params: dict[str, Any] = {
+        "metric_x_key": metric_x,
+        "metric_y_key": metric_y,
+        "numeric_pattern": numeric_pattern,
+        "limit": limit,
+    }
+    if league and league not in {"All leagues", "All"}:
+        sql += " AND championship = :league"
+        params["league"] = league
+    if min_minutes is not None:
+        sql += " AND COALESCE(minutes_played, 0) >= :min_minutes"
+        params["min_minutes"] = min_minutes
+    if season:
+        sql += " AND season = :season"
+        params["season"] = season
+    if positions:
+        pos_list = [position.strip() for position in positions.split(",") if position.strip()]
+        if pos_list:
+            params["positions"] = pos_list
+            params["pos_patterns"] = [f"%{position}%" for position in pos_list]
+            sql += """
+            AND (
+              primary_position = ANY(:positions)
+              OR position_group = ANY(:positions)
+              OR position ILIKE ANY(:pos_patterns)
+            )
+            """
+    sql += """
+      ORDER BY provider_player_id, season, championship, club_name,
+        minutes_played DESC NULLS LAST, score DESC NULLS LAST, id DESC
+    )
+    SELECT *
+    FROM base
+    WHERE metric_x IS NOT NULL
+      AND metric_y IS NOT NULL
+    ORDER BY metric_x DESC NULLS LAST, metric_y DESC NULLS LAST
+    LIMIT :limit
+    """
     rows = session.execute(text(sql), params).fetchall()
     return [_row_to_dict(row) for row in rows]

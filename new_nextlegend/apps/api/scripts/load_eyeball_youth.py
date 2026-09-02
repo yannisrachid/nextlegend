@@ -262,6 +262,22 @@ def age_category(value: str | None, birth_year: int | None, season: int) -> str 
     return None
 
 
+def youth_age_tokens(value: str | None) -> list[str]:
+    cleaned = clean_text(value)
+    if not cleaned:
+        return []
+    return re.findall(r"\bU\d{2}\b", cleaned.upper())
+
+
+def player_youth_age_token(birth_year: int | None, season: int) -> str | None:
+    if not birth_year:
+        return None
+    age = season - birth_year
+    if 10 <= age <= 23:
+        return f"U{age}"
+    return None
+
+
 def birth_date_label(raw: dict[str, Any]) -> str | None:
     return clean_text(
         raw.get("birthDate")
@@ -331,18 +347,139 @@ def normalize_competition_level(team_name: str | None, club_name: str | None) ->
     return "/".join(levels) if levels else None
 
 
-def championship_label(raw: dict[str, Any], resolved_age_category: str | None) -> str:
+def choose_competition_age(age_category_value: str | None, birth_year: int | None, season: int, level: str | None) -> str | None:
+    tokens = youth_age_tokens(age_category_value)
+    if not tokens:
+        return clean_text(age_category_value)
+    unique_tokens = sorted(set(tokens), key=lambda token: int(token[1:]))
+    if len(unique_tokens) == 1:
+        return unique_tokens[0]
+
+    player_age = player_youth_age_token(birth_year, season)
+    level_upper = (level or "").upper()
+
+    if "NATIONAL" in level_upper:
+        if "U17" in unique_tokens and player_age in {"U16", "U17"}:
+            return "U17"
+        if "U19" in unique_tokens and (player_age in {"U18", "U19"} or "U17" not in unique_tokens):
+            return "U19"
+        if player_age in unique_tokens:
+            return player_age
+        return unique_tokens[-1]
+
+    if re.search(r"\bR[1-5]\b|\bREGIONAL\b", level_upper):
+        if player_age in unique_tokens:
+            return player_age
+        if player_age:
+            player_age_number = int(player_age[1:])
+            return min(unique_tokens, key=lambda token: (abs(int(token[1:]) - player_age_number), int(token[1:])))
+        return unique_tokens[0]
+
+    return player_age if player_age in unique_tokens else "/".join(unique_tokens)
+
+
+def championship_label(raw: dict[str, Any], resolved_age_category: str | None, birth_year: int | None, season: int) -> str:
     level = normalize_competition_level(raw.get("teamName"), raw.get("clubName"))
-    age = clean_text(resolved_age_category)
+    age = choose_competition_age(resolved_age_category, birth_year, season, level)
     if level:
         if age and re.match(r"^U\d+", age) and not level.startswith(age):
             return f"{age} {level}"
         return level
     if age:
-        if re.match(r"^U\d+", age) and clean_text(raw.get("teamName")):
-            return f"{age} NATIONAL"
         return age
     return "Unknown competition"
+
+
+def is_informative_championship(value: str | None) -> bool:
+    championship = clean_text(value).upper()
+    return bool(re.search(r"\bNATIONAL\b|\bR[1-5]\b|\bREGIONAL\b", championship))
+
+
+def dominant_championship(counts: dict[str, int], min_count: int, min_share: float) -> str | None:
+    informative_items = [
+        (championship, count)
+        for championship, count in counts.items()
+        if is_informative_championship(championship)
+    ]
+    if not informative_items:
+        return None
+    label, count = sorted(informative_items, key=lambda item: item[1], reverse=True)[0]
+    total = sum(count for _, count in informative_items)
+    if count >= min_count and total and count / total >= min_share:
+        return label
+    return None
+
+
+def harmonize_championships(rows: list[dict[str, Any]]) -> None:
+    by_context: dict[tuple[int, str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    by_exact_squad: dict[tuple[int, str, str, int | None], dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    by_age_group: dict[tuple[int, str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for row in rows:
+        club = clean_text(row.get("club_name"))
+        championship = clean_text(row.get("championship"))
+        row_age_tokens = youth_age_tokens(row.get("age_category"))
+        if not club or len(row_age_tokens) != 1 or not championship:
+            continue
+        by_context[(row["season"], club.upper(), row_age_tokens[0])][championship] += 1
+        if normalize_competition_level(row.get("team_name"), row.get("club_name")) and is_informative_championship(championship):
+            by_age_group[(row["season"], club.upper(), clean_text(row.get("age_category")).upper())][championship] += 1
+            by_exact_squad[
+                (
+                    row["season"],
+                    club.upper(),
+                    clean_text(row.get("age_category")).upper(),
+                    row.get("team_level"),
+                )
+            ][championship] += 1
+
+    dominant_by_context: dict[tuple[int, str, str], str] = {}
+    for context, counts in by_context.items():
+        national_items = [
+            (championship, count)
+            for championship, count in counts.items()
+            if championship.upper().endswith("NATIONAL") or championship.upper() == "NATIONAL"
+        ]
+        if not national_items:
+            continue
+        national_label, national_count = sorted(national_items, key=lambda item: item[1], reverse=True)[0]
+        eligible_count = sum(
+            count
+            for championship, count in counts.items()
+            if is_informative_championship(championship)
+        )
+        if national_count >= 3 and eligible_count and national_count / eligible_count >= 0.7:
+            dominant_by_context[context] = national_label
+
+    dominant_by_exact_squad = {
+        context: label
+        for context, counts in by_exact_squad.items()
+        if (label := dominant_championship(counts, min_count=2, min_share=0.67))
+    }
+    dominant_by_age_group = {
+        context: label
+        for context, counts in by_age_group.items()
+        if (label := dominant_championship(counts, min_count=3, min_share=0.8))
+    }
+
+    for row in rows:
+        club = clean_text(row.get("club_name"))
+        championship = clean_text(row.get("championship"))
+        row_age_tokens = youth_age_tokens(row.get("age_category"))
+        age_group_key = clean_text(row.get("age_category")).upper()
+        if not club or not row_age_tokens or not championship:
+            continue
+        has_explicit_level = bool(normalize_competition_level(row.get("team_name"), row.get("club_name")))
+        replacement = None
+        if not has_explicit_level and not is_informative_championship(championship):
+            replacement = dominant_by_exact_squad.get((row["season"], club.upper(), age_group_key, row.get("team_level")))
+            replacement = replacement or dominant_by_age_group.get((row["season"], club.upper(), age_group_key))
+        if not replacement and len(row_age_tokens) == 1:
+            age_token = row_age_tokens[0]
+            replacement = dominant_by_context.get((row["season"], club.upper(), age_token))
+        if not replacement or replacement == championship:
+            continue
+        if not has_explicit_level or championship.upper() in row_age_tokens or re.search(r"\bR[1-5]\b|\bREGIONAL\b|\bRESERVE\b", championship.upper()):
+            row["championship"] = replacement
 
 
 def calendar_label(season: int) -> str:
@@ -571,7 +708,7 @@ def build_rows(path: Path, season: int) -> list[dict[str, Any]]:
                 "birth_date": birth_date,
                 "age": season - birth_year if birth_year else None,
                 "age_category": resolved_age_category,
-                "championship": championship_label(raw, resolved_age_category),
+                "championship": championship_label(raw, resolved_age_category, birth_year, season),
                 "club_name": clean_text(raw.get("clubName")),
                 "team_name": clean_text(raw.get("teamName")),
                 "team_level": parse_int(raw.get("teamLevel")),
@@ -590,6 +727,7 @@ def build_rows(path: Path, season: int) -> list[dict[str, Any]]:
             }
             if row["provider_player_id"]:
                 rows.append(row)
+    harmonize_championships(rows)
     return rows
 
 
@@ -761,12 +899,62 @@ def insert_rows(
         conn.execute(sql, payloads)
 
 
+def update_row_metadata(rows: list[dict[str, Any]]) -> None:
+    engine = create_engine(settings.database_url, future=True, connect_args={"prepare_threshold": 0})
+    with engine.begin() as conn:
+        for statement in [part.strip() for part in SCHEMA_SQL.split(";") if part.strip()]:
+            conn.execute(text(statement))
+        sql = text(
+            """
+            UPDATE youth_player_rankings SET
+              provider_player_url = :provider_player_url,
+              calendar = :calendar,
+              is_current_season = :is_current_season,
+              country_code = :country_code,
+              first_name = :first_name,
+              last_name = :last_name,
+              display_name = :display_name,
+              birth_year = :birth_year,
+              birth_date = :birth_date,
+              age = :age,
+              age_category = :age_category,
+              championship = :championship,
+              club_name = :club_name,
+              team_name = :team_name,
+              team_level = :team_level,
+              position = :position,
+              primary_position = :primary_position,
+              position_group = :position_group,
+              strong_foot = :strong_foot,
+              height_cm = :height_cm,
+              weight_kg = :weight_kg,
+              games_count = :games_count,
+              minutes_played = :minutes_played,
+              rating = :rating,
+              raw_payload = CAST(:raw_payload AS JSONB),
+              updated_at = NOW()
+            WHERE provider = :provider
+              AND season = :season
+              AND source_row_hash = :source_row_hash
+            """
+        )
+        payloads = [
+            {
+                **row,
+                "raw_payload": json.dumps(row["raw_payload"], ensure_ascii=False),
+            }
+            for row in rows
+        ]
+        conn.execute(sql, payloads)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Load Eyeball youth CSV into calculated youth_player_rankings.")
     parser.add_argument("csv_path", type=Path)
     parser.add_argument("--season", type=int, default=CURRENT_SEASON)
     parser.add_argument("--replace", action="store_true", help="Delete existing rows for the season before loading.")
     parser.add_argument("--no-replace", action="store_true", help="Deprecated compatibility flag. Upsert without delete is now the default.")
+    parser.add_argument("--metadata-only", action="store_true", help="Update identity and competition fields without recalculating scores.")
     parser.add_argument(
         "--force-historical-refresh",
         action="store_true",
@@ -777,6 +965,22 @@ def main() -> int:
     rows = build_rows(args.csv_path, args.season)
     if not rows:
         raise SystemExit("No rows found in Eyeball CSV.")
+    if args.metadata_only:
+        update_row_metadata(rows)
+        print(
+            json.dumps(
+                {
+                    "table": "youth_player_rankings",
+                    "rows": len(rows),
+                    "season": args.season,
+                    "metadata_only": True,
+                    "championships": sorted({row["championship"] for row in rows if row.get("championship")}),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
     apply_scores(rows)
     insert_rows(
         rows,
