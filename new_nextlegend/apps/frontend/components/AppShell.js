@@ -24,6 +24,12 @@ const SCOUTING_NAV = [
   { href: "/ai", label: "AI Assistant", icon: "spark" },
 ];
 
+const YOUTH_NAV = [
+  { href: "/youth-scouting/ranking", label: "Youth Ranking", icon: "target" },
+  { href: "/youth-scouting/reports", label: "Youth Reports", icon: "file" },
+  { href: "/youth-scouting/prospects", label: "Youth Prospects", icon: "spark" },
+];
+
 const ADMIN_NAV = [
   { href: "/admin", label: "Admin", icon: "shield", primaryAdminOnly: true },
 ];
@@ -41,6 +47,10 @@ const ROUTE_META = [
   { match: /^\/vizualisation/, title: "Visuals", eyebrow: "Scouting", desc: "Export-ready data visualizations." },
   { match: /^\/prospect/, title: "Prospect", eyebrow: "Scouting", desc: "Watchlists and scouting pipelines." },
   { match: /^\/ai/, title: "AI Assistant", eyebrow: "Scouting", desc: "Structured scouting briefs." },
+  { match: /^\/youth-scouting\/ranking/, title: "Youth Ranking", eyebrow: "Youth Scouting", desc: "Eyeball cohorts, age context and youth score." },
+  { match: /^\/youth-scouting\/reports/, title: "Youth Reports", eyebrow: "Youth Scouting", desc: "Youth player dossiers and percentile evidence." },
+  { match: /^\/youth-scouting\/prospects/, title: "Youth Prospects", eyebrow: "Youth Scouting", desc: "Tracked youth watchlist and development targets." },
+  { match: /^\/youth-scouting/, title: "Youth Scouting", eyebrow: "Development", desc: "Young player rankings and reports." },
   { match: /^\/admin/, title: "Access Control", eyebrow: "Admin", desc: "Users and permissions." },
   { match: /^\/settings/, title: "Settings", eyebrow: "Workspace", desc: "Profile and security." },
 ];
@@ -187,7 +197,7 @@ function CommandPalette({ open, onClose, items }) {
   );
 }
 
-function MainNavigation({ items, scoutingItems, adminItems = [], utilityItems = [], me, onLogout, activeFor, onNavigate, collapsed = false, onToggleCollapse }) {
+function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = [], utilityItems = [], me, onLogout, activeFor, onNavigate, collapsed = false, onToggleCollapse }) {
   return (
     <aside className={`relative flex h-full flex-col overflow-auto border-r border-white/10 bg-[#060807]/95 py-4 text-[#F3F5F4] shadow-[inset_-1px_0_0_rgba(255,255,255,0.035)] transition-all duration-200 ${collapsed ? "gap-4 px-3" : "gap-5 px-4"}`}>
       {onToggleCollapse ? (
@@ -231,6 +241,17 @@ function MainNavigation({ items, scoutingItems, adminItems = [], utilityItems = 
           ))}
         </nav>
       </div>
+
+      {youthItems.length ? (
+        <div className="space-y-2">
+          {collapsed ? <div className="mx-auto h-px w-8 bg-white/10" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Youth scouting</p>}
+          <nav className="space-y-1">
+            {youthItems.map((item) => (
+              <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
+            ))}
+          </nav>
+        </div>
+      ) : null}
 
       {adminItems.length ? (
         <div className="space-y-2">
@@ -289,6 +310,11 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
     []
   );
 
+  const youthItems = useMemo(
+    () => YOUTH_NAV,
+    []
+  );
+
   const adminItems = useMemo(
     () => ADMIN_NAV.filter((item) => !item.primaryAdminOnly || me?.username === "yrachid"),
     [me?.username]
@@ -303,10 +329,11 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
     () => [
       ...PRIMARY_NAV.map((item) => ({ ...item, section: "Workspace" })),
       ...scoutingItems.map((item) => ({ ...item, section: "Scouting module" })),
+      ...youthItems.map((item) => ({ ...item, section: "Youth Scouting" })),
       ...adminItems.map((item) => ({ ...item, section: "Administration" })),
       ...utilityItems.map((item) => ({ ...item, section: "Account" })),
     ],
-    [adminItems, scoutingItems, utilityItems]
+    [adminItems, scoutingItems, utilityItems, youthItems]
   );
 
   useEffect(() => {
@@ -380,6 +407,7 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
         <MainNavigation
           items={PRIMARY_NAV}
           scoutingItems={scoutingItems}
+          youthItems={youthItems}
           adminItems={adminItems}
           utilityItems={utilityItems}
           me={me}
@@ -402,6 +430,7 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
             <MainNavigation
               items={PRIMARY_NAV}
               scoutingItems={scoutingItems}
+              youthItems={youthItems}
               adminItems={adminItems}
               utilityItems={utilityItems}
               me={me}

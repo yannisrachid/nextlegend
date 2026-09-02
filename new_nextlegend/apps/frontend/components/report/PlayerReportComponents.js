@@ -225,7 +225,7 @@ export function SeasonSelector({ seasons, selectedSeasonId, onSelect }) {
   );
 }
 
-export function SeasonStatistics({ report, metrics }) {
+export function SeasonStatistics({ report, metrics, hideExpectedMetrics = false }) {
   const player = report?.player || {};
   const stats = [
     { label: "Season", value: player.calendar, format: "text" },
@@ -240,7 +240,7 @@ export function SeasonStatistics({ report, metrics }) {
     { label: "Prog passes /90", value: metrics.progressive_passes_per_90, format: "number" },
     { label: "Prog runs /90", value: metrics.progressive_runs_per_90, format: "number" },
     { label: "Def actions /90", value: metrics.successful_def_actions_per_90, format: "number" },
-  ];
+  ].filter((stat) => !hideExpectedMetrics || !["xG", "xA"].includes(stat.label));
   return (
     <ReportCard className="border-[#3A8967]/25 bg-[#080B0A]">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">

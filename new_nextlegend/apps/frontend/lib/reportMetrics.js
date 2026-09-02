@@ -4,6 +4,7 @@ export const POSITION_GROUPS = {
   GK: { short: "GK", label: "Goalkeepers", pitch: { x: 50, y: 88 } },
   Goalkeepers: { short: "GK", label: "Goalkeepers", pitch: { x: 50, y: 88 } },
   "Centre Backs": { short: "CB", label: "Centre backs", pitch: { x: 50, y: 70 } },
+  Fullbacks: { short: "FB", label: "Fullbacks", pitch: { x: 50, y: 64 } },
   "Left Backs": { short: "LB", label: "Left backs", pitch: { x: 18, y: 64 } },
   "Right Backs": { short: "RB", label: "Right backs", pitch: { x: 82, y: 64 } },
   "Defensive Midfielders": { short: "DM", label: "Defensive midfielders", pitch: { x: 50, y: 54 } },
@@ -11,17 +12,20 @@ export const POSITION_GROUPS = {
   "Attacking Midfielders": { short: "AM", label: "Attacking midfielders", pitch: { x: 50, y: 30 } },
   "Left Wingers": { short: "LW", label: "Left wingers", pitch: { x: 20, y: 22 } },
   "Right Wingers": { short: "RW", label: "Right wingers", pitch: { x: 80, y: 22 } },
+  Wingers: { short: "W", label: "Wingers", pitch: { x: 50, y: 22 } },
   "Centre Forwards": { short: "CF", label: "Centre forwards", pitch: { x: 50, y: 14 } },
+  Forwards: { short: "FW", label: "Forwards", pitch: { x: 50, y: 14 } },
 };
 
 const POSITION_CODE_MAP = {
-  GK: "Goalkeepers", CB: "Centre Backs", LCB: "Centre Backs", RCB: "Centre Backs",
-  LB: "Left Backs", LWB: "Left Backs", RB: "Right Backs", RWB: "Right Backs",
-  DM: "Defensive Midfielders", DMF: "Defensive Midfielders",
-  CM: "Central Midfielders", CMF: "Central Midfielders", LCMF: "Central Midfielders", RCMF: "Central Midfielders",
-  AM: "Attacking Midfielders", AMF: "Attacking Midfielders",
-  LW: "Left Wingers", LWF: "Left Wingers", RW: "Right Wingers", RWF: "Right Wingers",
-  CF: "Centre Forwards", ST: "Centre Forwards",
+  G: "Goalkeepers", GB: "Goalkeepers", GK: "Goalkeepers",
+  DC: "Centre Backs", CB: "Centre Backs", LCB: "Centre Backs", RCB: "Centre Backs",
+  DG: "Left Backs", LB: "Left Backs", LWB: "Left Backs", DD: "Right Backs", RB: "Right Backs", RWB: "Right Backs",
+  MDC: "Defensive Midfielders", DM: "Defensive Midfielders", DMF: "Defensive Midfielders",
+  MC: "Central Midfielders", CM: "Central Midfielders", CMF: "Central Midfielders", LCMF: "Central Midfielders", RCMF: "Central Midfielders",
+  MOC: "Attacking Midfielders", AM: "Attacking Midfielders", AMF: "Attacking Midfielders",
+  MG: "Left Wingers", AG: "Left Wingers", LW: "Left Wingers", LWF: "Left Wingers", MD: "Right Wingers", AD: "Right Wingers", RW: "Right Wingers", RWF: "Right Wingers",
+  ATT: "Centre Forwards", BU: "Centre Forwards", CF: "Centre Forwards", ST: "Centre Forwards",
 };
 
 export const lowerIsBetter = new Set([
@@ -77,6 +81,7 @@ export const profileCategories = [
 export const radarMetricsByPosition = {
   Goalkeepers: ["goals_prevented_per_90", "def_duels_won_percent", "save_percent", "aerial_duels_won_percent", "aerial_duels_gk_per_90", "accurate_passes_percent", "passes_per_90", "accurate_progressive_passes_percent", "progressive_passes_per_90"],
   "Centre Backs": ["successful_def_actions_per_90", "def_duels_won_percent", "interceptions_padj", "aerial_duels_won_percent", "passes_per_90", "accurate_passes_percent", "progressive_passes_per_90", "accurate_long_passes_percent"],
+  Fullbacks: ["def_duels_won_percent", "successful_def_actions_per_90", "interceptions_per_90", "progressive_runs_per_90", "successful_dribbles_percent", "progressive_passes_per_90", "passes_to_final_third_per_90", "key_passes_per_90", "accurate_crosses_percent"],
   "Left Backs": ["def_duels_won_percent", "successful_def_actions_per_90", "successful_attacks_per_90", "interceptions_per_90", "progressive_runs_per_90", "successful_dribbles_percent", "progressive_passes_per_90", "passes_to_final_third_per_90", "passes_to_penalty_area_per_90", "xa_per_90"],
   "Right Backs": ["def_duels_won_percent", "successful_def_actions_per_90", "successful_attacks_per_90", "interceptions_per_90", "progressive_runs_per_90", "successful_dribbles_percent", "progressive_passes_per_90", "passes_to_final_third_per_90", "passes_to_penalty_area_per_90", "xa_per_90"],
   "Defensive Midfielders": ["successful_def_actions_per_90", "interceptions_per_90", "def_duels_won_percent", "def_duels_per_90", "aerial_duels_won_percent", "passes_per_90", "accurate_passes_percent", "progressive_passes_per_90", "accurate_progressive_passes_percent", "passes_to_final_third_per_90"],
@@ -84,12 +89,15 @@ export const radarMetricsByPosition = {
   "Attacking Midfielders": ["xa_per_90", "key_passes_per_90", "smart_passes_per_90", "through_passes_per_90", "deep_completions_per_90", "passes_to_penalty_area_per_90", "progressive_passes_per_90", "progressive_runs_per_90", "touches_in_penalty_area_per_90", "xg_per_90"],
   "Left Wingers": ["progressive_runs_per_90", "dribbles_per_90", "successful_dribbles_percent", "xa_per_90", "key_passes_per_90", "passes_to_penalty_area_per_90", "touches_in_penalty_area_per_90", "xg_per_90", "goals_per_90", "accurate_crosses_percent"],
   "Right Wingers": ["progressive_runs_per_90", "dribbles_per_90", "successful_dribbles_percent", "xa_per_90", "key_passes_per_90", "passes_to_penalty_area_per_90", "touches_in_penalty_area_per_90", "xg_per_90", "goals_per_90", "accurate_crosses_percent"],
+  Wingers: ["progressive_runs_per_90", "dribbles_per_90", "successful_dribbles_percent", "key_passes_per_90", "passes_to_penalty_area_per_90", "goals_per_90", "assists_per_90", "accurate_crosses_percent"],
   "Centre Forwards": ["xg_per_90", "goals_per_90", "shots_per_90", "shots_on_target_percent", "goal_conversion_rate", "touches_in_penalty_area_per_90", "aerial_duels_won_percent", "aerial_duels_per_90", "passes_received_per_90", "xa_per_90"],
+  Forwards: ["goals_per_90", "shots_per_90", "shots_on_target_percent", "goal_conversion_rate", "touches_in_penalty_area_per_90", "aerial_duels_won_percent", "aerial_duels_per_90", "assists_per_90"],
 };
 
 export const positionRelevantMetricGroups = {
   Goalkeepers: ["goalkeeping", "buildUp", "aerial"],
   "Centre Backs": ["defense", "aerial", "buildUp"],
+  Fullbacks: ["defense", "buildUp", "technique", "creation"],
   "Left Backs": ["defense", "buildUp", "technique", "creation"],
   "Right Backs": ["defense", "buildUp", "technique", "creation"],
   "Defensive Midfielders": ["buildUp", "defense", "technique", "aerial"],
@@ -97,7 +105,9 @@ export const positionRelevantMetricGroups = {
   "Attacking Midfielders": ["creation", "technique", "finishing", "buildUp"],
   "Left Wingers": ["technique", "creation", "finishing", "buildUp"],
   "Right Wingers": ["technique", "creation", "finishing", "buildUp"],
+  Wingers: ["technique", "creation", "finishing", "buildUp"],
   "Centre Forwards": ["finishing", "creation", "aerial", "technique"],
+  Forwards: ["finishing", "creation", "aerial", "technique"],
 };
 
 export const normalizePositionGroup = (assignedRole, position) => {
