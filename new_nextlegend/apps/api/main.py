@@ -3223,7 +3223,8 @@ async def import_crm_clubs(request: Request, session: Session = Depends(get_sess
 
 
 @app.get("/crm/clubs/export.xlsx")
-def export_crm_clubs(session: Session = Depends(get_session)):
+def export_crm_clubs(request: Request, session: Session = Depends(get_session)):
+    _require_admin(request)
     _ensure_crm_schema(session)
     rows = session.execute(
         text("SELECT name, city, country, email, phone, website, logo FROM crm_clubs ORDER BY LOWER(name)")
@@ -3401,7 +3402,8 @@ def create_crm_player(payload: CrmPlayerPayload, session: Session = Depends(get_
 
 
 @app.get("/crm/players/export.xlsx")
-def export_crm_players(session: Session = Depends(get_session)):
+def export_crm_players(request: Request, session: Session = Depends(get_session)):
+    _require_admin(request)
     _ensure_crm_schema(session)
     rows = session.execute(
         text(
@@ -3625,7 +3627,8 @@ async def import_crm_contacts(request: Request, session: Session = Depends(get_s
 
 
 @app.get("/crm/contacts/export.xlsx")
-def export_crm_contacts(session: Session = Depends(get_session)):
+def export_crm_contacts(request: Request, session: Session = Depends(get_session)):
+    _require_admin(request)
     _ensure_crm_schema(session)
     rows = session.execute(
         text(

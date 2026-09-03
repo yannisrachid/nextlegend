@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, deleteJson, fetchJson, patchJson, postJson } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { loadClubLogoData, resolveClubLogoUrl } from "@/lib/clubLogos";
 
 const TABS = [
@@ -163,7 +164,7 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-function EntityToolbar({ kind, search, setSearch, runSearch, exportPath, onCreate }) {
+function EntityToolbar({ kind, search, setSearch, runSearch, exportPath, onCreate, canExport = false }) {
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
@@ -187,7 +188,7 @@ function EntityToolbar({ kind, search, setSearch, runSearch, exportPath, onCreat
             Clear
           </button>
         ) : null}
-        <a className="nl-button-secondary" href={apiUrl(exportPath)}>Export</a>
+        {canExport ? <a className="nl-button-secondary" href={apiUrl(exportPath)}>Export</a> : null}
         <button type="button" className="nl-button-primary" onClick={onCreate}>Create {kind.slice(0, -1)}</button>
       </div>
     </div>
@@ -209,6 +210,7 @@ function EmptyState({ label }) {
 }
 
 export default function CRM() {
+  const { me } = useAuth();
   const [tab, setTab] = useState("clubs");
   const [summary, setSummary] = useState({});
   const [options, setOptions] = useState({ clubs: [], players: [], contacts: [] });
@@ -287,6 +289,7 @@ export default function CRM() {
   const contacts = lists.contacts?.data || [];
   const prospects = lists.prospects?.data || [];
   const mapClusters = lists.map?.data || [];
+  const canExportCrm = me?.username === "yrachid" && me?.role === "admin";
 
   const contactsWithoutProspect = useMemo(() => {
     const prospectContactIds = new Set(prospects.map((item) => item.contact_id));
@@ -477,6 +480,7 @@ export default function CRM() {
             editClub={editClub}
             openDetail={openDetail}
             removeEntity={removeEntity}
+            canExport={canExportCrm}
           />
         ) : null}
 
@@ -493,6 +497,7 @@ export default function CRM() {
             editPlayer={editPlayer}
             openDetail={openDetail}
             removeEntity={removeEntity}
+            canExport={canExportCrm}
           />
         ) : null}
 
@@ -509,6 +514,7 @@ export default function CRM() {
             editContact={editContact}
             openDetail={openDetail}
             removeEntity={removeEntity}
+            canExport={canExportCrm}
           />
         ) : null}
 
@@ -572,11 +578,11 @@ export default function CRM() {
 }
 
 function ClubsView(props) {
-  const { clubs, page, totalPages, search, setSearch, runSearch, setEntityPage, openCreate, editClub, openDetail, removeEntity } = props;
+  const { clubs, page, totalPages, search, setSearch, runSearch, setEntityPage, openCreate, editClub, openDetail, removeEntity, canExport } = props;
   return (
     <section>
       <ListPanel>
-        <EntityToolbar kind="clubs" search={search} setSearch={setSearch} runSearch={runSearch} exportPath="/crm/clubs/export.xlsx" onCreate={openCreate} />
+        <EntityToolbar kind="clubs" search={search} setSearch={setSearch} runSearch={runSearch} exportPath="/crm/clubs/export.xlsx" onCreate={openCreate} canExport={canExport} />
         <div className="mt-5 grid gap-3 xl:grid-cols-2">
           {clubs.length ? clubs.map((club) => (
             <article
@@ -623,11 +629,11 @@ function ClubsView(props) {
 }
 
 function PlayersView(props) {
-  const { players, page, totalPages, search, setSearch, runSearch, setEntityPage, openCreate, editPlayer, openDetail, removeEntity } = props;
+  const { players, page, totalPages, search, setSearch, runSearch, setEntityPage, openCreate, editPlayer, openDetail, removeEntity, canExport } = props;
   return (
     <section>
       <ListPanel>
-        <EntityToolbar kind="players" search={search} setSearch={setSearch} runSearch={runSearch} exportPath="/crm/players/export.xlsx" onCreate={openCreate} />
+        <EntityToolbar kind="players" search={search} setSearch={setSearch} runSearch={runSearch} exportPath="/crm/players/export.xlsx" onCreate={openCreate} canExport={canExport} />
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {players.length ? players.map((player) => (
             <article
@@ -676,11 +682,11 @@ function PlayersView(props) {
 }
 
 function ContactsView(props) {
-  const { contacts, page, totalPages, search, setSearch, runSearch, setEntityPage, openCreate, editContact, openDetail, removeEntity } = props;
+  const { contacts, page, totalPages, search, setSearch, runSearch, setEntityPage, openCreate, editContact, openDetail, removeEntity, canExport } = props;
   return (
     <section>
       <ListPanel>
-        <EntityToolbar kind="contacts" search={search} setSearch={setSearch} runSearch={runSearch} exportPath="/crm/contacts/export.xlsx" onCreate={openCreate} />
+        <EntityToolbar kind="contacts" search={search} setSearch={setSearch} runSearch={runSearch} exportPath="/crm/contacts/export.xlsx" onCreate={openCreate} canExport={canExport} />
         <div className="mt-5 grid gap-3">
           {contacts.length ? contacts.map((contact) => (
             <article
