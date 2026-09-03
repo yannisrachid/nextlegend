@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS transfermarkt_players (
     profile_url TEXT,
     profile_image_url TEXT,
     birth_date DATE,
+    birth_year INT,
     age DOUBLE PRECISION,
     club_id TEXT,
     club_name TEXT,
@@ -813,6 +814,7 @@ def _ensure_player_season_tm_refresh_columns(conn) -> None:
         "tm_profile_url": "TEXT",
         "tm_profile_image_url": "TEXT",
         "tm_birth_date": "TEXT",
+        "tm_birth_year": "INT",
         "tm_age": "DOUBLE PRECISION",
         "tm_club_id": "TEXT",
         "tm_club_name": "TEXT",
@@ -866,6 +868,7 @@ def upsert_transfermarkt_refresh(
         "profile_url",
         "profile_image_url",
         "birth_date",
+        "birth_year",
         "age",
         "club_id",
         "club_name",
@@ -883,6 +886,7 @@ def upsert_transfermarkt_refresh(
             "profile_url": tm.get("tm_profile_url"),
             "profile_image_url": tm.get("tm_profile_image_url"),
             "birth_date": pd.to_datetime(tm.get("tm_birth_date"), errors="coerce").dt.date if "tm_birth_date" in tm else None,
+            "birth_year": pd.to_numeric(tm.get("tm_birth_year"), errors="coerce") if "tm_birth_year" in tm else None,
             "age": pd.to_numeric(tm.get("tm_age"), errors="coerce") if "tm_age" in tm else None,
             "club_id": tm.get("tm_club_id"),
             "club_name": tm.get("tm_club_name"),
@@ -897,6 +901,8 @@ def upsert_transfermarkt_refresh(
             "fetched_at": pd.to_datetime(tm.get("tm_fetched_at"), errors="coerce") if "tm_fetched_at" in tm else None,
         }
     )
+    if "birth_year" in tm_players.columns:
+        tm_players["birth_year"] = pd.to_numeric(tm_players["birth_year"], errors="coerce").astype("Int64")
 
     snapshot_cols = [
         "tm_player_id",
@@ -1012,6 +1018,7 @@ def upsert_transfermarkt_refresh(
                             tm_profile_url = tp.profile_url,
                             tm_profile_image_url = tp.profile_image_url,
                             tm_birth_date = tp.birth_date::TEXT,
+                            tm_birth_year = tp.birth_year,
                             tm_age = tp.age,
                             tm_club_id = tp.club_id,
                             tm_club_name = tp.club_name,

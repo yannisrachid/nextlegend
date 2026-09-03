@@ -852,6 +852,27 @@ def _safe_age(value: object) -> Optional[float]:
     return None
 
 
+def _safe_birth_year(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    text = str(value).strip()
+    if not text:
+        return None
+    match = re.search(r"'(\d{2})\b", text)
+    if not match:
+        match = re.search(r"\b(19\d{2}|20\d{2})\b", text)
+        if match:
+            return int(match.group(1))
+        return None
+    year = int(match.group(1))
+    return 2000 + year if year <= 35 else 1900 + year
+
+
 def _fuzzy_match_within_club(club_profiles: pd.DataFrame, target_name: str, target_age: Optional[float]) -> Optional[str]:
     if club_profiles.empty:
         return None
@@ -1223,6 +1244,8 @@ def _normalize_raw(df: pd.DataFrame) -> pd.DataFrame:
             print(f"[PIPELINE] drop embedded header rows={int(embedded_headers.sum())}")
             df = df.loc[~embedded_headers].copy()
     if "age" in df.columns:
+        if "birth_year" not in df.columns:
+            df["birth_year"] = df["age"].apply(_safe_birth_year)
         df["age"] = df["age"].apply(_safe_age)
     for col in ("competition_name", "calendar", "team", "team_in_selected_period"):
         if col not in df.columns:

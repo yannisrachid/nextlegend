@@ -130,6 +130,7 @@ def build_players_scope(tm_profiles: pd.DataFrame, player_map: pd.DataFrame) -> 
     if not player_map.empty and "tm_player_id" in player_map.columns:
         mapped_ids = set(clean_id(player_map["tm_player_id"]).dropna().astype(str))
 
+    tm_birth_year = pd.to_numeric(tm.get("tm_birth_year"), errors="coerce").astype("Int64")
     output = pd.DataFrame(
         {
             "tm_player_id": tm["tm_player_id"],
@@ -138,6 +139,7 @@ def build_players_scope(tm_profiles: pd.DataFrame, player_map: pd.DataFrame) -> 
             "tm_club_name": tm.get("tm_club_name"),
             "tm_position_main": tm.get("tm_position_main"),
             "tm_birth_date": tm.get("tm_birth_date"),
+            "tm_birth_year": tm_birth_year,
             "tm_citizenship": tm.get("tm_citizenship"),
             "tm_market_value": tm.get("tm_market_value"),
             "tm_market_value_eur": tm.get("tm_market_value_eur"),

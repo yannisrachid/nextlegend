@@ -91,6 +91,49 @@ def parse_date(value: Any) -> Optional[dt.date]:
     return None
 
 
+def parse_birth_year(value: Any) -> Optional[int]:
+    if _is_blank(value):
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            if pd.isna(value):
+                return None
+        except Exception:
+            pass
+        year = int(value)
+        if 1900 <= year <= 2050:
+            return year
+    text = str(value).strip()
+    match = re.search(r"'(\d{2})\b", text)
+    if match:
+        year = int(match.group(1))
+        return 2000 + year if year <= 35 else 1900 + year
+    match = re.search(r"\b(19\d{2}|20\d{2})\b", text)
+    if match:
+        return int(match.group(1))
+    birth = parse_date(text)
+    return birth.year if birth else None
+
+
+def infer_birth_year_candidates(age: Any, calendar: Any = None, reference_year: Optional[int] = None) -> set[int]:
+    if _is_blank(age):
+        return set()
+    birth_year = parse_birth_year(age)
+    if birth_year:
+        return {birth_year}
+    try:
+        age_int = int(float(str(age).strip()))
+    except ValueError:
+        return set()
+    if age_int < 12 or age_int > 50:
+        return set()
+    if reference_year is None:
+        calendar_text = "" if _is_blank(calendar) else str(calendar)
+        years = [int(match) for match in re.findall(r"\b(20\d{2})\b", calendar_text)]
+        reference_year = min(years) if years else dt.datetime.now(dt.timezone.utc).year
+    return {reference_year - age_int, reference_year - age_int - 1}
+
+
 def encoded_birth_date(value: Any) -> str:
     birth = parse_date(value)
     if not birth:
@@ -235,6 +278,7 @@ def prepare_transfermarkt_profiles(raw: pd.DataFrame) -> pd.DataFrame:
     out["tm_agent_name"] = tm[agent_col] if agent_col else pd.NA
     out["tm_name_norm"] = out["tm_player_name"].apply(normalize_name)
     out["tm_birth_key"] = out["tm_birth_date"].apply(encoded_birth_date)
+    out["tm_birth_year"] = out["tm_birth_date"].apply(parse_birth_year)
     out["tm_club_norm"] = out["tm_club_name"].apply(normalize_club)
     out = out[out["tm_player_id"].notna() & ~out["tm_player_id"].astype(str).str.lower().isin(NULL_STRINGS)]
     return out.drop_duplicates(subset=["tm_player_id"], keep="last").reset_index(drop=True)
@@ -244,6 +288,20 @@ def prepare_wyscout_players(raw: pd.DataFrame) -> pd.DataFrame:
     wyscout = raw.copy()
     wyscout["name_norm"] = wyscout["name"].apply(normalize_name)
     wyscout["birth_key"] = wyscout["birth_date"].apply(encoded_birth_date) if "birth_date" in wyscout.columns else "00000"
+    if "birth_year" in wyscout.columns:
+        wyscout["birth_year"] = wyscout["birth_year"].apply(parse_birth_year)
+    elif "birth_date" in wyscout.columns:
+        wyscout["birth_year"] = wyscout["birth_date"].apply(parse_birth_year)
+    else:
+        wyscout["birth_year"] = pd.NA
+    birth_year_candidates = []
+    for _, row in wyscout.iterrows():
+        candidates = infer_birth_year_candidates(row.get("age"), row.get("calendar"))
+        birth_year = parse_birth_year(row.get("birth_year"))
+        if birth_year:
+            candidates.add(birth_year)
+        birth_year_candidates.append(sorted(candidates))
+    wyscout["birth_year_candidates"] = birth_year_candidates
     wyscout["club_norm"] = wyscout["club_name"].apply(normalize_club) if "club_name" in wyscout.columns else ""
     if "age" not in wyscout.columns and "season_age" in wyscout.columns:
         wyscout["age"] = wyscout["season_age"]
@@ -259,6 +317,19 @@ def _birth_score(w_row: pd.Series, tm_row: pd.Series) -> tuple[float, Optional[f
         if w_birth.year == tm_birth.year:
             return 0.82, 0.0
         return 0.0, float(abs(w_birth.year - tm_birth.year))
+
+    tm_year = parse_birth_year(tm_row.get("tm_birth_year")) or (tm_birth.year if tm_birth else None)
+    w_year = parse_birth_year(w_row.get("birth_year"))
+    candidates = set(w_row.get("birth_year_candidates") or [])
+    if w_year:
+        candidates.add(w_year)
+    if tm_year and candidates:
+        if tm_year in candidates:
+            return 0.9, 0.0
+        min_diff = min(abs(int(candidate) - int(tm_year)) for candidate in candidates)
+        if min_diff == 1:
+            return 0.68, 1.0
+        return 0.0, float(min_diff)
 
     w_age = w_row.get("age")
     tm_age = tm_row.get("tm_age")

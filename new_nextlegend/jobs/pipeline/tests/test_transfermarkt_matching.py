@@ -7,6 +7,8 @@ import pandas as pd
 from pipeline.transfermarkt_matching import (
     build_match_candidates,
     encoded_birth_date,
+    infer_birth_year_candidates,
+    parse_birth_year,
     parse_market_value,
     prepare_transfermarkt_profiles,
 )
@@ -20,6 +22,10 @@ class TransfermarktMatchingTests(unittest.TestCase):
         self.assertEqual(parse_market_value("€8.00m"), 8_000_000)
         self.assertEqual(parse_market_value("€250k"), 250_000)
         self.assertEqual(parse_market_value(1250000), 1_250_000)
+
+    def test_birth_year_parser_handles_wyscout_age_label(self) -> None:
+        self.assertEqual(parse_birth_year("'97 (28)"), 1997)
+        self.assertEqual(infer_birth_year_candidates(28, "2026"), {1998, 1997})
 
     def test_prepare_transfermarkt_profiles_normalizes_expected_columns(self) -> None:
         raw = pd.DataFrame(
@@ -98,6 +104,37 @@ class TransfermarktMatchingTests(unittest.TestCase):
         self.assertEqual(matches.iloc[0]["status"], "accepted")
         self.assertEqual(matches.iloc[0]["tm_player_id"], "655637")
         self.assertEqual(matches.iloc[0]["evidence"]["name_pattern"], "abbreviated")
+
+    def test_birth_year_candidate_supports_abbreviated_name_matching(self) -> None:
+        wyscout = pd.DataFrame(
+            {
+                "player_id": [1],
+                "wyscout_id": ["w1"],
+                "name": ["A. Martin"],
+                "birth_year": [2003],
+                "age": [23],
+                "country": ["France"],
+                "club_name": ["Paris FC"],
+                "position": ["CF"],
+            }
+        )
+        tm = pd.DataFrame(
+            {
+                "player_id": ["tm-old", "tm-good"],
+                "player_name": ["Alex Martin", "Alex Martin"],
+                "date_of_birth": ["1993-02-01", "2003-09-12"],
+                "club_name": ["Paris FC", "Paris FC"],
+                "nationality": ["France", "France"],
+                "position": ["Centre-Forward", "Centre-Forward"],
+                "market_value": ["€1m", "€2m"],
+            }
+        )
+
+        matches = build_match_candidates(wyscout, tm)
+        accepted = matches[matches["status"] == "accepted"]
+
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(accepted.iloc[0]["tm_player_id"], "tm-good")
 
 
 if __name__ == "__main__":

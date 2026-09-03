@@ -157,6 +157,7 @@ Important fields:
 - `profile_url`
 - `profile_image_url`
 - `birth_date`
+- `birth_year`
 - `age`
 - `club_id`
 - `club_name`
@@ -230,6 +231,7 @@ Rules:
 - keep totals and per-90 metrics distinct, for example `xg` vs `xg_per_90`;
 - keep snake_case metric names;
 - missing data is `NULL`, never forced to `0`.
+- `birth_year` is intentionally preserved when Wyscout exposes compact age labels such as `'97 (28)`; Transfermarkt matching uses it as a strong identity signal.
 
 The pipeline prunes obsolete metric columns by default with:
 

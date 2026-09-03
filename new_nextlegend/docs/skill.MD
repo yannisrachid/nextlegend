@@ -60,6 +60,7 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Transfermarkt refreshes must first run as dry-run/review when a new scraper export format is introduced.
 - Store monthly market-value history in `transfermarkt_market_value_snapshots`; do not overwrite market values without snapshotting.
 - Store Wyscout/Transfermarkt decisions in `player_transfermarkt_matches`; only `accepted` + `is_primary=true` links can update visible `tm_*` fields.
+- Preserve Wyscout `birth_year` from compact age labels such as `'97 (28)` before converting `age` to numeric values; Transfermarkt matching relies on it.
 - The sibling repos `../players-matcher` and `../transfermarkt-api` are references/producers, not vendored application code.
 - Similarities are top-k per position group; default `SIM_TOPK=10`.
 - Use `PIPELINE_REPLACE_SIMILARITY=1` when rebuilding `player_similarity`.

@@ -126,9 +126,17 @@ def load_wyscout_players(engine, season_label: Optional[str], limit: Optional[in
                 text("SELECT column_name FROM information_schema.columns WHERE table_name = 'player_seasons'")
             ).fetchall()
         }
+        metrics_columns = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name = 'player_metrics'")
+            ).fetchall()
+        }
     player_age = "p.age" if "age" in player_columns else "NULL::DOUBLE PRECISION"
     season_age = "ps.age" if "age" in season_columns else "NULL::DOUBLE PRECISION"
-    age_expr = f"COALESCE({season_age}, {player_age})"
+    metric_age = "pm.age" if "age" in metrics_columns else "NULL::DOUBLE PRECISION"
+    metric_birth_year = "pm.birth_year" if "birth_year" in metrics_columns else "NULL::DOUBLE PRECISION"
+    age_expr = f"COALESCE({season_age}, {player_age}, {metric_age})"
     country_expr = "p.country" if "country" in player_columns else "NULL::TEXT"
     birth_expr = "p.birth_date" if "birth_date" in player_columns else "NULL::DATE"
     params = {}
@@ -153,6 +161,7 @@ def load_wyscout_players(engine, season_label: Optional[str], limit: Optional[in
             p.name,
             {country_expr} AS country,
             {birth_expr} AS birth_date,
+            {metric_birth_year} AS birth_year,
             {age_expr} AS age,
             ps.position,
             COALESCE(c.name, ps.team_in_selected_period) AS club_name,
@@ -169,6 +178,7 @@ def load_wyscout_players(engine, season_label: Optional[str], limit: Optional[in
             ) AS rn
         FROM players p
         LEFT JOIN player_seasons ps ON ps.player_id = p.id
+        LEFT JOIN player_metrics pm ON pm.player_season_id = ps.id
         LEFT JOIN clubs c ON c.id = ps.club_id
         LEFT JOIN competitions comp ON comp.id = ps.competition_id
         {where_clause}
@@ -180,6 +190,7 @@ def load_wyscout_players(engine, season_label: Optional[str], limit: Optional[in
     """.format(
         country_expr=country_expr,
         birth_expr=birth_expr,
+        metric_birth_year=metric_birth_year,
         age_expr=age_expr,
         season_priority=season_priority,
         where_clause=where_clause,

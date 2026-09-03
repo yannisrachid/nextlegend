@@ -95,6 +95,7 @@ The matcher scores:
 
 - normalized player name;
 - exact date of birth when available;
+- birth year when Wyscout only exposes a year/age label;
 - age compatibility as fallback;
 - club-name compatibility;
 - country/citizenship compatibility;
@@ -132,6 +133,14 @@ player_id,player_name,profile_url,profile_image_url,birth_date,age,club_id,club_
 
 The existing profile export with `profile_description` is also supported; birth date and age are parsed from it when needed.
 
+Wyscout often exposes only a compact age label such as:
+
+```text
+'97 (28)
+```
+
+The pipeline preserves the leading year as `birth_year` before converting `age` to a number. If only numeric age is available, the matcher derives a two-year candidate window from the active calendar, for example age `28` in `2026` means `1998` or `1997`.
+
 ## Scope And Mapping Config Files
 
 Generated/auditable files:
@@ -162,6 +171,15 @@ TM_REFRESH_SEASON_LABEL=2026/2027,2026
 ```
 
 This covers European-season competitions and calendar-year competitions in the same monthly Transfermarkt refresh.
+
+Latest local dry-run on September 3, 2026, with `TM_REFRESH_SEASON_LABEL=2026/2027,2026`:
+
+- Wyscout scope: `34,985` players locally;
+- Transfermarkt scope: `38,896` profiles;
+- automatic matches: `15,354`;
+- review candidates: `28,792`.
+
+The main quality ceiling is Wyscout identity depth. More automatic matches require either reliable `birth_year` backfill in `player_metrics` or additional curated competition/club/player mappings.
 
 ## Local Dry Run
 
