@@ -1,0 +1,110 @@
+scrape_enabled,competition_name,competition_country,tm_competition_id,tm_competition_name,tm_country,tm_season_id,wyscout_clubs,mapped_tm_clubs,mapped_tm_club_rate,difficulty,intensity,mapping_status,mapping_methods
+False,Australia. A-League,Australia,,,Australia,,12,12,1.0,6.697,6.697,needs_transfermarkt_competition_id,dict
+False,Belgium. Pro League,Belgium,,,Belgium,,16,16,1.0,7.803,7.803,needs_transfermarkt_competition_id,dict
+False,Bosnia and Herzegovina. Premijer Liga,Bosnia and Herzegovina,,,Bosnia and Herzegovina,,10,10,1.0,6.643,6.643,needs_transfermarkt_competition_id,dict
+False,Brazil. Serie A,Brazil,,,Brazil,,20,20,1.0,7.786,7.786,needs_transfermarkt_competition_id,dict
+False,Brazil. Serie B,Brazil,,,Brazil,,20,20,1.0,6.996,6.996,needs_transfermarkt_competition_id,dict
+False,Chile. Primera B,Chile,,,Chile,,16,16,1.0,6.532,6.532,needs_transfermarkt_competition_id,dict
+False,Colombia. Liga BetPlay,Colombia,,,Colombia,,20,20,1.0,7.261,7.261,needs_transfermarkt_competition_id,dict
+False,Costa Rica. Primera División,Costa Rica,,,Costa Rica,,10,10,1.0,6.662,6.662,needs_transfermarkt_competition_id,dict
+False,Ecuador. Liga Pro,Ecuador,,,Ecuador,,16,16,1.0,7.458,7.458,needs_transfermarkt_competition_id,dict
+False,Ecuador. Liga Pro Serie B,Ecuador,,,Ecuador,,12,12,1.0,6.383,6.383,needs_transfermarkt_competition_id,dict
+False,England. Championship,England,,,England,,24,24,1.0,7.833,7.833,needs_transfermarkt_competition_id,dict
+False,England. Premier League,England,,,England,,20,20,1.0,9.099,9.099,needs_transfermarkt_competition_id,dict
+False,Estonia. Esiliiga A,Estonia,,,Estonia,,10,10,1.0,4.79,4.79,needs_transfermarkt_competition_id,dict
+False,Europe. UEFA Champions League,Europe,,,Europe,,36,36,1.0,8.923,8.923,needs_transfermarkt_competition_id,dict
+False,France. Ligue 1,France,,,France,,18,18,1.0,8.243,8.243,needs_transfermarkt_competition_id,dict
+False,France. Ligue 2,France,,,France,,18,18,1.0,7.117,7.117,needs_transfermarkt_competition_id,dict
+False,France. National 1,France,,,France,,17,17,1.0,6.522,6.522,needs_transfermarkt_competition_id,dict
+False,Georgia. Erovnuli Liga,Georgia,,,Georgia,,10,10,1.0,6.428,6.428,needs_transfermarkt_competition_id,dict
+False,Germany. Bundesliga,Germany,,,Germany,,18,18,1.0,8.459,8.459,needs_transfermarkt_competition_id,dict
+False,Guatemala. Liga Nacional,Guatemala,,,Guatemala,,12,12,1.0,6.79,6.79,needs_transfermarkt_competition_id,dict
+False,Honduras. Liga Nacional,Honduras,,,Honduras,,11,11,1.0,6.889,6.889,needs_transfermarkt_competition_id,dict
+False,Italy. Serie A,Italy,,,Italy,,20,20,1.0,8.384,8.384,needs_transfermarkt_competition_id,dict
+False,Italy. Serie B,Italy,,,Italy,,20,20,1.0,7.242,7.242,needs_transfermarkt_competition_id,dict
+False,Japan. J1 League,Japan,,,Japan,,20,20,1.0,7.456,7.456,needs_transfermarkt_competition_id,dict
+False,Mexico. Liga MX,Mexico,,,Mexico,,18,18,1.0,7.188,7.188,needs_transfermarkt_competition_id,dict
+False,Moldova. Super Liga,Moldova,,,Moldova,,9,9,1.0,5.987,5.987,needs_transfermarkt_competition_id,dict
+False,Netherlands. Eerste Divisie,Netherlands,,,Netherlands,,20,20,1.0,6.646,6.646,needs_transfermarkt_competition_id,dict
+False,Netherlands. Eredivisie,Netherlands,,,Netherlands,,18,18,1.0,7.516,7.516,needs_transfermarkt_competition_id,dict
+False,Nicaragua. Primera Division,Nicaragua,,,Nicaragua,,10,10,1.0,6.079,6.079,needs_transfermarkt_competition_id,dict
+False,Northern Ireland. Premiership,Northern Ireland,,,Northern Ireland,,12,12,1.0,5.583,5.583,needs_transfermarkt_competition_id,dict
+False,Norway. Eliteserien,Norway,,,Norway,,16,16,1.0,7.397,7.397,needs_transfermarkt_competition_id,dict
+False,Panama. LPF,Panama,,,Panama,,13,13,1.0,6.673,6.673,needs_transfermarkt_competition_id,dict
+False,Paraguay. Division Profesional,Paraguay,,,Paraguay,,12,12,1.0,7.142,7.142,needs_transfermarkt_competition_id,dict
+False,Portugal. Primeira Liga,Portugal,,,Portugal,,18,18,1.0,7.749,7.749,needs_transfermarkt_competition_id,dict
+False,Republic of Ireland. First Division,Republic of Ireland,,,Republic of Ireland,,10,10,1.0,5.072,5.072,needs_transfermarkt_competition_id,dict
+False,Scotland. Championship,Scotland,,,Scotland,,10,10,1.0,5.964,5.964,needs_transfermarkt_competition_id,dict
+False,Slovenia. 1. SNL,Slovenia,,,Slovenia,,10,10,1.0,6.933,6.933,needs_transfermarkt_competition_id,dict
+False,Slovenia. 2. SNL,Slovenia,,,Slovenia,,16,16,1.0,5.522,5.522,needs_transfermarkt_competition_id,dict
+False,South Africa. PSL,South Africa,,,South Africa,,16,16,1.0,6.876,6.876,needs_transfermarkt_competition_id,dict
+False,Spain. La Liga,Spain,,,Spain,,20,20,1.0,8.389,8.389,needs_transfermarkt_competition_id,dict
+False,Sweden. Superettan,Sweden,,,Sweden,,16,16,1.0,6.197,6.197,needs_transfermarkt_competition_id,dict
+False,Switzerland. Challenge League,Switzerland,,,Switzerland,,10,10,1.0,6.369,6.369,needs_transfermarkt_competition_id,dict
+False,Switzerland. Super League,Switzerland,,,Switzerland,,12,12,1.0,7.296,7.296,needs_transfermarkt_competition_id,dict
+False,Türkiye. Süper Lig,Türkiye,,,Türkiye,,18,18,1.0,7.517,7.517,needs_transfermarkt_competition_id,dict
+False,United States. MLS,United States,,,United States,,30,30,1.0,7.653,7.653,needs_transfermarkt_competition_id,dict
+False,Uruguay. Primera División,Uruguay,,,Uruguay,,16,16,1.0,7.148,7.148,needs_transfermarkt_competition_id,dict
+False,Venezuela. Primera División,Venezuela,,,Venezuela,,14,14,1.0,6.516,6.516,needs_transfermarkt_competition_id,dict
+False,Wales. Premier League,Wales,,,Wales,,12,12,1.0,5.364,5.364,needs_transfermarkt_competition_id,dict
+False,Europe. UEFA Europa League,Europe,,,Europe,,36,35,0.9722,8.111,8.111,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Argentina. Liga Profesional de Fútbol,Argentina,,,Argentina,,30,29,0.9667,7.573,7.573,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Germany. 3. Liga,Germany,,,Germany,,20,19,0.95,6.963,6.963,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Japan. J2 League,Japan,,,Japan,,20,19,0.95,6.601,6.601,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Portugal. Segunda Liga,Portugal,,,Portugal,,18,17,0.9444,7.067,7.067,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Czech Republic. Chance Liga,Czech Republic,,,Czech Republic,,16,15,0.9375,7.336,7.336,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Serbia. Prva Liga,Serbia,,,Serbia,,16,15,0.9375,5.674,5.674,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Sweden. Allsvenskan,Sweden,,,Sweden,,16,15,0.9375,7.379,7.379,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Tunisia. Ligue 1,Tunisia,,,Tunisia,,16,15,0.9375,6.498,6.498,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Ukraine. Persha Liga,Ukraine,,,Ukraine,,16,15,0.9375,5.276,5.276,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Finland. Veikkausliiga,Finland,,,Finland,,13,12,0.9231,6.416,6.416,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Austria. Bundesliga,Austria,,,Austria,,12,11,0.9167,7.092,7.092,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Azerbaijan. Premyer Liqa,Azerbaijan,,,Azerbaijan,,12,11,0.9167,6.592,6.592,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Denmark. Superliga,Denmark,,,Denmark,,12,11,0.9167,7.614,7.614,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Iceland. Besta-deild karla,Iceland,,,Iceland,,12,11,0.9167,6.35,6.35,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Scotland. Premiership,Scotland,,,Scotland,,12,11,0.9167,7.153,7.153,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Slovakia. Niké Liga,Slovakia,,,Slovakia,,12,11,0.9167,6.623,6.623,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Spain. Segunda División,Spain,,,Spain,,22,20,0.9091,7.295,7.295,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Croatia. Superleague,Croatia,,,Croatia,,10,9,0.9,7.325,7.325,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Jordan. Pro League,Jordan,,,Jordan,,10,9,0.9,6.603,6.603,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Republic of Ireland. Premier Division,Republic of Ireland,,,Republic of Ireland,,10,9,0.9,6.581,6.581,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Türkiye. 1. Lig,Türkiye,,,Türkiye,,20,18,0.9,6.158,6.158,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Peru. Primera División,Peru,,,Peru,,19,17,0.8947,6.842,6.842,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Germany. 2. Bundesliga,Germany,,,Germany,,18,16,0.8889,7.468,7.468,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Poland. Ekstraklasa,Poland,,,Poland,,18,16,0.8889,,,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Saudi Arabia. Pro League,Saudi Arabia,,,Saudi Arabia,,18,16,0.8889,7.182,7.182,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Belgium. Challenger Pro League,Belgium,,,Belgium,,17,15,0.8824,6.394,6.394,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Ukraine. VBET League,Ukraine,,,Ukraine,,17,15,0.8824,6.768,6.768,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Austria. 2. Liga,Austria,,,Austria,,16,14,0.875,6.12,6.12,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Bolivia. LFPB,Bolivia,,,Bolivia,,16,14,0.875,6.992,6.992,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Bulgaria. First League,Bulgaria,,,Bulgaria,,16,14,0.875,6.276,6.276,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Romania. Superliga,Romania,,,Romania,,16,14,0.875,7.032,7.032,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Serbia. Super Liga,Serbia,,,Serbia,,16,14,0.875,6.532,6.532,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Europe. UEFA Europa Conference League,Europe,,,Europe,,36,31,0.8611,7.513,7.513,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Kazakhstan. Premier League,Kazakhstan,,,Kazakhstan,,14,12,0.8571,6.283,6.283,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Korea Republic. K League 1,Korea Republic,,,Korea Republic,,12,10,0.8333,7.198,7.198,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Morocco. Botola Pro,Morocco,,,Morocco,,16,13,0.8125,7.226,7.226,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Russia. Premier League,Russia,,,Russia,,16,13,0.8125,7.351,7.351,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Uzbekistan. Super League,Uzbekistan,,,Uzbekistan,,16,13,0.8125,6.357,6.357,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Cyprus. 1. Division,Cyprus,,,Cyprus,,14,11,0.7857,7.064,7.064,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Egypt. Premier League,Egypt,,,Egypt,,21,16,0.7619,7.086,7.086,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Poland. I Liga,Poland,,,Poland,,18,13,0.7222,6.293,6.293,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Greece. Stoiximan Super League,Greece,,,Greece,,14,10,0.7143,7.273,7.273,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,China PR. China League One,China PR,,,China PR,,16,11,0.6875,4.546,4.546,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Brazil. Serie C,Brazil,,,Brazil,,20,12,0.6,6.474,6.474,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Ukraine. Druha Liga,Ukraine,,,Ukraine,,22,8,0.3636,4.507,4.507,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Greece. Super League 2,Greece,,,Greece,,20,7,0.35,5.755,5.755,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Slovakia. 2. liga,Slovakia,,,Slovakia,,16,5,0.3125,5.732,5.732,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Nigeria. Creative Championship,Nigeria,,,Nigeria,,12,3,0.25,5.159,5.159,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Portugal. Liga 3,Portugal,,,Portugal,,20,5,0.25,6.174,6.174,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,England. League One,England,,,England,,24,4,0.1667,7.162,7.162,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Italy. Serie C,Italy,,,Italy,,60,10,0.1667,6.253,6.253,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Romania. Liga II,Romania,,,Romania,,22,3,0.1364,5.884,5.884,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Netherlands. Derde Divisie,Netherlands,,,Netherlands,,17,2,0.1176,4.437,4.437,needs_transfermarkt_competition_id,dict|dict_unmatched|no_mapping
+False,Saudi Arabia. Division 1,Saudi Arabia,,,Saudi Arabia,,18,2,0.1111,6.022,6.022,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Azerbaijan. Birinci Dasta,Azerbaijan,,,Azerbaijan,,10,1,0.1,5.013,5.013,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,England. League Two,England,,,England,,24,2,0.0833,6.587,6.587,needs_transfermarkt_competition_id,dict|dict_unmatched
+False,Türkiye. 2. Lig,Türkiye,,,Türkiye,,15,1,0.0667,5.317,5.317,needs_transfermarkt_competition_id,dict|dict_unmatched|no_mapping
+False,Canada. Canadian Premier League,Canada,,,Canada,,8,0,0.0,,,needs_transfermarkt_competition_id,no_mapping
+False,Chile. Primera División,Chile,,,Chile,,16,0,0.0,,,needs_transfermarkt_competition_id,no_mapping
+False,China. CSL,China,,,China,,9,0,0.0,,,needs_transfermarkt_competition_id,no_mapping

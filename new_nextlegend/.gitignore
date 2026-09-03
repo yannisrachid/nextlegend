@@ -36,3 +36,4 @@ wyscout_current_season_job/data/seasons/
 !.env.example
 backups/
 new_nextlegend/data/prd_upsert_artifacts_backup_*/
+data/transfermarkt_match_reviews/

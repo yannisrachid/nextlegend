@@ -7,7 +7,7 @@ DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-$ROOT_DIR/infra/compose/docker-compo
 TM_PROFILES_PATH="${TM_PROFILES_PATH:-/helpers/csv/transfermarkt_profiles.csv}"
 TM_PLAYER_MAP_PATH="${TM_PLAYER_MAP_PATH:-/helpers/csv/player_matching_reference.csv}"
 SNAPSHOT_DATE="${TM_SNAPSHOT_DATE:-$(date -u +%F)}"
-SEASON_LABEL="${TM_REFRESH_SEASON_LABEL:-2026/2027}"
+SEASON_LABEL="${TM_REFRESH_SEASON_LABEL:-2026/2027,2026}"
 REVIEW_OUTPUT="${TM_MATCH_REVIEW_OUTPUT:-/data/transfermarkt_match_reviews/}"
 
 cd "$ROOT_DIR"

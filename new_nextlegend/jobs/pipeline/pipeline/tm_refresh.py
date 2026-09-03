@@ -34,8 +34,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--season-label",
-        default=os.getenv("TM_REFRESH_SEASON_LABEL", "2026/2027"),
-        help="Preferred Wyscout season for matching context. Empty means all seasons.",
+        default=os.getenv("TM_REFRESH_SEASON_LABEL", "2026/2027,2026"),
+        help="Preferred Wyscout season labels for matching context, comma/space separated. Empty means all seasons.",
     )
     parser.add_argument("--run-id", default=os.getenv("TM_REFRESH_RUN_ID", str(uuid.uuid4())))
     parser.add_argument("--limit", type=int, default=int(os.getenv("TM_REFRESH_LIMIT", "0") or "0") or None)
@@ -56,6 +56,18 @@ def _clean_id(value) -> Optional[str]:
         pass
     text_value = str(value).strip().replace(".0", "")
     return text_value or None
+
+
+def _split_labels(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    labels: list[str] = []
+    for chunk in str(value).replace(";", ",").replace("|", ",").split(","):
+        for part in chunk.split():
+            part = part.strip()
+            if part and part not in labels:
+                labels.append(part)
+    return labels
 
 
 def apply_curated_player_map(wyscout: pd.DataFrame, player_map_path: str) -> pd.DataFrame:
@@ -91,15 +103,16 @@ def apply_curated_player_map(wyscout: pd.DataFrame, player_map_path: str) -> pd.
     if set(exact_cols).issubset(set(exact_ref_cols)) and exact_cols:
         ref = reference.rename(columns=ref_rename)
         ref = ref[exact_cols + ["tm_player_id"]].dropna().drop_duplicates(subset=exact_cols, keep="last")
-        probe = mapped[exact_cols].merge(ref, on=exact_cols, how="left")
-        mapped["existing_tm_id"] = mapped["existing_tm_id"].fillna(probe["tm_player_id"])
+        probe = mapped[exact_cols].reset_index().merge(ref, on=exact_cols, how="left")
+        mapped_id = probe.drop_duplicates(subset=["index"], keep="last").set_index("index")["tm_player_id"]
+        mapped["existing_tm_id"] = mapped["existing_tm_id"].fillna(mapped.index.to_series().map(mapped_id))
 
     mapped["existing_tm_id"] = mapped["existing_tm_id"].apply(_clean_id)
     return mapped
 
 
 def load_wyscout_players(engine, season_label: Optional[str], limit: Optional[int]) -> pd.DataFrame:
-    season_label = (season_label or "").strip() or None
+    season_labels = _split_labels(season_label)
     with engine.begin() as conn:
         player_columns = {
             row[0]
@@ -118,8 +131,20 @@ def load_wyscout_players(engine, season_label: Optional[str], limit: Optional[in
     age_expr = f"COALESCE({season_age}, {player_age})"
     country_expr = "p.country" if "country" in player_columns else "NULL::TEXT"
     birth_expr = "p.birth_date" if "birth_date" in player_columns else "NULL::DATE"
-    where_clause = "WHERE ps.calendar = :season_label" if season_label else ""
-    season_priority = "CASE WHEN ps.calendar = :season_label THEN 0 ELSE 1 END," if season_label else ""
+    params = {}
+    if season_labels:
+        placeholders = []
+        priority_parts = []
+        for idx, label in enumerate(season_labels):
+            key = f"season_label_{idx}"
+            params[key] = label
+            placeholders.append(f":{key}")
+            priority_parts.append(f"WHEN ps.calendar = :{key} THEN {idx}")
+        where_clause = f"WHERE ps.calendar IN ({', '.join(placeholders)})"
+        season_priority = f"CASE {' '.join(priority_parts)} ELSE {len(season_labels)} END,"
+    else:
+        where_clause = ""
+        season_priority = ""
     sql = """
     WITH ranked AS (
         SELECT
@@ -159,7 +184,6 @@ def load_wyscout_players(engine, season_label: Optional[str], limit: Optional[in
         season_priority=season_priority,
         where_clause=where_clause,
     )
-    params = {"season_label": season_label} if season_label else {}
     if limit:
         sql += " LIMIT :limit"
         params["limit"] = int(limit)

@@ -71,6 +71,34 @@ class TransfermarktMatchingTests(unittest.TestCase):
         self.assertEqual(len(accepted), 1)
         self.assertEqual(accepted.iloc[0]["tm_player_id"], "tm-good")
 
+    def test_abbreviated_wyscout_name_can_match_when_club_is_clear(self) -> None:
+        wyscout = pd.DataFrame(
+            {
+                "player_id": [1],
+                "wyscout_id": ["w1"],
+                "name": ["B. Sánchez"],
+                "birth_date": [None],
+                "age": [None],
+                "country": [None],
+                "club_name": ["Troyes"],
+                "position": ["RW"],
+            }
+        )
+        tm = pd.DataFrame(
+            {
+                "player_id": ["655637"],
+                "player_name": ["Brayan Sánchez"],
+                "club_name": ["Troyes"],
+                "market_value": ["€500k"],
+            }
+        )
+
+        matches = build_match_candidates(wyscout, tm)
+
+        self.assertEqual(matches.iloc[0]["status"], "accepted")
+        self.assertEqual(matches.iloc[0]["tm_player_id"], "655637")
+        self.assertEqual(matches.iloc[0]["evidence"]["name_pattern"], "abbreviated")
+
 
 if __name__ == "__main__":
     unittest.main()

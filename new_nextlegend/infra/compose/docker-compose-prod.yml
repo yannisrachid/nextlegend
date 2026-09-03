@@ -145,7 +145,7 @@ services:
     environment:
       TM_PROFILES_PATH: /helpers/csv/transfermarkt_profiles.csv
       TM_PLAYER_MAP_PATH: /helpers/csv/player_matching_reference.csv
-      TM_REFRESH_SEASON_LABEL: "2026/2027"
+      TM_REFRESH_SEASON_LABEL: "2026/2027,2026"
       TM_MATCH_REVIEW_OUTPUT: /data/transfermarkt_match_reviews/
     depends_on:
       db:

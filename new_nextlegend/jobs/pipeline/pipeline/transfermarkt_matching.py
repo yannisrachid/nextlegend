@@ -131,6 +131,38 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, " ".join(sorted(a.split())), " ".join(sorted(b.split()))).ratio()
 
 
+def _name_similarity(wyscout_name: str, tm_name: str) -> tuple[float, str]:
+    base = _similarity(wyscout_name, tm_name)
+    w_tokens = wyscout_name.split()
+    tm_tokens = tm_name.split()
+    if not w_tokens or not tm_tokens:
+        return base, "empty"
+
+    short_tokens = [tok for tok in w_tokens if len(tok) == 1]
+    long_tokens = [tok for tok in w_tokens if len(tok) > 1]
+    if not short_tokens:
+        return base, "full"
+
+    long_matches = 0
+    for token in long_tokens:
+        if token in tm_tokens or max((_similarity(token, tm_token) for tm_token in tm_tokens), default=0.0) >= 0.88:
+            long_matches += 1
+    initial_matches = 0
+    for token in short_tokens:
+        if any(tm_token.startswith(token) for tm_token in tm_tokens):
+            initial_matches += 1
+
+    long_ok = bool(long_tokens) and long_matches == len(long_tokens)
+    initials_ok = initial_matches == len(short_tokens)
+    same_last_name = bool(long_tokens) and bool(tm_tokens) and _similarity(long_tokens[-1], tm_tokens[-1]) >= 0.9
+
+    if long_ok and initials_ok:
+        return max(base, 0.96 if len(long_tokens) > 1 else 0.94), "abbreviated"
+    if same_last_name and initial_matches:
+        return max(base, 0.92), "abbreviated_partial"
+    return base, "abbreviated_weak"
+
+
 def _first_existing_column(df: pd.DataFrame, candidates: Iterable[str]) -> Optional[str]:
     lower_lookup = {str(col).lower(): col for col in df.columns}
     for candidate in candidates:
@@ -262,7 +294,7 @@ def _position_score(w_row: pd.Series, tm_row: pd.Series) -> float:
 
 
 def score_candidate(w_row: pd.Series, tm_row: pd.Series) -> dict[str, Any]:
-    name_score = _similarity(str(w_row.get("name_norm", "")), str(tm_row.get("tm_name_norm", "")))
+    name_score, name_pattern = _name_similarity(str(w_row.get("name_norm", "")), str(tm_row.get("tm_name_norm", "")))
     club_score = _similarity(str(w_row.get("club_norm", "")), str(tm_row.get("tm_club_norm", ""))) or 0.55
     birth_score, age_diff = _birth_score(w_row, tm_row)
     country_score = _country_score(w_row, tm_row)
@@ -281,10 +313,13 @@ def score_candidate(w_row: pd.Series, tm_row: pd.Series) -> dict[str, Any]:
             + (0.05 * country_score)
             + (0.04 * position_score)
         )
+    if name_pattern in {"abbreviated", "abbreviated_partial"} and club_score >= 0.92 and birth_score >= 0.55:
+        total = max(total, 0.91 if name_pattern == "abbreviated" else 0.88)
 
     return {
         "confidence_score": round(float(total), 4),
         "name_score": round(float(name_score), 4),
+        "name_pattern": name_pattern,
         "birth_score": round(float(birth_score), 4),
         "club_score": round(float(club_score), 4),
         "country_score": round(float(country_score), 4),
