@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from io import StringIO
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import Engine
 
 from . import scoring_v2
@@ -198,6 +198,69 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     message TEXT,
     git_sha TEXT
 );
+
+CREATE TABLE IF NOT EXISTS transfermarkt_players (
+    tm_player_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    profile_url TEXT,
+    profile_image_url TEXT,
+    birth_date DATE,
+    age DOUBLE PRECISION,
+    club_id TEXT,
+    club_name TEXT,
+    position_main TEXT,
+    citizenship TEXT,
+    agent_name TEXT,
+    market_value_eur DOUBLE PRECISION,
+    raw_payload JSONB,
+    fetched_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS transfermarkt_players_name_idx ON transfermarkt_players(name);
+CREATE INDEX IF NOT EXISTS transfermarkt_players_club_idx ON transfermarkt_players(club_id, club_name);
+
+CREATE TABLE IF NOT EXISTS transfermarkt_market_value_snapshots (
+    id SERIAL PRIMARY KEY,
+    tm_player_id TEXT NOT NULL REFERENCES transfermarkt_players(tm_player_id) ON DELETE CASCADE,
+    snapshot_date DATE NOT NULL,
+    market_value_eur DOUBLE PRECISION,
+    market_value_label TEXT,
+    club_id TEXT,
+    club_name TEXT,
+    source TEXT DEFAULT 'transfermarkt-api',
+    raw_payload JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(tm_player_id, snapshot_date)
+);
+CREATE INDEX IF NOT EXISTS transfermarkt_market_value_snapshots_player_date_idx
+    ON transfermarkt_market_value_snapshots(tm_player_id, snapshot_date DESC);
+
+CREATE TABLE IF NOT EXISTS player_transfermarkt_matches (
+    id SERIAL PRIMARY KEY,
+    player_id INT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    wyscout_id TEXT,
+    tm_player_id TEXT NOT NULL REFERENCES transfermarkt_players(tm_player_id) ON DELETE CASCADE,
+    confidence_score DOUBLE PRECISION NOT NULL,
+    score_margin DOUBLE PRECISION,
+    method TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'review',
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    evidence JSONB,
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(player_id, tm_player_id)
+);
+CREATE INDEX IF NOT EXISTS player_transfermarkt_matches_tm_idx
+    ON player_transfermarkt_matches(tm_player_id);
+CREATE INDEX IF NOT EXISTS player_transfermarkt_matches_status_idx
+    ON player_transfermarkt_matches(status, confidence_score DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS player_transfermarkt_matches_primary_player_idx
+    ON player_transfermarkt_matches(player_id)
+    WHERE is_primary IS TRUE;
 
 CREATE TABLE IF NOT EXISTS scoring_snapshot_runs (
     id SERIAL PRIMARY KEY,
@@ -510,6 +573,19 @@ def _execute_upsert(
         conn.execute(text(sql), batch)
 
 
+def _json_payload(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=True, default=str)
+
+
+def _chunked(values: list[int], size: int = 1000):
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
+
 def upsert_dimensions(engine: Engine, competitions: pd.DataFrame, seasons: pd.DataFrame, players: pd.DataFrame, clubs: pd.DataFrame):
     with engine.begin() as conn:
         _execute_upsert(
@@ -729,6 +805,247 @@ def upsert_player_seasons(engine: Engine, fact: pd.DataFrame, ids: dict):
         ).fetchall()
     index = {(r.player_id, r.competition_id, r.season_id, r.club_id): r.id for r in map_rows}
     return index
+
+
+def _ensure_player_season_tm_refresh_columns(conn) -> None:
+    columns = {
+        "tm_player_id": "TEXT",
+        "tm_profile_url": "TEXT",
+        "tm_profile_image_url": "TEXT",
+        "tm_birth_date": "TEXT",
+        "tm_age": "DOUBLE PRECISION",
+        "tm_club_id": "TEXT",
+        "tm_club_name": "TEXT",
+        "tm_position_main": "TEXT",
+        "tm_citizenship": "TEXT",
+        "tm_market_value": "TEXT",
+        "tm_market_value_eur": "DOUBLE PRECISION",
+        "tm_agent_name": "TEXT",
+    }
+    existing = conn.execute(
+        text("SELECT column_name FROM information_schema.columns WHERE table_name = 'player_seasons'")
+    ).fetchall()
+    existing_cols = {row[0] for row in existing}
+    for column, column_type in columns.items():
+        if column not in existing_cols:
+            conn.execute(text(f"ALTER TABLE player_seasons ADD COLUMN {_quote_ident(column)} {column_type}"))
+
+
+def upsert_transfermarkt_refresh(
+    engine: Engine,
+    *,
+    tm_profiles: pd.DataFrame,
+    matches: pd.DataFrame,
+    snapshot_date: dt.date,
+    source: str = "transfermarkt-api",
+    update_player_seasons: bool = True,
+) -> dict[str, int]:
+    """
+    Persist a monthly Transfermarkt refresh and propagate accepted links to the
+    serving tables used by the app.
+    """
+    stats = {
+        "transfermarkt_players": 0,
+        "market_value_snapshots": 0,
+        "matches": 0,
+        "accepted_matches": 0,
+        "updated_player_seasons": 0,
+    }
+    if tm_profiles.empty:
+        print("[DB] Transfermarkt profiles empty; skip refresh.")
+        return stats
+
+    tm = tm_profiles.copy()
+    tm["tm_player_id"] = tm["tm_player_id"].astype("string").str.strip().str.replace(r"\.0$", "", regex=True)
+    tm = tm[tm["tm_player_id"].notna() & (tm["tm_player_id"] != "")]
+    tm = tm.drop_duplicates(subset=["tm_player_id"], keep="last")
+
+    player_cols = [
+        "tm_player_id",
+        "name",
+        "profile_url",
+        "profile_image_url",
+        "birth_date",
+        "age",
+        "club_id",
+        "club_name",
+        "position_main",
+        "citizenship",
+        "agent_name",
+        "market_value_eur",
+        "raw_payload",
+        "fetched_at",
+    ]
+    tm_players = pd.DataFrame(
+        {
+            "tm_player_id": tm["tm_player_id"],
+            "name": tm.get("tm_player_name"),
+            "profile_url": tm.get("tm_profile_url"),
+            "profile_image_url": tm.get("tm_profile_image_url"),
+            "birth_date": pd.to_datetime(tm.get("tm_birth_date"), errors="coerce").dt.date if "tm_birth_date" in tm else None,
+            "age": pd.to_numeric(tm.get("tm_age"), errors="coerce") if "tm_age" in tm else None,
+            "club_id": tm.get("tm_club_id"),
+            "club_name": tm.get("tm_club_name"),
+            "position_main": tm.get("tm_position_main"),
+            "citizenship": tm.get("tm_citizenship"),
+            "agent_name": tm.get("tm_agent_name"),
+            "market_value_eur": pd.to_numeric(tm.get("tm_market_value_eur"), errors="coerce") if "tm_market_value_eur" in tm else None,
+            "raw_payload": [
+                _json_payload({col: row[col] for col in tm.columns if col.startswith("tm_") and pd.notna(row[col])})
+                for _, row in tm.iterrows()
+            ],
+            "fetched_at": pd.to_datetime(tm.get("tm_fetched_at"), errors="coerce") if "tm_fetched_at" in tm else None,
+        }
+    )
+
+    snapshot_cols = [
+        "tm_player_id",
+        "snapshot_date",
+        "market_value_eur",
+        "market_value_label",
+        "club_id",
+        "club_name",
+        "source",
+        "raw_payload",
+    ]
+    snapshots = pd.DataFrame(
+        {
+            "tm_player_id": tm["tm_player_id"],
+            "snapshot_date": snapshot_date,
+            "market_value_eur": pd.to_numeric(tm.get("tm_market_value_eur"), errors="coerce") if "tm_market_value_eur" in tm else None,
+            "market_value_label": tm.get("tm_market_value"),
+            "club_id": tm.get("tm_club_id"),
+            "club_name": tm.get("tm_club_name"),
+            "source": source,
+            "raw_payload": [
+                _json_payload(
+                    {
+                        "tm_player_name": row.get("tm_player_name"),
+                        "tm_market_value": row.get("tm_market_value"),
+                        "tm_club_name": row.get("tm_club_name"),
+                    }
+                )
+                for _, row in tm.iterrows()
+            ],
+        }
+    )
+
+    with engine.begin() as conn:
+        _execute_upsert(
+            conn,
+            "transfermarkt_players",
+            player_cols,
+            tm_players[player_cols].itertuples(index=False, name=None),
+            ["tm_player_id"],
+            [col for col in player_cols if col != "tm_player_id"],
+        )
+        _execute_upsert(
+            conn,
+            "transfermarkt_market_value_snapshots",
+            snapshot_cols,
+            snapshots[snapshot_cols].itertuples(index=False, name=None),
+            ["tm_player_id", "snapshot_date"],
+            [col for col in snapshot_cols if col not in {"tm_player_id", "snapshot_date"}],
+        )
+        stats["transfermarkt_players"] = len(tm_players)
+        stats["market_value_snapshots"] = len(snapshots)
+
+    if not matches.empty:
+        match_cols = [
+            "player_id",
+            "wyscout_id",
+            "tm_player_id",
+            "confidence_score",
+            "score_margin",
+            "method",
+            "status",
+            "is_primary",
+            "evidence",
+        ]
+        match_df = matches.copy()
+        match_df["evidence"] = match_df["evidence"].apply(_json_payload)
+        match_df = match_df[match_cols].drop_duplicates(subset=["player_id", "tm_player_id"], keep="last")
+        accepted_player_ids = (
+            match_df.loc[(match_df["status"] == "accepted") & (match_df["is_primary"] == True), "player_id"]
+            .dropna()
+            .astype(int)
+            .unique()
+            .tolist()
+        )
+        with engine.begin() as conn:
+            for chunk in _chunked(accepted_player_ids):
+                stmt = text(
+                    "UPDATE player_transfermarkt_matches SET is_primary = FALSE, updated_at = NOW() "
+                    "WHERE player_id IN :player_ids"
+                ).bindparams(bindparam("player_ids", expanding=True))
+                conn.execute(stmt, {"player_ids": chunk})
+            _execute_upsert(
+                conn,
+                "player_transfermarkt_matches",
+                match_cols,
+                match_df[match_cols].itertuples(index=False, name=None),
+                ["player_id", "tm_player_id"],
+                [col for col in match_cols if col not in {"player_id", "tm_player_id"}],
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE players p
+                    SET tm_id = m.tm_player_id,
+                        tm_profile_url = tp.profile_url,
+                        updated_at = NOW()
+                    FROM player_transfermarkt_matches m
+                    JOIN transfermarkt_players tp ON tp.tm_player_id = m.tm_player_id
+                    WHERE p.id = m.player_id
+                      AND m.status = 'accepted'
+                      AND m.is_primary IS TRUE
+                    """
+                )
+            )
+            if update_player_seasons:
+                _ensure_player_season_tm_refresh_columns(conn)
+                result = conn.execute(
+                    text(
+                        """
+                        UPDATE player_seasons ps
+                        SET tm_player_id = m.tm_player_id,
+                            tm_profile_url = tp.profile_url,
+                            tm_profile_image_url = tp.profile_image_url,
+                            tm_birth_date = tp.birth_date::TEXT,
+                            tm_age = tp.age,
+                            tm_club_id = tp.club_id,
+                            tm_club_name = tp.club_name,
+                            tm_position_main = tp.position_main,
+                            tm_citizenship = tp.citizenship,
+                            tm_market_value = s.market_value_label,
+                            tm_market_value_eur = s.market_value_eur,
+                            tm_agent_name = tp.agent_name,
+                            updated_at = NOW()
+                        FROM player_transfermarkt_matches m
+                        JOIN transfermarkt_players tp ON tp.tm_player_id = m.tm_player_id
+                        LEFT JOIN transfermarkt_market_value_snapshots s
+                          ON s.tm_player_id = m.tm_player_id
+                         AND s.snapshot_date = :snapshot_date
+                        WHERE ps.player_id = m.player_id
+                          AND m.status = 'accepted'
+                          AND m.is_primary IS TRUE
+                        """
+                    ),
+                    {"snapshot_date": snapshot_date},
+                )
+                stats["updated_player_seasons"] = int(result.rowcount or 0)
+        stats["matches"] = len(match_df)
+        stats["accepted_matches"] = len(accepted_player_ids)
+
+    print(
+        "[DB] Transfermarkt refresh:"
+        f" players={stats['transfermarkt_players']}"
+        f" snapshots={stats['market_value_snapshots']}"
+        f" matches={stats['matches']}"
+        f" accepted={stats['accepted_matches']}"
+        f" player_seasons_updated={stats['updated_player_seasons']}"
+    )
+    return stats
 
 
 def _copy_dataframe(conn, table: str, df: pd.DataFrame, columns: Sequence[str], chunk_size: int = 5000):

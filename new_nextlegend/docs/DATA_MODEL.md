@@ -28,6 +28,9 @@ erDiagram
   player_seasons ||--o{ player_score_snapshots : player_season_id
   player_score_snapshots ||--o{ player_metric_snapshots : score_snapshot_id
 
+  transfermarkt_players ||--o{ transfermarkt_market_value_snapshots : tm_player_id
+  players ||--o{ player_transfermarkt_matches : player_id
+  transfermarkt_players ||--o{ player_transfermarkt_matches : tm_player_id
   players ||--o{ prospects : player_id
   clubs ||--o{ club_needs : club_id
   club_needs ||--o{ club_need_players : club_need_id
@@ -101,6 +104,10 @@ Important fields:
 
 Owned by: pipeline.
 
+Transfermarkt identity rule:
+- `tm_id` and `tm_profile_url` are compatibility fields populated from accepted `player_transfermarkt_matches`.
+- Do not treat them as the full matching audit trail.
+
 ### `player_seasons`
 
 Central fact table. One row represents a player in one club, competition, and season context.
@@ -132,6 +139,79 @@ Scoring v2 compatibility:
 - `global_score_adjusted` stores the final Next Legend score.
 - `assigned_role_pct_global` mirrors the visible final score for legacy consumers.
 - `assigned_role_pct_league` stores same-league/same-season score context.
+
+Owned by: pipeline.
+
+Transfermarkt compatibility rule:
+- dynamic `tm_*` fields are still exposed to API/frontend consumers;
+- monthly refreshes should update them only from accepted primary rows in `player_transfermarkt_matches`;
+- market-value history belongs in `transfermarkt_market_value_snapshots`, not only in `player_seasons`.
+
+### `transfermarkt_players`
+
+Transfermarkt identity dimension keyed by `tm_player_id`.
+
+Important fields:
+- `tm_player_id`
+- `name`
+- `profile_url`
+- `profile_image_url`
+- `birth_date`
+- `age`
+- `club_id`
+- `club_name`
+- `position_main`
+- `citizenship`
+- `agent_name`
+- `market_value_eur`
+- `raw_payload`
+- `fetched_at`
+
+Owned by: pipeline.
+
+### `transfermarkt_market_value_snapshots`
+
+Monthly market-value snapshots.
+
+Effective natural key:
+
+```text
+tm_player_id + snapshot_date
+```
+
+Important fields:
+- `snapshot_date`
+- `market_value_eur`
+- `market_value_label`
+- `club_id`
+- `club_name`
+- `source`
+- `raw_payload`
+
+Owned by: pipeline.
+
+### `player_transfermarkt_matches`
+
+Auditable Wyscout to Transfermarkt matching decisions.
+
+Effective natural key:
+
+```text
+player_id + tm_player_id
+```
+
+Important fields:
+- `confidence_score`
+- `score_margin`
+- `method`
+- `status`
+- `is_primary`
+- `evidence`
+
+Rules:
+- only `status = accepted` and `is_primary = true` rows update visible Transfermarkt fields;
+- ambiguous candidates must stay in `review`;
+- one primary Transfermarkt link is allowed per Wyscout player.
 
 Owned by: pipeline.
 

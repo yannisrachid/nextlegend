@@ -158,7 +158,7 @@ docker compose --env-file .env -f infra/compose/docker-compose-prod.yml up -d --
 
 `git pull --ff-only` is only for synchronizing the VPS checkout with the already-reviewed `main` branch. It is not used for branch integration.
 
-Batch services (`pipeline`, `pipeline-refresh`, `current-season-job`) are behind the `jobs` profile and must never be started by a generic production deploy command.
+Batch services (`pipeline`, `pipeline-refresh`, `transfermarkt-refresh`, `current-season-job`) are behind the `jobs` profile and must never be started by a generic production deploy command.
 
 Restart only API and frontend:
 ```bash
@@ -171,6 +171,7 @@ Logs:
 docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f api
 docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f frontend
 docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f pipeline-refresh
+docker compose --env-file .env -f infra/compose/docker-compose-prod.yml logs -f transfermarkt-refresh
 ```
 
 ## Production Performance Requirements
@@ -280,6 +281,50 @@ PRD current-season enriched load:
 cd ~/nextlegend/new_nextlegend
 DOCKER_COMPOSE_FILE=infra/compose/docker-compose-prod.yml \
 ./scripts/load_current_season_enriched.sh
+```
+
+## Transfermarkt Monthly Refresh
+
+Transfermarkt scraping is produced outside this repo by `../transfermarkt-api`.
+The matcher reference is `../players-matcher`, but Next Legend stores its own auditable matching and snapshot tables.
+
+Expected CSV in this repo:
+
+```text
+helpers/csv/transfermarkt_profiles.csv
+```
+
+Local dry-run before a new export format or large rematch:
+
+```bash
+cd /Users/yannis/ylfc/new_nextlegend
+docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm \
+  -e TM_REFRESH_DRY_RUN=1 \
+  -e TM_MATCH_REVIEW_OUTPUT=/data/transfermarkt_match_reviews/ \
+  transfermarkt-refresh
+```
+
+Local write:
+
+```bash
+cd /Users/yannis/ylfc/new_nextlegend
+./scripts/run_transfermarkt_monthly_refresh.sh
+```
+
+Production write after `main` has been deployed:
+
+```bash
+cd ~/nextlegend/new_nextlegend
+docker compose --env-file .env -f infra/compose/docker-compose-prod.yml run --rm transfermarkt-refresh
+```
+
+Validation:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT snapshot_date, COUNT(*) FROM transfermarkt_market_value_snapshots GROUP BY snapshot_date ORDER BY snapshot_date DESC LIMIT 5;"'
+docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT status, COUNT(*) FROM player_transfermarkt_matches GROUP BY status ORDER BY status;"'
 ```
 
 ## Monitoring

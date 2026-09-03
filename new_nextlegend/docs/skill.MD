@@ -56,6 +56,11 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Input can be raw Wyscout CSV or enriched data via `PIPELINE_INPUT_KIND=raw|enriched`.
 - Transfermarkt matching uses curated references in `helpers/csv` before fuzzy fallback.
 - Keep fuzzy matching conservative: reject ambiguous weak-token matches.
+- Monthly Transfermarkt refreshes use `pipeline.tm_refresh` and `docs/TRANSFERMARKT_REFRESH.md`.
+- Transfermarkt refreshes must first run as dry-run/review when a new scraper export format is introduced.
+- Store monthly market-value history in `transfermarkt_market_value_snapshots`; do not overwrite market values without snapshotting.
+- Store Wyscout/Transfermarkt decisions in `player_transfermarkt_matches`; only `accepted` + `is_primary=true` links can update visible `tm_*` fields.
+- The sibling repos `../players-matcher` and `../transfermarkt-api` are references/producers, not vendored application code.
 - Similarities are top-k per position group; default `SIM_TOPK=10`.
 - Use `PIPELINE_REPLACE_SIMILARITY=1` when rebuilding `player_similarity`.
 - Current-season score snapshots are pipeline-owned and enabled through `SCORE_SNAPSHOT_ENABLED=1`.
@@ -71,7 +76,7 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Keep `player_seasons` as the central fact table.
 - Keep metrics in `player_metrics` and role fits in `role_scores`.
 - Keep in-season score tracking in `scoring_snapshot_runs`, `player_score_snapshots`, and `player_metric_snapshots`.
-- Store Transfermarkt fields on `player_seasons` as `tm_*`; keep stable TM IDs/URLs on `players`.
+- Store Transfermarkt snapshots/matches in dedicated tables, then propagate accepted primary links to compatibility `tm_*` fields on `player_seasons`; keep stable TM IDs/URLs on `players`.
 - Add indexes for new API query paths.
 - Prefer idempotent schema changes and additive migrations.
 - Do not delete historical seasons during routine refreshes.

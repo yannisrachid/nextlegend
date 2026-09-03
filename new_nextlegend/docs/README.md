@@ -7,9 +7,10 @@ Read order:
 2. `docs/DATA_MODEL.md` - serving database model and table ownership.
 3. `docs/SCORING_MODEL_WORKSHOP.md` - workshop template for rebuilding position-group scoring.
 4. `docs/SCORING_MODEL_V2_IMPLEMENTATION.md` - implemented scoring v2, DB cleanup, local/prod rollout, and refresh policy.
-5. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
-6. `docs/CRM_INTEGRATION.md` - CRM model, Neon migration, local and prod verification.
-7. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
+5. `docs/TRANSFERMARKT_REFRESH.md` - monthly Transfermarkt refresh, matching, snapshots, and review flow.
+6. `docs/VPS_CICD.md` - VPS, Docker, deployment, refresh, and CI/CD policy.
+7. `docs/CRM_INTEGRATION.md` - CRM model, Neon migration, local and prod verification.
+8. `docs/PROJECT_HISTORY.md` - useful project history and current product context.
 
 Project snapshot:
 - Frontend: Next.js in `apps/frontend`, served at `app.nextlegend.fr`.
@@ -26,7 +27,7 @@ Key invariants:
 - Frontend auth waits for `GET /auth/me`; do not redirect while auth is loading.
 - Pipeline writes `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, and `pipeline_runs`.
 - Scoring v2 uses position groups, not tactical role assignment. Legacy `assigned_role` fields now contain the position group for API compatibility.
-- Transfermarkt fields are stored as `tm_*` columns on `player_seasons` and `tm_id` / `tm_profile_url` on `players`.
+- Transfermarkt identity, market-value snapshots, and matching decisions are stored in dedicated `transfermarkt_*` / `player_transfermarkt_matches` tables, then propagated to `tm_*` compatibility fields on `player_seasons` and `players`.
 - Do not run the full raw pipeline on the current VPS; use local-compute then PRD-load.
 
 Quick commands:
@@ -36,6 +37,9 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
 
 # dev pipeline refresh from data/wyscout_players_final.csv
 docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
+
+# monthly Transfermarkt refresh from helpers/csv/transfermarkt_profiles.csv
+./scripts/run_transfermarkt_monthly_refresh.sh
 
 # prod health checks
 curl -I https://api.nextlegend.fr/

@@ -135,6 +135,27 @@ services:
       - ../../helpers/csv:/helpers/csv:ro
     entrypoint: ["python", "-m", "pipeline.run"]
 
+  transfermarkt-refresh:
+    profiles: ["jobs"]
+    build:
+      context: ../../jobs/pipeline
+      dockerfile: ../../jobs/pipeline/Dockerfile
+    env_file:
+      - ../../.env
+    environment:
+      TM_PROFILES_PATH: /helpers/csv/transfermarkt_profiles.csv
+      TM_PLAYER_MAP_PATH: /helpers/csv/player_matching_reference.csv
+      TM_REFRESH_SEASON_LABEL: "2026/2027"
+      TM_MATCH_REVIEW_OUTPUT: /data/transfermarkt_match_reviews/
+    depends_on:
+      db:
+        condition: service_started
+    volumes:
+      - ../../jobs/pipeline:/app
+      - ../../data:/data
+      - ../../helpers/csv:/helpers/csv:ro
+    entrypoint: ["python", "-m", "pipeline.tm_refresh"]
+
   current-season-job:
     profiles: ["jobs"]
     build:
