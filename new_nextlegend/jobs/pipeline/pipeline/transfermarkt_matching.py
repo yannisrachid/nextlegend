@@ -131,7 +131,8 @@ def infer_birth_year_candidates(age: Any, calendar: Any = None, reference_year: 
         calendar_text = "" if _is_blank(calendar) else str(calendar)
         years = [int(match) for match in re.findall(r"\b(20\d{2})\b", calendar_text)]
         reference_year = min(years) if years else dt.datetime.now(dt.timezone.utc).year
-    return {reference_year - age_int, reference_year - age_int - 1}
+    estimated_birth_year = reference_year - age_int
+    return {estimated_birth_year - 1, estimated_birth_year, estimated_birth_year + 1}
 
 
 def encoded_birth_date(value: Any) -> str:

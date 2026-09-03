@@ -25,7 +25,7 @@ class TransfermarktMatchingTests(unittest.TestCase):
 
     def test_birth_year_parser_handles_wyscout_age_label(self) -> None:
         self.assertEqual(parse_birth_year("'97 (28)"), 1997)
-        self.assertEqual(infer_birth_year_candidates(28, "2026"), {1998, 1997})
+        self.assertEqual(infer_birth_year_candidates(28, "2026"), {1997, 1998, 1999})
 
     def test_prepare_transfermarkt_profiles_normalizes_expected_columns(self) -> None:
         raw = pd.DataFrame(

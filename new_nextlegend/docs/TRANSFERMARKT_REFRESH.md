@@ -139,7 +139,7 @@ Wyscout often exposes only a compact age label such as:
 '97 (28)
 ```
 
-The pipeline preserves the leading year as `birth_year` before converting `age` to a number. If only numeric age is available, the matcher derives a two-year candidate window from the active calendar, for example age `28` in `2026` means `1998` or `1997`.
+The pipeline preserves the leading year as `birth_year` before converting `age` to a number. If only numeric age is available, the matcher derives a narrow three-year candidate window from the active calendar, for example age `28` in `2026` means `1997`, `1998`, or `1999`.
 
 ## Scope And Mapping Config Files
 
