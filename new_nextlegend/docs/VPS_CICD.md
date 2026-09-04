@@ -294,6 +294,60 @@ Expected CSV in this repo:
 helpers/csv/transfermarkt_profiles.csv
 ```
 
+Generate a fresh local roster export from the Transfermarkt scraper before the monthly refresh:
+
+```bash
+cd /Users/yannis/ylfc/new_nextlegend
+docker build -t nextlegend-transfermarkt-api ../transfermarkt-api
+docker run --rm \
+  -v /Users/yannis/ylfc/new_nextlegend:/workspace \
+  -v /Users/yannis/ylfc/transfermarkt-api:/tm-api \
+  -w /workspace \
+  nextlegend-transfermarkt-api \
+  python scripts/scrape_transfermarkt_api_profiles.py \
+    --api-dir /tm-api \
+    --season-id current \
+    --club-workers 4 \
+    --profile-workers 4 \
+    --delay 0.25 \
+    --skip-profiles \
+    --output helpers/csv/transfermarkt_profiles.csv \
+    --roster-output helpers/csv/transfermarkt_club_rosters.csv \
+    --errors-output helpers/csv/transfermarkt_scrape_errors.csv \
+    --cache-dir data/transfermarkt_api_cache
+PYTHONPATH=jobs/pipeline python scripts/build_transfermarkt_scope_configs.py
+```
+
+The profile enrichment path exists in the same script, but individual player profile pages can return `403` under aggressive parallelism. For the monthly value refresh, the club roster endpoint is the reliable source because it already exposes Transfermarkt ID, current club, position, date of birth, age, nationality, contract, and market value.
+
+Optional slow profile enrichment, only after roster refresh:
+
+```bash
+docker run --rm \
+  -v /Users/yannis/ylfc/new_nextlegend:/workspace \
+  -v /Users/yannis/ylfc/transfermarkt-api:/tm-api \
+  -w /workspace \
+  nextlegend-transfermarkt-api \
+  python scripts/enrich_transfermarkt_profiles_slow.py \
+    --api-dir /tm-api \
+    --input helpers/csv/transfermarkt_profiles.csv \
+    --output helpers/csv/transfermarkt_profiles.csv \
+    --errors-output helpers/csv/transfermarkt_profile_enrichment_errors.csv \
+    --blocked-output helpers/csv/transfermarkt_profile_enrichment_blocked.csv \
+    --cache-dir data/transfermarkt_api_cache \
+    --workers 1 \
+    --delay 10 \
+    --retries 2 \
+    --checkpoint-every 25 \
+    --batch-size 10 \
+    --cooldown-min-sample 10 \
+    --cooldown-forbidden-rate 0.2 \
+    --cooldown-seconds 1800 \
+    --stop-after-forbidden 30
+```
+
+`403 Forbidden` profile responses are written to `transfermarkt_profile_enrichment_blocked.csv` and skipped on later runs. Retry them only with `--retry-blocked` after the browser/IP is no longer blocked.
+
 Local dry-run before a new export format or large rematch:
 
 ```bash

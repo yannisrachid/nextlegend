@@ -252,6 +252,7 @@ def prepare_transfermarkt_profiles(raw: pd.DataFrame) -> pd.DataFrame:
     market_value_col = _first_existing_column(tm, ["tm_market_value", "market_value", "marketvalue"])
     agent_col = _first_existing_column(tm, ["tm_agent_name", "agent_name"])
     description_col = _first_existing_column(tm, ["profile_description", "description"])
+    fetched_at_col = _first_existing_column(tm, ["tm_fetched_at", "fetched_at", "profile_updated_at"])
 
     out = pd.DataFrame(index=tm.index)
     out["tm_player_id"] = tm[id_col].astype("string").str.strip().str.replace(r"\.0$", "", regex=True)
@@ -277,6 +278,7 @@ def prepare_transfermarkt_profiles(raw: pd.DataFrame) -> pd.DataFrame:
     out["tm_market_value"] = tm[market_value_col] if market_value_col else pd.NA
     out["tm_market_value_eur"] = out["tm_market_value"].apply(parse_market_value)
     out["tm_agent_name"] = tm[agent_col] if agent_col else pd.NA
+    out["tm_fetched_at"] = tm[fetched_at_col] if fetched_at_col else pd.NA
     out["tm_name_norm"] = out["tm_player_name"].apply(normalize_name)
     out["tm_birth_key"] = out["tm_birth_date"].apply(encoded_birth_date)
     out["tm_birth_year"] = out["tm_birth_date"].apply(parse_birth_year)

@@ -33,6 +33,62 @@ For monthly valuation refreshes, prefer club/competition driven scraping:
 3. scrape club players;
 4. enrich missing details through player profile/market-value endpoints.
 
+In practice, the fastest reliable monthly source refresh is:
+
+```bash
+docker build -t nextlegend-transfermarkt-api ../transfermarkt-api
+docker run --rm \
+  -v /Users/yannis/ylfc/new_nextlegend:/workspace \
+  -v /Users/yannis/ylfc/transfermarkt-api:/tm-api \
+  -w /workspace \
+  nextlegend-transfermarkt-api \
+  python scripts/scrape_transfermarkt_api_profiles.py \
+    --api-dir /tm-api \
+    --season-id current \
+    --club-workers 4 \
+    --profile-workers 4 \
+    --delay 0.25 \
+    --skip-profiles \
+    --output helpers/csv/transfermarkt_profiles.csv \
+    --roster-output helpers/csv/transfermarkt_club_rosters.csv \
+    --errors-output helpers/csv/transfermarkt_scrape_errors.csv \
+    --cache-dir data/transfermarkt_api_cache
+PYTHONPATH=jobs/pipeline python scripts/build_transfermarkt_scope_configs.py
+./scripts/run_transfermarkt_monthly_refresh.sh
+```
+
+`--season-id current` lets Transfermarkt pick the current roster per club. This is important because European and calendar-year leagues do not share the same Transfermarkt `season_id`.
+
+Use conservative concurrency. Club rosters are stable around `--club-workers 4 --delay 0.25`; more aggressive runs triggered Transfermarkt `403` responses. Full player-profile enrichment is resumable through `data/transfermarkt_api_cache`, but it should be run separately and slowly because individual profile pages are more aggressively rate-limited.
+
+Optional slow profile enrichment after the roster refresh:
+
+```bash
+docker run --rm \
+  -v /Users/yannis/ylfc/new_nextlegend:/workspace \
+  -v /Users/yannis/ylfc/transfermarkt-api:/tm-api \
+  -w /workspace \
+  nextlegend-transfermarkt-api \
+  python scripts/enrich_transfermarkt_profiles_slow.py \
+    --api-dir /tm-api \
+    --input helpers/csv/transfermarkt_profiles.csv \
+    --output helpers/csv/transfermarkt_profiles.csv \
+    --errors-output helpers/csv/transfermarkt_profile_enrichment_errors.csv \
+    --blocked-output helpers/csv/transfermarkt_profile_enrichment_blocked.csv \
+    --cache-dir data/transfermarkt_api_cache \
+    --workers 1 \
+    --delay 10 \
+    --retries 2 \
+    --checkpoint-every 25 \
+    --batch-size 10 \
+    --cooldown-min-sample 10 \
+    --cooldown-forbidden-rate 0.2 \
+    --cooldown-seconds 1800 \
+    --stop-after-forbidden 30
+```
+
+The profile enricher does not retry `403 Forbidden` immediately. It records those IDs in `transfermarkt_profile_enrichment_blocked.csv`, skips them on later runs by default, and checkpoints the output CSV regularly. Use `--retry-blocked` only after the browser/IP is no longer blocked.
+
 ## Current Mapping Problem
 
 The previous flow wrote Transfermarkt fields directly into `players` and `player_seasons`:

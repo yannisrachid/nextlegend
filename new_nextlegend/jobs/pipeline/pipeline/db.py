@@ -370,6 +370,7 @@ CREATE INDEX IF NOT EXISTS club_need_players_order_idx ON club_need_players(club
 def ensure_schema(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(text(SCHEMA_SQL))
+        _ensure_transfermarkt_refresh_columns(conn)
 
 
 def truncate_fact_tables(engine: Engine) -> None:
@@ -579,7 +580,24 @@ def _json_payload(value):
         return None
     if isinstance(value, str):
         return value
-    return json.dumps(value, ensure_ascii=True, default=str)
+
+    def _clean_json(item):
+        if isinstance(item, dict):
+            return {str(key): _clean_json(val) for key, val in item.items()}
+        if isinstance(item, (list, tuple, set)):
+            return [_clean_json(val) for val in item]
+        if isinstance(item, np.generic):
+            item = item.item()
+        try:
+            if pd.isna(item):
+                return None
+        except Exception:
+            pass
+        if isinstance(item, float) and not np.isfinite(item):
+            return None
+        return item
+
+    return json.dumps(_clean_json(value), ensure_ascii=True, allow_nan=False, default=str)
 
 
 def _chunked(values: list[int], size: int = 1000):
@@ -825,12 +843,37 @@ def _ensure_player_season_tm_refresh_columns(conn) -> None:
         "tm_agent_name": "TEXT",
     }
     existing = conn.execute(
-        text("SELECT column_name FROM information_schema.columns WHERE table_name = 'player_seasons'")
+        text(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'player_seasons'"
+        )
     ).fetchall()
-    existing_cols = {row[0] for row in existing}
+    existing_cols = {row[0]: row[1] for row in existing}
     for column, column_type in columns.items():
         if column not in existing_cols:
             conn.execute(text(f"ALTER TABLE player_seasons ADD COLUMN {_quote_ident(column)} {column_type}"))
+    if existing_cols.get("tm_market_value") not in {None, "text"}:
+        conn.execute(text("ALTER TABLE player_seasons ALTER COLUMN tm_market_value TYPE TEXT USING tm_market_value::TEXT"))
+
+
+def _ensure_transfermarkt_refresh_columns(conn) -> None:
+    table_columns = {
+        "transfermarkt_players": {
+            "birth_year": "INT",
+        },
+    }
+    for table, columns in table_columns.items():
+        existing = conn.execute(
+            text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = :table"
+            ),
+            {"table": table},
+        ).fetchall()
+        existing_cols = {row[0] for row in existing}
+        for column, column_type in columns.items():
+            if column not in existing_cols:
+                conn.execute(text(f"ALTER TABLE {_quote_ident(table)} ADD COLUMN {_quote_ident(column)} {column_type}"))
 
 
 def upsert_transfermarkt_refresh(
@@ -945,6 +988,28 @@ def upsert_transfermarkt_refresh(
             ["tm_player_id"],
             [col for col in player_cols if col != "tm_player_id"],
         )
+        current_tm_ids = [{"tm_player_id": str(player_id)} for player_id in tm_players["tm_player_id"].dropna().astype(str).unique()]
+        conn.execute(text("CREATE TEMP TABLE _tm_refresh_current_ids (tm_player_id TEXT PRIMARY KEY) ON COMMIT DROP"))
+        if current_tm_ids:
+            conn.execute(
+                text("INSERT INTO _tm_refresh_current_ids (tm_player_id) VALUES (:tm_player_id) ON CONFLICT DO NOTHING"),
+                current_tm_ids,
+            )
+            conn.execute(
+                text(
+                    """
+                    DELETE FROM transfermarkt_market_value_snapshots s
+                    WHERE s.snapshot_date = :snapshot_date
+                      AND s.source = :source
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM _tm_refresh_current_ids ids
+                          WHERE ids.tm_player_id = s.tm_player_id
+                      )
+                    """
+                ),
+                {"snapshot_date": snapshot_date, "source": source},
+            )
         _execute_upsert(
             conn,
             "transfermarkt_market_value_snapshots",
@@ -993,8 +1058,8 @@ def upsert_transfermarkt_refresh(
                 ["player_id", "tm_player_id"],
                 [col for col in match_cols if col not in {"player_id", "tm_player_id"}],
             )
-            conn.execute(
-                text(
+            for chunk in _chunked(accepted_player_ids):
+                stmt = text(
                     """
                     UPDATE players p
                     SET tm_id = m.tm_player_id,
@@ -1003,15 +1068,17 @@ def upsert_transfermarkt_refresh(
                     FROM player_transfermarkt_matches m
                     JOIN transfermarkt_players tp ON tp.tm_player_id = m.tm_player_id
                     WHERE p.id = m.player_id
+                      AND p.id IN :player_ids
                       AND m.status = 'accepted'
                       AND m.is_primary IS TRUE
                     """
-                )
-            )
+                ).bindparams(bindparam("player_ids", expanding=True))
+                conn.execute(stmt, {"player_ids": chunk})
             if update_player_seasons:
                 _ensure_player_season_tm_refresh_columns(conn)
-                result = conn.execute(
-                    text(
+                updated_player_seasons = 0
+                for chunk in _chunked(accepted_player_ids):
+                    stmt = text(
                         """
                         UPDATE player_seasons ps
                         SET tm_player_id = m.tm_player_id,
@@ -1034,13 +1101,14 @@ def upsert_transfermarkt_refresh(
                           ON s.tm_player_id = m.tm_player_id
                          AND s.snapshot_date = :snapshot_date
                         WHERE ps.player_id = m.player_id
+                          AND ps.player_id IN :player_ids
                           AND m.status = 'accepted'
                           AND m.is_primary IS TRUE
                         """
-                    ),
-                    {"snapshot_date": snapshot_date},
-                )
-                stats["updated_player_seasons"] = int(result.rowcount or 0)
+                    ).bindparams(bindparam("player_ids", expanding=True))
+                    result = conn.execute(stmt, {"snapshot_date": snapshot_date, "player_ids": chunk})
+                    updated_player_seasons += int(result.rowcount or 0)
+                stats["updated_player_seasons"] = updated_player_seasons
         stats["matches"] = len(match_df)
         stats["accepted_matches"] = len(accepted_player_ids)
 
