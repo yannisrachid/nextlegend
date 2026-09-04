@@ -721,11 +721,19 @@ class CrmProspectPayload(BaseModel):
 
 
 AUTH_COOKIE_NAME = "nl_session"
-DEFAULT_SESSION_DAYS = 365
+DEFAULT_SESSION_DAYS = 30
 PASSWORD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
 LEGACY_SHA256 = "sha256"
 ADMIN_USERNAME = "yrachid"
 CURRENT_SEASON_LABEL = os.getenv("CURRENT_SEASON_LABEL", "2025/2026")
+
+
+def _auth_session_days() -> int:
+    try:
+        configured = int(os.getenv("AUTH_SESSION_DAYS", DEFAULT_SESSION_DAYS))
+    except (TypeError, ValueError):
+        configured = DEFAULT_SESSION_DAYS
+    return max(1, min(configured, DEFAULT_SESSION_DAYS))
 
 
 def _season_bounds(label: Optional[str]) -> tuple[int, int]:
@@ -1415,9 +1423,9 @@ def _smtp_configured() -> bool:
     return bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_FROM_EMAIL"))
 
 
-def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
+def _send_email(to_email: str, subject: str, body_lines: list[str]) -> bool:
     if not _smtp_configured():
-        print(f"[auth] SMTP not configured. Password reset link for {to_email}: {reset_url}")
+        print(f"[auth] SMTP not configured. Email to {to_email}: {subject}")
         return False
 
     host = os.getenv("SMTP_HOST", "")
@@ -1430,20 +1438,10 @@ def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
     use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 
     message = EmailMessage()
-    message["Subject"] = "Reset your Next Legend password"
+    message["Subject"] = subject
     message["From"] = f"{from_name} <{from_email}>"
     message["To"] = to_email
-    message.set_content(
-        "\n".join(
-            [
-                "A password reset was requested for your Next Legend account.",
-                "",
-                f"Reset link: {reset_url}",
-                "",
-                "This link expires in 30 minutes. If you did not request this, you can ignore this email.",
-            ]
-        )
-    )
+    message.set_content("\n".join(body_lines))
 
     context = ssl.create_default_context()
     if use_ssl:
@@ -1459,6 +1457,67 @@ def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
                 server.login(username, password)
             server.send_message(message)
     return True
+
+
+def _send_password_reset_email(to_email: str, reset_url: str) -> bool:
+    if not _smtp_configured():
+        print(f"[auth] SMTP not configured. Password reset link for {to_email}: {reset_url}")
+        return False
+    return _send_email(
+        to_email,
+        "Reset your Next Legend password",
+        [
+            "A password reset was requested for your Next Legend account.",
+            "",
+            f"Reset link: {reset_url}",
+            "",
+            "This link expires in 30 minutes. If you did not request this, you can ignore this email.",
+        ],
+    )
+
+
+def _send_password_setup_email(to_email: str, username: str, setup_url: str) -> bool:
+    if not _smtp_configured():
+        print(f"[auth] SMTP not configured. Password setup link for {to_email} ({username}): {setup_url}")
+        return False
+    return _send_email(
+        to_email,
+        "Set up your Next Legend account",
+        [
+            "Your Next Legend account has been created.",
+            "",
+            f"Username: {username}",
+            f"Set your password: {setup_url}",
+            "",
+            "This link expires in 7 days. Once your password is set, you will be signed in automatically.",
+        ],
+    )
+
+
+def _create_session_response(session: Session, user: dict[str, Any]) -> JSONResponse:
+    session_id = secrets.token_urlsafe(32)
+    session_days = _auth_session_days()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=session_days)
+    session.execute(
+        text(
+            """
+            INSERT INTO auth_sessions (id, user_id, created_at, last_seen, expires_at)
+            VALUES (:id, :user_id, NOW(), NOW(), :expires_at)
+            """
+        ),
+        {"id": session_id, "user_id": user["username"], "expires_at": expires_at},
+    )
+    response = JSONResponse({"user": user})
+    secure_cookie = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        session_id,
+        httponly=True,
+        samesite="lax",
+        secure=secure_cookie,
+        max_age=session_days * 24 * 60 * 60,
+    )
+    return response
 
 
 def _authenticate_user(session: Session, username: str, password: str) -> Optional[dict[str, str]]:
@@ -1772,7 +1831,7 @@ class AdminUserList(BaseModel):
 
 class AdminUserCreate(BaseModel):
     username: str
-    password: str
+    password: Optional[str] = None
     display_name: Optional[str] = None
     email: Optional[str] = None
     role: Optional[str] = "user"
@@ -1843,29 +1902,8 @@ def auth_login(payload: AuthLoginRequest, session: Session = Depends(get_session
             text("UPDATE ai_conversations SET user_id = :new_id WHERE user_id = :old_id"),
             {"new_id": user["username"], "old_id": payload.legacy_user_id},
         )
-    session_id = secrets.token_urlsafe(32)
-    session_days = int(os.getenv("AUTH_SESSION_DAYS", DEFAULT_SESSION_DAYS))
-    expires_at = datetime.now(timezone.utc) + timedelta(days=session_days)
-    session.execute(
-        text(
-            """
-            INSERT INTO auth_sessions (id, user_id, created_at, last_seen, expires_at)
-            VALUES (:id, :user_id, NOW(), NOW(), :expires_at)
-            """
-        ),
-        {"id": session_id, "user_id": user["username"], "expires_at": expires_at},
-    )
+    response = _create_session_response(session, user)
     session.commit()
-    response = JSONResponse({"user": user})
-    secure_cookie = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
-    response.set_cookie(
-        AUTH_COOKIE_NAME,
-        session_id,
-        httponly=True,
-        samesite="lax",
-        secure=secure_cookie,
-        max_age=session_days * 24 * 60 * 60,
-    )
     return response
 
 
@@ -2071,18 +2109,20 @@ def auth_reset_password(payload: AuthPasswordResetRequest, session: Session = De
     ).fetchone()
     if not row:
         raise HTTPException(status_code=400, detail="Reset link is invalid or expired")
-    session.execute(
+    user_row = session.execute(
         text(
             """
             UPDATE auth_users
             SET password_hash = :password_hash,
                 password_algo = 'bcrypt',
-                updated_at = NOW()
+                updated_at = NOW(),
+                last_login = NOW()
             WHERE username = :username
+            RETURNING username, display_name, email, role
             """
         ),
         {"username": row.user_id, "password_hash": _hash_password(payload.new_password, "bcrypt")},
-    )
+    ).fetchone()
     session.execute(
         text("UPDATE auth_password_reset_tokens SET used_at = NOW() WHERE token_hash = :token_hash"),
         {"token_hash": row.token_hash},
@@ -2091,8 +2131,12 @@ def auth_reset_password(payload: AuthPasswordResetRequest, session: Session = De
         text("DELETE FROM auth_sessions WHERE user_id = :username"),
         {"username": row.user_id},
     )
+    if not user_row:
+        session.commit()
+        raise HTTPException(status_code=404, detail="User not found")
+    response = _create_session_response(session, _row_to_dict(user_row))
     session.commit()
-    return {"updated": True}
+    return response
 
 
 def _require_admin(request: Request) -> None:
@@ -2129,14 +2173,32 @@ def admin_create_user(
     username = payload.username.strip()
     if not username:
         raise HTTPException(status_code=400, detail="Username required")
-    if len(payload.password.encode("utf-8")) > 72:
+    email = (payload.email or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email required")
+    existing = session.execute(
+        text(
+            """
+            SELECT username
+            FROM auth_users
+            WHERE lower(username) = :username OR lower(email) = :email
+            """
+        ),
+        {"username": username.lower(), "email": email},
+    ).fetchone()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username or email already exists")
+    initial_password = payload.password or secrets.token_urlsafe(48)
+    if len(initial_password.encode("utf-8")) > 72:
         raise HTTPException(status_code=400, detail="Password exceeds 72 bytes")
-    password_hash = _hash_password(payload.password, "bcrypt")
+    password_hash = _hash_password(initial_password, "bcrypt")
     role = payload.role or "user"
     if username.lower() == ADMIN_USERNAME:
         role = "admin"
     elif role == "admin":
         raise HTTPException(status_code=400, detail="Only the primary admin can have admin role")
+    token = secrets.token_urlsafe(36)
+    setup_url = f"{_frontend_base_url(request)}/login?reset_token={urllib.parse.quote(token)}"
     row = session.execute(
         text(
             """
@@ -2148,14 +2210,27 @@ def admin_create_user(
         {
             "username": username,
             "display_name": payload.display_name or username,
-            "email": (payload.email or "").strip() or None,
+            "email": email,
             "password_hash": password_hash,
             "role": role,
         },
     ).fetchone()
+    session.execute(
+        text(
+            """
+            INSERT INTO auth_password_reset_tokens (token_hash, user_id, created_at, expires_at, used_at)
+            VALUES (:token_hash, :user_id, NOW(), NOW() + INTERVAL '7 days', NULL)
+            """
+        ),
+        {"token_hash": _token_hash(token), "user_id": username},
+    )
     session.commit()
     if not row:
         raise HTTPException(status_code=500, detail="Failed to create user")
+    try:
+        _send_password_setup_email(email, username, setup_url)
+    except Exception as exc:
+        print(f"[auth] Failed to send account setup email to {email}: {exc}")
     return AdminUser(**_row_to_dict(row))
 
 
@@ -2175,7 +2250,21 @@ def admin_update_user(
     if payload.display_name is not None:
         updates["display_name"] = payload.display_name or target
     if payload.email is not None:
-        updates["email"] = payload.email.strip() if payload.email else None
+        email = payload.email.strip().lower() if payload.email else None
+        if email:
+            existing = session.execute(
+                text(
+                    """
+                    SELECT username
+                    FROM auth_users
+                    WHERE lower(email) = :email AND lower(username) <> :username
+                    """
+                ),
+                {"email": email, "username": target.lower()},
+            ).fetchone()
+            if existing:
+                raise HTTPException(status_code=400, detail="Email is already used")
+        updates["email"] = email
     if payload.role is not None:
         if target.lower() == ADMIN_USERNAME and payload.role != "admin":
             raise HTTPException(status_code=400, detail="Cannot remove admin role from primary admin")

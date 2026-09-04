@@ -33,7 +33,6 @@ export default function AdminPage() {
     username: "",
     display_name: "",
     email: "",
-    password: "",
     role: "user",
   });
   const [editing, setEditing] = useState(null);
@@ -86,10 +85,9 @@ export default function AdminPage() {
         username: "",
         display_name: "",
         email: "",
-        password: "",
         role: "user",
       });
-      setSuccess("User created.");
+      setSuccess("User created. A password setup link has been sent.");
       await loadUsers();
     } catch (err) {
       console.error(err);
@@ -178,7 +176,7 @@ export default function AdminPage() {
         <header className="space-y-2">
           <h1 className="text-2xl font-semibold text-white">Team access control</h1>
           <p className="text-sm text-slate-400">
-            Manage users and keep credentials in sync.
+            Manage users, invitations and workspace access.
           </p>
         </header>
 
@@ -295,6 +293,7 @@ export default function AdminPage() {
                   setCreating((prev) => ({ ...prev, email: event.target.value }))
                 }
                 autoComplete="email"
+                required
               />
             </Field>
             <Field label="Role">
@@ -310,26 +309,12 @@ export default function AdminPage() {
                 <option value="user">User</option>
               </select>
             </Field>
-            <Field label="Password">
-              <input
-                id="admin-create-password"
-                name="password"
-                type="password"
-                className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
-                value={creating.password}
-                onChange={(event) =>
-                  setCreating((prev) => ({ ...prev, password: event.target.value }))
-                }
-                autoComplete="new-password"
-                required
-              />
-            </Field>
             <div className="flex items-end">
               <button
                 type="submit"
                 className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-slate-950"
               >
-                Create
+                Create and send setup link
               </button>
             </div>
           </form>

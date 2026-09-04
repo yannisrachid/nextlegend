@@ -32,6 +32,8 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Preserve public endpoints: `GET /`, `GET /health`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `/image-proxy`, `/docs`, `/openapi`.
 - All other endpoints require `nl_session`.
 - Auth failures must return JSON 401 responses that include CORS headers for allowed origins.
+- Users can sign in with either username or email. Admin-created users should receive a password setup link by email instead of the admin assigning their password manually.
+- User sessions expire after 30 days maximum; `AUTH_SESSION_DAYS` may shorten the duration but must not extend it.
 - Do not expose DB credentials in docs, logs, or frontend code.
 
 ## Frontend Conventions

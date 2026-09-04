@@ -92,6 +92,11 @@ export default function LoginPage() {
       });
       setResetPassword("");
       setResetConfirmPassword("");
+      const authed = await refreshAuth();
+      if (authed) {
+        router.replace("/");
+        return;
+      }
       setMode("login");
       setMessage("Password updated. You can now sign in.");
       router.replace("/login", undefined, { shallow: true });
@@ -135,7 +140,7 @@ export default function LoginPage() {
               {mode === "forgot"
                 ? "Enter your username or email. If the account exists, a reset link will be sent."
                 : mode === "reset"
-                  ? "Enter a new password to secure your workspace access."
+                  ? "Enter a new password to secure your workspace access. You will be signed in automatically."
                   : "Access the reports, player rooms and market workflows used by the HD Sports team."}
             </p>
           </div>
@@ -224,7 +229,7 @@ export default function LoginPage() {
             <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <label htmlFor="login-username" className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-                  Username
+                  Username or email
                 </label>
                 <input
                   id="login-username"
@@ -232,7 +237,7 @@ export default function LoginPage() {
                   className="nl-field"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
-                  placeholder="Enter username"
+                  placeholder="Enter username or email"
                   autoComplete="username"
                 />
               </div>
