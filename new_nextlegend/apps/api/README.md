@@ -23,6 +23,9 @@ All other routes require a valid session cookie.
 - Cookie: `nl_session` (HttpOnly)
 - Sessions stored in `auth_sessions` table
 - User records in `auth_users`
+- Login accepts either `username` or account email in the `username` payload field.
+- Admin-created users receive a password setup email. After setting the password through `/auth/password/reset`, the API creates a session cookie automatically.
+- Sessions expire after 30 days maximum; `AUTH_SESSION_DAYS` may shorten that duration but must not extend it.
 
 ## Key env vars
 - `DATABASE_URL`
