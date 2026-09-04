@@ -23,6 +23,8 @@ Project snapshot:
 Key invariants:
 - API root `/` and `/health` are public and must return 200.
 - Auth uses the HttpOnly cookie `nl_session`.
+- Login accepts username or email. Admin user creation sends a password setup email, then the user is signed in automatically after setting the password.
+- User sessions expire after 30 days maximum.
 - Frontend auth waits for `GET /auth/me`; do not redirect while auth is loading.
 - Pipeline writes `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, and `pipeline_runs`.
 - Scoring v2 uses position groups, not tactical role assignment. Legacy `assigned_role` fields now contain the position group for API compatibility.
