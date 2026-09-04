@@ -9,6 +9,7 @@ from pathlib import Path
 import os
 import secrets
 import hashlib
+import math
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -665,6 +666,87 @@ CREATE INDEX IF NOT EXISTS youth_player_rankings_search_idx
 ALTER TABLE youth_player_rankings ADD COLUMN IF NOT EXISTS calendar TEXT;
 ALTER TABLE youth_player_rankings ADD COLUMN IF NOT EXISTS is_current_season BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE youth_player_rankings ADD COLUMN IF NOT EXISTS birth_date TEXT;
+
+CREATE TABLE IF NOT EXISTS scouting_players (
+    id UUID PRIMARY KEY,
+    source TEXT NOT NULL DEFAULT 'scoutyourlegend',
+    source_player_id TEXT,
+    eyeball_player_id TEXT,
+    portal_url TEXT,
+    name TEXT NOT NULL,
+    club TEXT,
+    year_of_birth INT,
+    position TEXT,
+    nationality TEXT,
+    photo_key TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS scouting_players_source_player_idx
+    ON scouting_players(source, source_player_id)
+    WHERE source_player_id IS NOT NULL AND source_player_id <> '';
+CREATE INDEX IF NOT EXISTS scouting_players_eyeball_idx
+    ON scouting_players(eyeball_player_id);
+CREATE INDEX IF NOT EXISTS scouting_players_identity_idx
+    ON scouting_players(LOWER(name), COALESCE(year_of_birth, 0), LOWER(COALESCE(club, '')));
+ALTER TABLE scouting_players ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scoutyourlegend';
+ALTER TABLE scouting_players ADD COLUMN IF NOT EXISTS source_player_id TEXT;
+ALTER TABLE scouting_players ADD COLUMN IF NOT EXISTS eyeball_player_id TEXT;
+ALTER TABLE scouting_players ADD COLUMN IF NOT EXISTS portal_url TEXT;
+ALTER TABLE scouting_players ADD COLUMN IF NOT EXISTS photo_key TEXT;
+
+CREATE TABLE IF NOT EXISTS scouting_reports (
+    id UUID PRIMARY KEY,
+    player_id UUID NOT NULL REFERENCES scouting_players(id) ON DELETE CASCADE,
+    linked_youth_ranking_id BIGINT REFERENCES youth_player_rankings(id) ON DELETE SET NULL,
+    eyeball_player_id TEXT,
+    portal_url TEXT,
+    player_name TEXT NOT NULL,
+    club TEXT,
+    year_of_birth INT,
+    position TEXT,
+    nationality TEXT,
+    scout TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    matches_observed JSONB NOT NULL DEFAULT '[]'::jsonb,
+    technical_notes TEXT,
+    physical_notes TEXT,
+    tactical_notes TEXT,
+    mental_notes TEXT,
+    game_intelligence TEXT,
+    strengths TEXT,
+    weaknesses TEXT,
+    development_projection TEXT,
+    comparison TEXT,
+    overall_comments TEXT,
+    technical_rating DOUBLE PRECISION,
+    physical_rating DOUBLE PRECISION,
+    tactical_rating DOUBLE PRECISION,
+    mental_rating DOUBLE PRECISION,
+    potential_rating DOUBLE PRECISION,
+    overall_rating DOUBLE PRECISION,
+    star_rating DOUBLE PRECISION,
+    photo_key TEXT,
+    source TEXT NOT NULL DEFAULT 'scoutyourlegend',
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS scouting_reports_player_idx
+    ON scouting_reports(player_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS scouting_reports_youth_idx
+    ON scouting_reports(linked_youth_ranking_id);
+CREATE INDEX IF NOT EXISTS scouting_reports_eyeball_idx
+    ON scouting_reports(eyeball_player_id);
+CREATE INDEX IF NOT EXISTS scouting_reports_search_idx
+    ON scouting_reports(LOWER(player_name), LOWER(COALESCE(club, '')));
+ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS linked_youth_ranking_id BIGINT REFERENCES youth_player_rankings(id) ON DELETE SET NULL;
+ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS eyeball_player_id TEXT;
+ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS portal_url TEXT;
+ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS photo_key TEXT;
+ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scoutyourlegend';
+ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS youth_prospects (
     id SERIAL PRIMARY KEY,
@@ -1598,6 +1680,47 @@ class ProspectToggle(BaseModel):
 
 class YouthProspectToggle(BaseModel):
     youth_id: int
+
+
+class ScoutingMatchObservationPayload(BaseModel):
+    team_a: Optional[str] = None
+    score_a: Optional[float] = None
+    score_b: Optional[float] = None
+    team_b: Optional[str] = None
+    competition: Optional[str] = None
+    match_date: Optional[str] = None
+    player_rating: Optional[float] = None
+
+
+class ScoutingReportPayload(BaseModel):
+    youth_id: Optional[int] = None
+    player_id: Optional[str] = None
+    player_name: Optional[str] = None
+    club: Optional[str] = None
+    year_of_birth: Optional[int] = None
+    position: Optional[str] = None
+    nationality: Optional[str] = None
+    scout: Optional[str] = None
+    matches_observed: Optional[list[ScoutingMatchObservationPayload]] = None
+    technical_notes: Optional[str] = None
+    physical_notes: Optional[str] = None
+    tactical_notes: Optional[str] = None
+    mental_notes: Optional[str] = None
+    game_intelligence: Optional[str] = None
+    strengths: Optional[str] = None
+    weaknesses: Optional[str] = None
+    development_projection: Optional[str] = None
+    comparison: Optional[str] = None
+    overall_comments: Optional[str] = None
+    technical_rating: Optional[float] = None
+    physical_rating: Optional[float] = None
+    tactical_rating: Optional[float] = None
+    mental_rating: Optional[float] = None
+    potential_rating: Optional[float] = None
+    overall_rating: Optional[float] = None
+    star_rating: Optional[float] = None
+    photo_key: Optional[str] = None
+    portal_url: Optional[str] = None
 
 
 class ClubNeedCreate(BaseModel):
@@ -8754,6 +8877,234 @@ def _average_youth_contexts(session: Session, player: dict[str, Any]) -> dict[st
     return output
 
 
+def _extract_eyeball_player_id(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    match = re.search(r"(?:/player/|playerId=|player_id=)(\d+)", raw, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+    if re.fullmatch(r"\d+", raw):
+        return raw
+    return None
+
+
+def _to_uuid(value: Optional[str]) -> str:
+    raw = str(value or "").strip()
+    if raw:
+        try:
+            return str(uuid.UUID(raw))
+        except ValueError:
+            pass
+    return str(uuid.uuid4())
+
+
+def _validate_rating_value(value: Optional[float], label: str, *, minimum: float = 0, maximum: float = 10) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{label} must be a number")
+    if not math.isfinite(numeric) or numeric < minimum or numeric > maximum:
+        raise HTTPException(status_code=400, detail=f"{label} must be between {minimum:g} and {maximum:g}")
+    return numeric
+
+
+def _normalize_scouting_matches(matches: Optional[list[ScoutingMatchObservationPayload]]) -> list[dict[str, Any]]:
+    if not matches:
+        return []
+    normalized = []
+    for idx, item in enumerate(matches):
+        match = item.model_dump() if hasattr(item, "model_dump") else dict(item)
+        has_text = any(str(match.get(key) or "").strip() for key in ["team_a", "team_b", "competition", "match_date"])
+        has_score = any(match.get(key) is not None for key in ["score_a", "score_b", "player_rating"])
+        if not has_text and not has_score:
+            continue
+        for key, label, maximum in [
+            ("score_a", "Score A", 30),
+            ("score_b", "Score B", 30),
+            ("player_rating", "Player rating", 10),
+        ]:
+            value = match.get(key)
+            if value is None or value == "":
+                continue
+            match[key] = _validate_rating_value(value, f"Match {idx + 1} {label}", minimum=0, maximum=maximum)
+        normalized.append(
+            {
+                "team_a": str(match.get("team_a") or "").strip(),
+                "score_a": match.get("score_a"),
+                "score_b": match.get("score_b"),
+                "team_b": str(match.get("team_b") or "").strip(),
+                "competition": str(match.get("competition") or "").strip(),
+                "match_date": str(match.get("match_date") or "").strip(),
+                "player_rating": match.get("player_rating"),
+            }
+        )
+    return normalized
+
+
+def _scouting_rating_fields(payload: ScoutingReportPayload) -> dict[str, Optional[float]]:
+    ratings = {
+        "technical_rating": _validate_rating_value(payload.technical_rating, "Technical rating"),
+        "physical_rating": _validate_rating_value(payload.physical_rating, "Physical rating"),
+        "tactical_rating": _validate_rating_value(payload.tactical_rating, "Tactical rating"),
+        "mental_rating": _validate_rating_value(payload.mental_rating, "Mental rating"),
+        "potential_rating": _validate_rating_value(payload.potential_rating, "Potential rating"),
+        "overall_rating": _validate_rating_value(payload.overall_rating, "Overall rating"),
+        "star_rating": _validate_rating_value(payload.star_rating, "Star rating", minimum=1, maximum=5),
+    }
+    legacy_values = [
+        ratings["technical_rating"],
+        ratings["physical_rating"],
+        ratings["tactical_rating"],
+        ratings["mental_rating"],
+        ratings["potential_rating"],
+    ]
+    present = [value for value in legacy_values if value is not None]
+    if ratings["star_rating"] is None:
+        if ratings["overall_rating"] is not None:
+            ratings["star_rating"] = max(1, min(5, round(ratings["overall_rating"] / 2)))
+        elif present:
+            ratings["star_rating"] = max(1, min(5, round((sum(present) / len(present)) / 2)))
+    if ratings["overall_rating"] is None and ratings["star_rating"] is not None:
+        ratings["overall_rating"] = ratings["star_rating"] * 2
+    return ratings
+
+
+def _scouting_report_row(row: Any) -> dict[str, Any]:
+    payload = _row_to_dict(row)
+    payload["matches_observed"] = payload.get("matches_observed") or []
+    payload["ratings"] = {
+        "technical": payload.get("technical_rating"),
+        "physical": payload.get("physical_rating"),
+        "tactical": payload.get("tactical_rating"),
+        "mental": payload.get("mental_rating"),
+        "potential": payload.get("potential_rating"),
+        "overall": payload.get("overall_rating"),
+        "stars": payload.get("star_rating"),
+    }
+    return payload
+
+
+def _load_youth_for_scouting(session: Session, youth_id: Optional[int]) -> Optional[dict[str, Any]]:
+    if not youth_id:
+        return None
+    row = session.execute(
+        text(
+            """
+            SELECT id, provider_player_id, provider_player_url, display_name, club_name, birth_year,
+                   primary_position, position, raw_payload
+            FROM youth_player_rankings
+            WHERE id = :id
+            """
+        ),
+        {"id": youth_id},
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Youth player not found")
+    return _row_to_dict(row)
+
+
+def _find_scouting_player(
+    session: Session,
+    *,
+    player_id: Optional[str],
+    eyeball_player_id: Optional[str],
+    player_name: str,
+    year_of_birth: Optional[int],
+    club: Optional[str],
+) -> Optional[str]:
+    if player_id:
+        row = session.execute(text("SELECT id FROM scouting_players WHERE id = :id"), {"id": player_id}).fetchone()
+        if row:
+            return str(row.id)
+    if eyeball_player_id:
+        row = session.execute(
+            text("SELECT id FROM scouting_players WHERE eyeball_player_id = :eyeball_player_id ORDER BY updated_at DESC LIMIT 1"),
+            {"eyeball_player_id": eyeball_player_id},
+        ).fetchone()
+        if row:
+            return str(row.id)
+    row = session.execute(
+        text(
+            """
+            SELECT id
+            FROM scouting_players
+            WHERE LOWER(name) = LOWER(:name)
+              AND COALESCE(year_of_birth, 0) = COALESCE(:year_of_birth, 0)
+              AND LOWER(COALESCE(club, '')) = LOWER(COALESCE(:club, ''))
+            LIMIT 1
+            """
+        ),
+        {"name": player_name, "year_of_birth": year_of_birth, "club": club},
+    ).fetchone()
+    return str(row.id) if row else None
+
+
+def _upsert_scouting_player(
+    session: Session,
+    *,
+    player_id: Optional[str],
+    eyeball_player_id: Optional[str],
+    portal_url: Optional[str],
+    player_name: str,
+    club: Optional[str],
+    year_of_birth: Optional[int],
+    position: Optional[str],
+    nationality: Optional[str],
+    photo_key: Optional[str],
+) -> str:
+    existing_id = _find_scouting_player(
+        session,
+        player_id=player_id,
+        eyeball_player_id=eyeball_player_id,
+        player_name=player_name,
+        year_of_birth=year_of_birth,
+        club=club,
+    )
+    resolved_id = existing_id or _to_uuid(player_id)
+    session.execute(
+        text(
+            """
+            INSERT INTO scouting_players (
+              id, source, source_player_id, eyeball_player_id, portal_url, name, club,
+              year_of_birth, position, nationality, photo_key, created_at, updated_at
+            )
+            VALUES (
+              :id, 'nextlegend', :source_player_id, :eyeball_player_id, :portal_url, :name, :club,
+              :year_of_birth, :position, :nationality, :photo_key, NOW(), NOW()
+            )
+            ON CONFLICT (id) DO UPDATE SET
+              eyeball_player_id = COALESCE(EXCLUDED.eyeball_player_id, scouting_players.eyeball_player_id),
+              portal_url = COALESCE(EXCLUDED.portal_url, scouting_players.portal_url),
+              name = EXCLUDED.name,
+              club = EXCLUDED.club,
+              year_of_birth = EXCLUDED.year_of_birth,
+              position = EXCLUDED.position,
+              nationality = EXCLUDED.nationality,
+              photo_key = COALESCE(EXCLUDED.photo_key, scouting_players.photo_key),
+              updated_at = NOW()
+            """
+        ),
+        {
+            "id": resolved_id,
+            "source_player_id": player_id,
+            "eyeball_player_id": eyeball_player_id,
+            "portal_url": portal_url,
+            "name": player_name,
+            "club": club,
+            "year_of_birth": year_of_birth,
+            "position": position,
+            "nationality": nationality,
+            "photo_key": photo_key,
+        },
+    )
+    return resolved_id
+
+
 @app.get("/youth/meta")
 def youth_meta(session: Session = Depends(get_session)):
     _ensure_youth_schema(session)
@@ -9001,6 +9352,237 @@ def youth_player_report(youth_id: int, session: Session = Depends(get_session)):
             "championship": player.get("score_percentile_championship"),
         },
     }
+
+
+@app.get("/youth/scouting-reports")
+def youth_scouting_reports(
+    youth_id: Optional[int] = Query(None),
+    eyeball_player_id: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    youth = _load_youth_for_scouting(session, youth_id)
+    resolved_eyeball_id = (
+        eyeball_player_id
+        or (youth.get("provider_player_id") if youth else None)
+        or _extract_eyeball_player_id(youth.get("provider_player_url") if youth else None)
+    )
+    if not youth_id and not resolved_eyeball_id:
+        raise HTTPException(status_code=400, detail="youth_id or eyeball_player_id is required")
+    sql = """
+    SELECT sr.*
+    FROM scouting_reports sr
+    WHERE 1=1
+    """
+    params: dict[str, Any] = {"limit": limit}
+    conditions = []
+    if youth_id:
+        conditions.append("sr.linked_youth_ranking_id = :youth_id")
+        params["youth_id"] = youth_id
+    if resolved_eyeball_id:
+        conditions.append("sr.eyeball_player_id = :eyeball_player_id")
+        params["eyeball_player_id"] = resolved_eyeball_id
+    sql += " AND (" + " OR ".join(conditions) + ")"
+    sql += " ORDER BY sr.created_at DESC NULLS LAST, sr.updated_at DESC NULLS LAST LIMIT :limit"
+    rows = session.execute(text(sql), params).fetchall()
+    return {
+        "items": [_scouting_report_row(row) for row in rows],
+        "eyeball_player_id": resolved_eyeball_id,
+    }
+
+
+@app.post("/youth/scouting-reports")
+def create_youth_scouting_report(
+    payload: ScoutingReportPayload,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    user = getattr(request.state, "user", None) or {}
+    youth = _load_youth_for_scouting(session, payload.youth_id)
+    raw_youth = youth.get("raw_payload") if youth else {}
+    portal_url = (payload.portal_url or (youth.get("provider_player_url") if youth else "") or "").strip() or None
+    eyeball_player_id = (
+        _extract_eyeball_player_id(portal_url)
+        or (youth.get("provider_player_id") if youth else None)
+    )
+    player_name = (payload.player_name or (youth.get("display_name") if youth else "") or "").strip()
+    if not player_name:
+        raise HTTPException(status_code=400, detail="Player name is required")
+    club = (payload.club or (youth.get("club_name") if youth else "") or "").strip() or None
+    position = (payload.position or (youth.get("primary_position") if youth else "") or (youth.get("position") if youth else "") or "").strip() or None
+    nationality = (
+        payload.nationality
+        or raw_youth.get("nationality_countryLabel")
+        or raw_youth.get("nationality2_countryLabel")
+        or raw_youth.get("nationality_countryCode")
+        or raw_youth.get("nationality2_countryCode")
+        or ""
+    )
+    nationality = str(nationality).strip() or None
+    year_of_birth = payload.year_of_birth if payload.year_of_birth is not None else youth.get("birth_year") if youth else None
+    if year_of_birth is not None and (year_of_birth < 1990 or year_of_birth > 2035):
+        raise HTTPException(status_code=400, detail="Year of birth is not valid")
+    ratings = _scouting_rating_fields(payload)
+    matches = _normalize_scouting_matches(payload.matches_observed)
+    scouting_player_id = _upsert_scouting_player(
+        session,
+        player_id=payload.player_id,
+        eyeball_player_id=eyeball_player_id,
+        portal_url=portal_url,
+        player_name=player_name,
+        club=club,
+        year_of_birth=year_of_birth,
+        position=position,
+        nationality=nationality,
+        photo_key=payload.photo_key,
+    )
+    report_id = str(uuid.uuid4())
+    row = session.execute(
+        text(
+            """
+            INSERT INTO scouting_reports (
+              id, player_id, linked_youth_ranking_id, eyeball_player_id, portal_url,
+              player_name, club, year_of_birth, position, nationality, scout,
+              created_at, updated_at, matches_observed,
+              technical_notes, physical_notes, tactical_notes, mental_notes, game_intelligence,
+              strengths, weaknesses, development_projection, comparison, overall_comments,
+              technical_rating, physical_rating, tactical_rating, mental_rating, potential_rating,
+              overall_rating, star_rating, photo_key, source, raw_payload
+            )
+            VALUES (
+              :id, :player_id, :linked_youth_ranking_id, :eyeball_player_id, :portal_url,
+              :player_name, :club, :year_of_birth, :position, :nationality, :scout,
+              NOW(), NOW(), CAST(:matches_observed AS jsonb),
+              :technical_notes, :physical_notes, :tactical_notes, :mental_notes, :game_intelligence,
+              :strengths, :weaknesses, :development_projection, :comparison, :overall_comments,
+              :technical_rating, :physical_rating, :tactical_rating, :mental_rating, :potential_rating,
+              :overall_rating, :star_rating, :photo_key, 'nextlegend', CAST(:raw_payload AS jsonb)
+            )
+            RETURNING *
+            """
+        ),
+        {
+            "id": report_id,
+            "player_id": scouting_player_id,
+            "linked_youth_ranking_id": payload.youth_id,
+            "eyeball_player_id": eyeball_player_id,
+            "portal_url": portal_url,
+            "player_name": player_name,
+            "club": club,
+            "year_of_birth": year_of_birth,
+            "position": position,
+            "nationality": nationality,
+            "scout": user.get("username") or payload.scout or "unknown",
+            "matches_observed": json.dumps(matches),
+            "technical_notes": payload.technical_notes,
+            "physical_notes": payload.physical_notes,
+            "tactical_notes": payload.tactical_notes,
+            "mental_notes": payload.mental_notes,
+            "game_intelligence": payload.game_intelligence,
+            "strengths": payload.strengths,
+            "weaknesses": payload.weaknesses,
+            "development_projection": payload.development_projection,
+            "comparison": payload.comparison,
+            "overall_comments": payload.overall_comments,
+            **ratings,
+            "photo_key": payload.photo_key,
+            "raw_payload": json.dumps({"source": "nextlegend_ui", "youth_id": payload.youth_id}),
+        },
+    ).fetchone()
+    session.commit()
+    return {"report": _scouting_report_row(row)}
+
+
+@app.patch("/youth/scouting-reports/{report_id}")
+def update_youth_scouting_report(
+    report_id: str,
+    payload: ScoutingReportPayload,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    user = getattr(request.state, "user", None) or {}
+    existing = session.execute(text("SELECT * FROM scouting_reports WHERE id = :id"), {"id": report_id}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Scouting report not found")
+    existing_payload = _row_to_dict(existing)
+    is_owner = str(existing_payload.get("scout") or "").lower() == str(user.get("username") or "").lower()
+    is_admin = user.get("role") == "admin" and str(user.get("username") or "").lower() == ADMIN_USERNAME
+    if not is_owner and not is_admin:
+        raise HTTPException(status_code=403, detail="Only the report scout or admin can edit this report")
+    ratings = _scouting_rating_fields(payload)
+    matches = _normalize_scouting_matches(payload.matches_observed) if "matches_observed" in payload.model_fields_set else None
+    updates = {
+        "club": payload.club,
+        "year_of_birth": payload.year_of_birth,
+        "position": payload.position,
+        "nationality": payload.nationality,
+        "technical_notes": payload.technical_notes,
+        "physical_notes": payload.physical_notes,
+        "tactical_notes": payload.tactical_notes,
+        "mental_notes": payload.mental_notes,
+        "game_intelligence": payload.game_intelligence,
+        "strengths": payload.strengths,
+        "weaknesses": payload.weaknesses,
+        "development_projection": payload.development_projection,
+        "comparison": payload.comparison,
+        "overall_comments": payload.overall_comments,
+        "photo_key": payload.photo_key,
+        **ratings,
+    }
+    clean_updates = {key: value for key, value in updates.items() if value is not None}
+    if matches is not None:
+        clean_updates["matches_observed"] = json.dumps(matches)
+    if payload.player_name is not None and payload.player_name.strip():
+        clean_updates["player_name"] = payload.player_name.strip()
+    if payload.portal_url is not None:
+        clean_updates["portal_url"] = payload.portal_url.strip() or None
+        clean_updates["eyeball_player_id"] = _extract_eyeball_player_id(payload.portal_url)
+    if not clean_updates:
+        return {"report": _scouting_report_row(existing)}
+    set_parts = []
+    params: dict[str, Any] = {"id": report_id}
+    for key, value in clean_updates.items():
+        if key == "matches_observed":
+            set_parts.append(f"{key} = CAST(:{key} AS jsonb)")
+        else:
+            set_parts.append(f"{key} = :{key}")
+        params[key] = value
+    row = session.execute(
+        text(
+            f"""
+            UPDATE scouting_reports
+            SET {", ".join(set_parts)}, updated_at = NOW()
+            WHERE id = :id
+            RETURNING *
+            """
+        ),
+        params,
+    ).fetchone()
+    session.commit()
+    return {"report": _scouting_report_row(row)}
+
+
+@app.delete("/youth/scouting-reports/{report_id}")
+def delete_youth_scouting_report(
+    report_id: str,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    user = getattr(request.state, "user", None) or {}
+    existing = session.execute(text("SELECT id, scout FROM scouting_reports WHERE id = :id"), {"id": report_id}).fetchone()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Scouting report not found")
+    is_owner = str(existing.scout or "").lower() == str(user.get("username") or "").lower()
+    is_admin = user.get("role") == "admin" and str(user.get("username") or "").lower() == ADMIN_USERNAME
+    if not is_owner and not is_admin:
+        raise HTTPException(status_code=403, detail="Only the report scout or admin can delete this report")
+    session.execute(text("DELETE FROM scouting_reports WHERE id = :id"), {"id": report_id})
+    session.commit()
+    return {"deleted": True, "report_id": report_id}
 
 
 def _youth_prospect_identity(session: Session, youth_id: int) -> dict[str, Any]:

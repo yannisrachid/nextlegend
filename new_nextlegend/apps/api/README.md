@@ -38,6 +38,8 @@ All other routes require a valid session cookie.
 - `GET /players/{id}`
 - `GET /players/{id}/report`
 - `GET /players/{id}/similarities` (max 10 returned rows)
+- `GET /youth/scouting-reports`
+- `POST/PATCH/DELETE /youth/scouting-reports`
 - `GET /meta/positions`, `GET /meta/teams`, `GET /meta/seasons`, `GET /meta/competitions`
 - `GET /meta/stats-research/metrics`
 - `GET /ops/metrics`
@@ -48,6 +50,22 @@ All other routes require a valid session cookie.
 ## DB expectations
 Tables populated by the pipeline:
 - `competitions`, `seasons`, `players`, `player_seasons`, `player_metrics`, `player_metric_percentiles_global`, `player_metric_percentiles_league`, `role_scores`, `player_similarity`, `pipeline_runs`
+
+API/import-owned youth scouting tables:
+- `scouting_players`
+- `scouting_reports`
+
+Import legacy ScoutYourLegend reports into PostgreSQL:
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm --entrypoint python api scripts/import_scoutyourlegend_reports.py
+```
+
+Dry run:
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm --entrypoint python api scripts/import_scoutyourlegend_reports.py --dry-run
+```
+
+The CSV files in `apps/api/imports/scoutyourlegend/` are migration inputs only. Runtime reads/writes must use PostgreSQL.
 
 ## Notes
 - Root `/` must remain public to avoid auth loops on frontend.

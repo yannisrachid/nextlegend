@@ -41,6 +41,8 @@ erDiagram
   hd_players ||--o{ hd_player_documents : hd_player_id
   players ||--o{ hd_players : player_id
   players ||--o{ player_transfer_history : linked_player_id
+  scouting_players ||--o{ scouting_reports : player_id
+  youth_player_rankings ||--o{ scouting_reports : linked_youth_ranking_id
 
   auth_users ||--o{ mercato_requests : created_by_agent_id
   auth_users ||--o{ mercato_requests : assigned_agent_id
@@ -519,6 +521,66 @@ Stages:
 - `relance3`
 
 Owned by: API/CRM migration.
+
+## Youth Human Scouting Tables
+
+These tables import the legacy ScoutYourLegend report archive and support new human scout observations inside Youth Reports. CSV files are migration inputs only; runtime reads and writes use PostgreSQL.
+
+### `scouting_players`
+
+Human scouting player identity table.
+
+Important fields:
+- `id`: UUID preserved from ScoutYourLegend CSV when available.
+- `source`: `scoutyourlegend` for imported rows, `nextlegend` for reports created in the app.
+- `source_player_id`: legacy player UUID when imported.
+- `eyeball_player_id`: extracted from the Eyeball portal URL when available.
+- `portal_url`
+- `name`
+- `club`
+- `year_of_birth`
+- `position`
+- `nationality`
+- `photo_key`
+
+Deduplication strategy:
+- primary identity is the preserved UUID;
+- imported legacy identity is protected by a unique partial index on `source + source_player_id`;
+- app-created reports reuse an existing scouting player by `eyeball_player_id` first, then by `LOWER(name) + year_of_birth + LOWER(club)`.
+
+Owned by: API/import tooling.
+
+### `scouting_reports`
+
+Human scout report table linked to `scouting_players` and, when possible, to Eyeball youth rows.
+
+Important fields:
+- `id`: UUID preserved from ScoutYourLegend CSV when available.
+- `player_id`: FK to `scouting_players.id`.
+- `linked_youth_ranking_id`: optional FK to `youth_player_rankings.id`.
+- `eyeball_player_id`: extracted from `portal_url`; used to show reports across seasons for the same Eyeball player.
+- `portal_url`
+- identity snapshot fields: `player_name`, `club`, `year_of_birth`, `position`, `nationality`.
+- `scout`
+- `created_at`
+- `matches_observed`: JSONB list of observed matches.
+- report notes: `technical_notes`, `physical_notes`, `tactical_notes`, `mental_notes`, `game_intelligence`, `strengths`, `weaknesses`, `development_projection`, `comparison`, `overall_comments`.
+- ratings: `technical_rating`, `physical_rating`, `tactical_rating`, `mental_rating`, `potential_rating`, `overall_rating`, `star_rating`.
+- `photo_key`
+- `raw_payload`: original imported CSV row for auditability.
+
+Rules:
+- missing `year_of_birth`, `position`, or optional notes remain `NULL`; rows must not be rejected for incomplete legacy scouting context.
+- new reports created from the Youth Report page are linked to the selected youth row and current authenticated user.
+- only the report scout or admin `yrachid` can edit/delete a report through the API.
+
+Import command:
+
+```bash
+docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm --entrypoint python api scripts/import_scoutyourlegend_reports.py
+```
+
+Owned by: API/import tooling.
 
 ## Refresh Rules
 

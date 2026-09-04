@@ -19,7 +19,8 @@ import {
   SimilarPlayersCard,
   formatValue,
 } from "@/components/report/PlayerReportComponents";
-import { deleteJson, fetchJson, postJson } from "@/lib/api";
+import { deleteJson, fetchJson, patchJson, postJson } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { normalizePositionGroup } from "@/lib/reportMetrics";
 
 const DEFAULT_SEASON = 2027;
@@ -126,6 +127,65 @@ const EXTRA_RADAR_METRICS = [
 ];
 
 const YOUTH_UNAVAILABLE_METRICS = new Set(["xg", "xa", "xg_per_90", "xa_per_90"]);
+
+const SCOUTING_NOTE_FIELDS = [
+  ["technical_notes", "Technical"],
+  ["physical_notes", "Physical"],
+  ["tactical_notes", "Tactical"],
+  ["mental_notes", "Mental"],
+  ["game_intelligence", "Game intelligence"],
+  ["strengths", "Strengths"],
+  ["weaknesses", "Weaknesses"],
+  ["development_projection", "Development projection"],
+  ["comparison", "Comparison"],
+  ["overall_comments", "Overall comments"],
+];
+
+const SCOUTING_RATING_FIELDS = [
+  ["technical_rating", "Technical"],
+  ["physical_rating", "Physical"],
+  ["tactical_rating", "Tactical"],
+  ["mental_rating", "Mental"],
+  ["potential_rating", "Potential"],
+  ["overall_rating", "Overall"],
+];
+
+const emptyMatch = () => ({
+  team_a: "",
+  score_a: "",
+  score_b: "",
+  team_b: "",
+  competition: "",
+  match_date: "",
+  player_rating: "",
+});
+
+const emptyScoutingForm = (report) => ({
+  player_name: report?.player?.name || "",
+  club: report?.player?.team || "",
+  year_of_birth: report?.player?.birth_year || "",
+  position: report?.player?.position || "",
+  nationality: report?.player?.nationality || "",
+  portal_url: report?.source?.player?.provider_player_url || "",
+  star_rating: 3,
+  technical_rating: "",
+  physical_rating: "",
+  tactical_rating: "",
+  mental_rating: "",
+  potential_rating: "",
+  overall_rating: "",
+  technical_notes: "",
+  physical_notes: "",
+  tactical_notes: "",
+  mental_notes: "",
+  game_intelligence: "",
+  strengths: "",
+  weaknesses: "",
+  development_projection: "",
+  comparison: "",
+  overall_comments: "",
+  matches_observed: [],
+});
 
 const valueExists = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
 
@@ -437,8 +497,452 @@ function YouthContextCard({ player }) {
   );
 }
 
+function Stars({ value, onChange, disabled = false }) {
+  const current = Math.max(1, Math.min(5, Math.round(Number(value) || 0)));
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <button
+          key={star}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(star)}
+          className={`text-2xl leading-none transition ${star <= current ? "text-[#8CC7A7]" : "text-white/20"} ${disabled ? "cursor-default" : "hover:text-[#8CC7A7]"}`}
+          aria-label={`${star} stars`}
+        >
+          ★
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function scoutingFormFromReport(item, report) {
+  const base = emptyScoutingForm(report);
+  if (!item) return base;
+  return {
+    ...base,
+    player_name: item.player_name || base.player_name,
+    club: item.club || "",
+    year_of_birth: item.year_of_birth || "",
+    position: item.position || "",
+    nationality: item.nationality || "",
+    portal_url: item.portal_url || "",
+    star_rating: item.star_rating || item.ratings?.stars || 3,
+    technical_rating: item.technical_rating ?? "",
+    physical_rating: item.physical_rating ?? "",
+    tactical_rating: item.tactical_rating ?? "",
+    mental_rating: item.mental_rating ?? "",
+    potential_rating: item.potential_rating ?? "",
+    overall_rating: item.overall_rating ?? "",
+    technical_notes: item.technical_notes || "",
+    physical_notes: item.physical_notes || "",
+    tactical_notes: item.tactical_notes || "",
+    mental_notes: item.mental_notes || "",
+    game_intelligence: item.game_intelligence || "",
+    strengths: item.strengths || "",
+    weaknesses: item.weaknesses || "",
+    development_projection: item.development_projection || "",
+    comparison: item.comparison || "",
+    overall_comments: item.overall_comments || "",
+    matches_observed: (item.matches_observed || []).map((match) => ({
+      team_a: match.team_a || "",
+      score_a: match.score_a ?? "",
+      score_b: match.score_b ?? "",
+      team_b: match.team_b || "",
+      competition: match.competition || "",
+      match_date: match.match_date || "",
+      player_rating: match.player_rating ?? "",
+    })),
+  };
+}
+
+function numberOrNull(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : NaN;
+}
+
+function validateScoutingForm(form) {
+  if (!String(form.player_name || "").trim()) return "Player name is required.";
+  const year = numberOrNull(form.year_of_birth);
+  if (year !== null && (!Number.isFinite(year) || year < 1990 || year > 2035)) {
+    return "Year of birth must be valid.";
+  }
+  const stars = numberOrNull(form.star_rating);
+  if (stars === null || !Number.isFinite(stars) || stars < 1 || stars > 5) {
+    return "Star rating must be between 1 and 5.";
+  }
+  for (const [key, label] of SCOUTING_RATING_FIELDS) {
+    const rating = numberOrNull(form[key]);
+    if (rating !== null && (!Number.isFinite(rating) || rating < 0 || rating > 10)) {
+      return `${label} rating must be between 0 and 10.`;
+    }
+  }
+  for (const [idx, match] of (form.matches_observed || []).entries()) {
+    const label = `Match ${idx + 1}`;
+    for (const [key, max, fieldLabel] of [["score_a", 30, "Score A"], ["score_b", 30, "Score B"], ["player_rating", 10, "Player rating"]]) {
+      const value = numberOrNull(match[key]);
+      if (value !== null && (!Number.isFinite(value) || value < 0 || value > max)) {
+        return `${label} ${fieldLabel} must be between 0 and ${max}.`;
+      }
+    }
+  }
+  return "";
+}
+
+function scoutingPayload(form, youthId) {
+  const payload = {
+    youth_id: youthId ? Number(youthId) : undefined,
+    player_name: String(form.player_name || "").trim(),
+    club: String(form.club || "").trim() || null,
+    year_of_birth: numberOrNull(form.year_of_birth),
+    position: String(form.position || "").trim() || null,
+    nationality: String(form.nationality || "").trim() || null,
+    portal_url: String(form.portal_url || "").trim() || null,
+    star_rating: numberOrNull(form.star_rating),
+    matches_observed: (form.matches_observed || [])
+      .map((match) => ({
+        team_a: String(match.team_a || "").trim(),
+        score_a: numberOrNull(match.score_a),
+        score_b: numberOrNull(match.score_b),
+        team_b: String(match.team_b || "").trim(),
+        competition: String(match.competition || "").trim(),
+        match_date: String(match.match_date || "").trim(),
+        player_rating: numberOrNull(match.player_rating),
+      }))
+      .filter((match) => Object.values(match).some((value) => value !== null && value !== "")),
+  };
+  SCOUTING_NOTE_FIELDS.forEach(([key]) => {
+    payload[key] = form[key] || null;
+  });
+  SCOUTING_RATING_FIELDS.forEach(([key]) => {
+    payload[key] = numberOrNull(form[key]);
+  });
+  return payload;
+}
+
+function YouthScoutingReportsPanel({ report, youthId, me }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState(() => emptyScoutingForm(report));
+
+  const reload = async () => {
+    if (!youthId) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await fetchJson("/youth/scouting-reports", { youth_id: youthId, limit: 50 });
+      setItems(data.items || []);
+    } catch (err) {
+      setError(err.message || "Unable to load scout observations.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    reload();
+  }, [youthId]);
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm(emptyScoutingForm(report));
+    setError("");
+    setMessage("");
+    setModalOpen(true);
+  };
+
+  const openEdit = (item) => {
+    setEditing(item);
+    setForm(scoutingFormFromReport(item, report));
+    setError("");
+    setMessage("");
+    setModalOpen(true);
+  };
+
+  const updateMatch = (index, key, value) => {
+    setForm((current) => ({
+      ...current,
+      matches_observed: current.matches_observed.map((match, idx) => idx === index ? { ...match, [key]: value } : match),
+    }));
+  };
+
+  const save = async () => {
+    const validation = validateScoutingForm(form);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = scoutingPayload(form, youthId);
+      if (editing?.id) {
+        await patchJson(`/youth/scouting-reports/${editing.id}`, payload);
+        setMessage("Scout observation updated.");
+      } else {
+        await postJson("/youth/scouting-reports", payload);
+        setMessage("Scout observation added.");
+      }
+      setModalOpen(false);
+      await reload();
+    } catch (err) {
+      setError(err.message || "Unable to save scout observation.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (item) => {
+    if (!window.confirm("Delete this scout observation? This cannot be undone.")) return;
+    setError("");
+    setMessage("");
+    try {
+      await deleteJson(`/youth/scouting-reports/${item.id}`);
+      setMessage("Scout observation deleted.");
+      await reload();
+    } catch (err) {
+      setError(err.message || "Unable to delete scout observation.");
+    }
+  };
+
+  const canManage = (item) => {
+    const username = String(me?.username || "").toLowerCase();
+    return username && (String(item.scout || "").toLowerCase() === username || (username === "yrachid" && me?.role === "admin"));
+  };
+
+  return (
+    <ReportCard className="relative z-10">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="nl-kicker">Scout observations</p>
+          <h2 className="mt-2 text-2xl font-black text-white">Human scouting reports</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#A0A8A3]">
+            Historical reports imported from ScoutYourLegend and new observations linked to this Eyeball profile.
+          </p>
+        </div>
+        <button type="button" className="nl-button-primary px-4 py-2 text-xs uppercase tracking-[0.14em]" onClick={openCreate}>
+          Add scout report
+        </button>
+      </div>
+
+      {error ? <p className="mt-4 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">{error}</p> : null}
+      {message ? <p className="mt-4 rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-2 text-sm font-semibold text-[#8CC7A7]">{message}</p> : null}
+
+      <div className="mt-5 space-y-3">
+        {loading ? (
+          <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4 text-sm text-[#A0A8A3]">Loading scout observations...</div>
+        ) : items.length ? (
+          items.map((item) => (
+            <article key={item.id} className="rounded-lg border border-white/10 bg-[#070807] p-4 transition hover:border-[#3A8967]/30">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-lg font-black text-white">{item.player_name}</h3>
+                    <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/12 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#8CC7A7]">
+                      {item.star_rating ? `${Number(item.star_rating).toFixed(0)} stars` : "Unrated"}
+                    </span>
+                    <span className="rounded-md border border-white/10 bg-white/[0.035] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#A0A8A3]">
+                      {item.scout || "Unknown scout"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold text-[#6F7772]">
+                    {[item.club, item.position, item.year_of_birth, item.nationality].filter(Boolean).join(" - ") || "No identity context"}
+                  </p>
+                  {item.overall_comments ? (
+                    <p className="mt-3 max-w-5xl whitespace-pre-line text-sm leading-6 text-[#D8DEDA]">{item.overall_comments}</p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {item.portal_url ? (
+                    <a href={item.portal_url} target="_blank" rel="noreferrer" className="nl-button-secondary px-3 py-2 text-xs">
+                      Eyeball
+                    </a>
+                  ) : null}
+                  {canManage(item) ? (
+                    <>
+                      <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={() => openEdit(item)}>Edit</button>
+                      <button type="button" className="nl-button-secondary px-3 py-2 text-xs text-rose-200" onClick={() => remove(item)}>Delete</button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                {[
+                  ["Technical", item.technical_rating],
+                  ["Physical", item.physical_rating],
+                  ["Tactical", item.tactical_rating],
+                  ["Mental", item.mental_rating],
+                  ["Potential", item.potential_rating],
+                  ["Overall", item.overall_rating],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-md border border-white/10 bg-white/[0.025] px-3 py-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">{label}</p>
+                    <p className="mt-1 text-lg font-black text-white">{formatValue(value, "score")}</p>
+                  </div>
+                ))}
+              </div>
+              {item.matches_observed?.length ? (
+                <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-white/[0.035] text-[10px] uppercase tracking-[0.14em] text-[#6F7772]">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Match</th>
+                        <th className="px-3 py-2 text-left">Competition</th>
+                        <th className="px-3 py-2 text-left">Date</th>
+                        <th className="px-3 py-2 text-right">Player rating</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {item.matches_observed.map((match, idx) => (
+                        <tr key={`${item.id}-match-${idx}`}>
+                          <td className="px-3 py-2 text-white">{[match.team_a, match.score_a ?? "-", "-", match.score_b ?? "-", match.team_b].filter((value) => value !== "").join(" ")}</td>
+                          <td className="px-3 py-2 text-[#A0A8A3]">{match.competition || "-"}</td>
+                          <td className="px-3 py-2 text-[#A0A8A3]">{match.match_date || "-"}</td>
+                          <td className="px-3 py-2 text-right font-black text-[#8CC7A7]">{formatValue(match.player_rating, "score")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {SCOUTING_NOTE_FIELDS.filter(([key]) => key !== "overall_comments" && item[key]).slice(0, 6).map(([key, label]) => (
+                  <div key={key} className="rounded-md border border-white/10 bg-white/[0.025] p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">{label}</p>
+                    <p className="mt-1 line-clamp-4 whitespace-pre-line text-sm leading-5 text-[#D8DEDA]">{item[key]}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-[11px] font-semibold text-[#6F7772]">
+                Created {item.created_at ? new Date(item.created_at).toLocaleString() : "-"}
+              </p>
+            </article>
+          ))
+        ) : (
+          <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-6 text-center">
+            <p className="text-sm font-black text-white">No scout report linked yet.</p>
+            <p className="mt-1 text-sm text-[#A0A8A3]">Add a human observation to complement the Eyeball statistical report.</p>
+          </div>
+        )}
+      </div>
+
+      {modalOpen ? (
+        <div className="fixed inset-0 z-[9000] flex items-start justify-center overflow-auto bg-black/75 px-4 py-8 backdrop-blur-md" role="dialog" aria-modal="true">
+          <div className="w-full max-w-5xl rounded-lg border border-white/10 bg-[#070807] p-5 shadow-[0_32px_120px_rgba(0,0,0,0.65)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="nl-kicker">{editing ? "Edit report" : "New report"}</p>
+                <h3 className="mt-2 text-2xl font-black text-white">Scout observation</h3>
+              </div>
+              <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={() => setModalOpen(false)}>Close</button>
+            </div>
+
+            {error ? <p className="mt-4 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">{error}</p> : null}
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                ["player_name", "Player name", "text"],
+                ["club", "Club", "text"],
+                ["year_of_birth", "Year of birth", "number"],
+                ["position", "Position", "text"],
+                ["nationality", "Nationality", "text"],
+                ["portal_url", "Eyeball URL", "url"],
+              ].map(([key, label, type]) => (
+                <label key={key} className={key === "portal_url" ? "md:col-span-2" : ""}>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">{label}</span>
+                  <input
+                    className="nl-field"
+                    type={type}
+                    value={form[key] || ""}
+                    onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
+                  />
+                </label>
+              ))}
+              <div>
+                <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Star rating</span>
+                <Stars value={form.star_rating} onChange={(value) => setForm((current) => ({ ...current, star_rating: value }))} />
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+              {SCOUTING_RATING_FIELDS.map(([key, label]) => (
+                <label key={key}>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">{label}</span>
+                  <input
+                    className="nl-field tabular-nums"
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.5"
+                    value={form[key]}
+                    onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
+                  />
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Matches observed</p>
+                <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={() => setForm((current) => ({ ...current, matches_observed: [...current.matches_observed, emptyMatch()] }))}>
+                  Add match
+                </button>
+              </div>
+              <div className="space-y-2">
+                {form.matches_observed.map((match, idx) => (
+                  <div key={`match-form-${idx}`} className="grid gap-2 rounded-lg border border-white/10 bg-white/[0.025] p-3 md:grid-cols-7">
+                    <input className="nl-field" placeholder="Team A" value={match.team_a} onChange={(event) => updateMatch(idx, "team_a", event.target.value)} />
+                    <input className="nl-field" type="number" min="0" max="30" placeholder="A" value={match.score_a} onChange={(event) => updateMatch(idx, "score_a", event.target.value)} />
+                    <input className="nl-field" type="number" min="0" max="30" placeholder="B" value={match.score_b} onChange={(event) => updateMatch(idx, "score_b", event.target.value)} />
+                    <input className="nl-field" placeholder="Team B" value={match.team_b} onChange={(event) => updateMatch(idx, "team_b", event.target.value)} />
+                    <input className="nl-field" placeholder="Competition" value={match.competition} onChange={(event) => updateMatch(idx, "competition", event.target.value)} />
+                    <input className="nl-field" type="date" value={match.match_date} onChange={(event) => updateMatch(idx, "match_date", event.target.value)} />
+                    <div className="flex gap-2">
+                      <input className="nl-field min-w-0" type="number" min="0" max="10" step="0.5" placeholder="Rating" value={match.player_rating} onChange={(event) => updateMatch(idx, "player_rating", event.target.value)} />
+                      <button type="button" className="nl-button-secondary px-3" onClick={() => setForm((current) => ({ ...current, matches_observed: current.matches_observed.filter((_, itemIdx) => itemIdx !== idx) }))}>-</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              {SCOUTING_NOTE_FIELDS.map(([key, label]) => (
+                <label key={key} className={key === "overall_comments" ? "md:col-span-2" : ""}>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">{label}</span>
+                  <textarea
+                    className="nl-field min-h-[96px]"
+                    value={form[key] || ""}
+                    onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
+                  />
+                </label>
+              ))}
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button type="button" className="nl-button-secondary" onClick={() => setModalOpen(false)}>Cancel</button>
+              <button type="button" className="nl-button-primary" onClick={save} disabled={saving}>
+                {saving ? "Saving..." : editing ? "Save report" : "Create report"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </ReportCard>
+  );
+}
+
 export default function YouthReportsPage() {
   const router = useRouter();
+  const { me } = useAuth();
   const hydratedQuery = useRef(false);
   const [playerQuery, setPlayerQuery] = useState("");
   const [playerResults, setPlayerResults] = useState([]);
@@ -673,7 +1177,7 @@ export default function YouthReportsPage() {
                 <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-[-0.04em] text-white md:text-6xl">
                   {report?.player?.name || "Youth scouting dossier"}
                 </h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-[#A0A8A3] md:text-base">
                   Position-based youth report using Eyeball statistics, competition context, raw metrics and positional percentiles.
                 </p>
                 {report ? (
@@ -799,7 +1303,7 @@ export default function YouthReportsPage() {
         </header>
 
         {error ? <ReportCard><p className="text-sm font-semibold text-red-300">{error}</p></ReportCard> : null}
-        {loading ? <ReportCard><p className="text-sm text-slate-600">Loading report...</p></ReportCard> : null}
+        {loading ? <ReportCard><p className="text-sm text-[#A0A8A3]">Loading report...</p></ReportCard> : null}
 
         {report ? (
           <>
@@ -873,16 +1377,18 @@ export default function YouthReportsPage() {
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8CC7A7]">Data coverage</p>
-                  <p className="mt-2 text-sm text-slate-600">Configured report metrics available: {metricsSummary.available.length}. Missing or unavailable for this youth provider: {metricsSummary.missing.length}.</p>
+                  <p className="mt-2 text-sm text-[#A0A8A3]">Configured report metrics available: {metricsSummary.available.length}. Missing or unavailable for this youth provider: {metricsSummary.missing.length}.</p>
                 </div>
-                <p className="text-xs text-slate-500">Missing Eyeball values are shown as "-" and are never coerced to zero.</p>
+                <p className="text-xs text-[#6F7772]">Missing Eyeball values are shown as "-" and are never coerced to zero.</p>
               </div>
             </ReportCard>
+
+            <YouthScoutingReportsPanel report={report} youthId={selectedPlayerId} me={me} />
           </>
         ) : !loading ? (
           <ReportCard className="py-14 text-center">
-            <p className="text-lg font-black text-slate-950">Search a player to open a youth scouting report.</p>
-            <p className="mt-2 text-sm text-slate-500">All statistics and percentiles are loaded from the Eyeball youth table.</p>
+            <p className="text-lg font-black text-white">Search a player to open a youth scouting report.</p>
+            <p className="mt-2 text-sm text-[#A0A8A3]">All statistics and percentiles are loaded from the Eyeball youth table.</p>
           </ReportCard>
         ) : null}
       </div>
