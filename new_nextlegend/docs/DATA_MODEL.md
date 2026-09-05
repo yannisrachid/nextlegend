@@ -563,15 +563,16 @@ Important fields:
 - identity snapshot fields: `player_name`, `club`, `year_of_birth`, `position`, `nationality`.
 - `scout`
 - `created_at`
-- `matches_observed`: JSONB list of observed matches.
+- `matches_observed`: JSONB list of observed matches with teams, optional score, match date, competition, occupied position, match rating, minutes played, observations and optional qualitative tags.
 - report notes: `technical_notes`, `physical_notes`, `tactical_notes`, `mental_notes`, `game_intelligence`, `strengths`, `weaknesses`, `development_projection`, `comparison`, `overall_comments`.
-- ratings: `technical_rating`, `physical_rating`, `tactical_rating`, `mental_rating`, `potential_rating`, `overall_rating`, `star_rating`.
+- ratings: `technical_rating`, `physical_rating`, `tactical_rating`, `mental_rating`, `potential_rating`, `overall_rating`, `star_rating`, `potential_star_rating`.
 - `photo_key`
 - `raw_payload`: original imported CSV row for auditability.
 
 Rules:
 - missing `year_of_birth`, `position`, or optional notes remain `NULL`; rows must not be rejected for incomplete legacy scouting context.
 - new reports created from the Youth Report page are linked to the selected youth row and current authenticated user.
+- Youth Reports exposes `star_rating` as Scouting Note and `potential_star_rating` as the five-star Potential assessment.
 - only the report scout or admin `yrachid` can edit/delete a report through the API.
 
 Import command:

@@ -136,17 +136,25 @@ def normalize_matches(value: Any) -> list[dict[str, Any]]:
                     continue
                 if not isinstance(item, dict):
                     continue
-                output.append(
-                    {
-                        "team_a": str(item.get("team_a") or "").strip(),
-                        "score_a": parse_match_number(item.get("score_a")),
-                        "score_b": parse_match_number(item.get("score_b")),
-                        "team_b": str(item.get("team_b") or "").strip(),
-                        "competition": str(item.get("competition") or "").strip(),
-                        "match_date": str(item.get("match_date") or "").strip(),
-                        "player_rating": parse_match_number(item.get("player_rating")),
-                    }
-                )
+                normalized = {
+                    "team_a": str(item.get("team_a") or "").strip(),
+                    "score_a": parse_match_number(item.get("score_a")),
+                    "score_b": parse_match_number(item.get("score_b")),
+                    "team_b": str(item.get("team_b") or "").strip(),
+                    "competition": str(item.get("competition") or "").strip(),
+                    "match_date": str(item.get("match_date") or "").strip(),
+                    "player_rating": parse_match_number(item.get("player_rating")),
+                }
+                if "minutes_played" in item:
+                    normalized["minutes_played"] = parse_match_number(item.get("minutes_played"))
+                if "position" in item:
+                    normalized["position"] = str(item.get("position") or "").strip()
+                if "observations" in item:
+                    normalized["observations"] = str(item.get("observations") or "").strip()
+                if "qualitative_tags" in item:
+                    raw_tags = item.get("qualitative_tags")
+                    normalized["qualitative_tags"] = raw_tags if isinstance(raw_tags, list) else []
+                output.append(normalized)
             return output
     return [
         {
@@ -301,7 +309,7 @@ def upsert_report(session, row: dict[str, str], players_by_id: dict[str, dict[st
               technical_notes, physical_notes, tactical_notes, mental_notes, game_intelligence,
               strengths, weaknesses, development_projection, comparison, overall_comments,
               technical_rating, physical_rating, tactical_rating, mental_rating, potential_rating,
-              overall_rating, star_rating, photo_key, source, raw_payload
+              overall_rating, star_rating, potential_star_rating, photo_key, source, raw_payload
             )
             VALUES (
               :id, :player_id, :linked_youth_ranking_id, :eyeball_player_id, :portal_url,
@@ -310,7 +318,7 @@ def upsert_report(session, row: dict[str, str], players_by_id: dict[str, dict[st
               :technical_notes, :physical_notes, :tactical_notes, :mental_notes, :game_intelligence,
               :strengths, :weaknesses, :development_projection, :comparison, :overall_comments,
               :technical_rating, :physical_rating, :tactical_rating, :mental_rating, :potential_rating,
-              :overall_rating, :star_rating, :photo_key, 'scoutyourlegend', CAST(:raw_payload AS jsonb)
+              :overall_rating, :star_rating, :potential_star_rating, :photo_key, 'scoutyourlegend', CAST(:raw_payload AS jsonb)
             )
             ON CONFLICT (id) DO UPDATE SET
               player_id = EXCLUDED.player_id,
@@ -341,6 +349,7 @@ def upsert_report(session, row: dict[str, str], players_by_id: dict[str, dict[st
               potential_rating = EXCLUDED.potential_rating,
               overall_rating = EXCLUDED.overall_rating,
               star_rating = EXCLUDED.star_rating,
+              potential_star_rating = COALESCE(EXCLUDED.potential_star_rating, scouting_reports.potential_star_rating),
               photo_key = COALESCE(EXCLUDED.photo_key, scouting_reports.photo_key),
               raw_payload = EXCLUDED.raw_payload,
               updated_at = NOW()
@@ -377,6 +386,7 @@ def upsert_report(session, row: dict[str, str], players_by_id: dict[str, dict[st
             "potential_rating": to_float(row.get("potential_rating")),
             "overall_rating": overall_rating,
             "star_rating": star_rating,
+            "potential_star_rating": to_float(row.get("potential_star_rating")),
             "photo_key": blank_to_none(row.get("photo_key")) or blank_to_none(merged_player.get("photo_key")),
             "raw_payload": json.dumps(row, ensure_ascii=False),
         },

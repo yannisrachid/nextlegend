@@ -728,6 +728,7 @@ CREATE TABLE IF NOT EXISTS scouting_reports (
     potential_rating DOUBLE PRECISION,
     overall_rating DOUBLE PRECISION,
     star_rating DOUBLE PRECISION,
+    potential_star_rating DOUBLE PRECISION,
     photo_key TEXT,
     source TEXT NOT NULL DEFAULT 'scoutyourlegend',
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb
@@ -745,6 +746,7 @@ ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS linked_youth_ranking_id BI
 ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS eyeball_player_id TEXT;
 ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS portal_url TEXT;
 ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS photo_key TEXT;
+ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS potential_star_rating DOUBLE PRECISION;
 ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scoutyourlegend';
 ALTER TABLE scouting_reports ADD COLUMN IF NOT EXISTS raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
 
@@ -1683,6 +1685,7 @@ class YouthProspectToggle(BaseModel):
 
 
 class ScoutingMatchObservationPayload(BaseModel):
+    source: Optional[str] = None
     team_a: Optional[str] = None
     score_a: Optional[float] = None
     score_b: Optional[float] = None
@@ -1690,6 +1693,10 @@ class ScoutingMatchObservationPayload(BaseModel):
     competition: Optional[str] = None
     match_date: Optional[str] = None
     player_rating: Optional[float] = None
+    minutes_played: Optional[float] = None
+    position: Optional[str] = None
+    observations: Optional[str] = None
+    qualitative_tags: Optional[list[str] | str] = None
 
 
 class ScoutingReportPayload(BaseModel):
@@ -1719,6 +1726,7 @@ class ScoutingReportPayload(BaseModel):
     potential_rating: Optional[float] = None
     overall_rating: Optional[float] = None
     star_rating: Optional[float] = None
+    potential_star_rating: Optional[float] = None
     photo_key: Optional[str] = None
     portal_url: Optional[str] = None
 
@@ -2283,6 +2291,35 @@ def admin_users(request: Request, session: Session = Depends(get_session)):
     ).fetchall()
     items = [AdminUser(**_row_to_dict(row)) for row in rows]
     return AdminUserList(items=items)
+
+
+@app.get("/users/options")
+def user_options(session: Session = Depends(get_session)):
+    _ensure_auth_schema(session)
+    rows = session.execute(
+        text(
+            """
+            SELECT username, display_name, email, role
+            FROM auth_users
+            ORDER BY
+              CASE WHEN lower(username) = :admin THEN 0 ELSE 1 END,
+              lower(COALESCE(display_name, username)),
+              lower(username)
+            """
+        ),
+        {"admin": ADMIN_USERNAME},
+    ).fetchall()
+    return {
+        "items": [
+            {
+                "username": row.username,
+                "display_name": row.display_name,
+                "email": row.email,
+                "role": row.role or "user",
+            }
+            for row in rows
+        ]
+    }
 
 
 @app.post("/admin/users", response_model=AdminUser)
@@ -7008,6 +7045,48 @@ async def upload_hd_player_file(
     }
 
 
+@app.post("/youth/scouting-reports/upload")
+async def upload_youth_scouting_file(
+    request: Request,
+    youth_id: Optional[int] = Query(None),
+    purpose: str = Query("photo"),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+):
+    _ensure_youth_schema(session)
+    if youth_id:
+        youth_row = session.execute(
+            text("SELECT id FROM youth_player_rankings WHERE id = :youth_id"),
+            {"youth_id": youth_id},
+        ).fetchone()
+        if not youth_row:
+            raise HTTPException(status_code=404, detail="Youth player not found")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    max_bytes = 20 * 1024 * 1024
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail="Uploaded file is too large")
+    clean_purpose = re.sub(r"[^a-z0-9_-]+", "-", purpose.lower()).strip("-") or "photo"
+    clean_name = re.sub(r"[^A-Za-z0-9._-]+", "-", file.filename or "upload").strip("-") or "upload"
+    content_type = file.content_type or mimetypes.guess_type(clean_name)[0] or "application/octet-stream"
+    if clean_purpose == "photo" and not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Youth scouting photo must be an image")
+    youth_segment = str(youth_id or "unlinked")
+    key = f"{os.getenv('S3_PREFIX', 'new_nextlegend').strip('/')}/youth-scouting/{youth_segment}/{clean_purpose}/{uuid.uuid4().hex}-{clean_name}"
+    client = _s3_client()
+    bucket = _s3_bucket()
+    _ensure_s3_bucket(client, bucket)
+    client.put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    return {
+        "file_key": key,
+        "storage_url": _storage_proxy_url(request, key),
+        "file_name": file.filename,
+        "content_type": content_type,
+        "size_bytes": len(raw),
+    }
+
+
 @app.get("/hd-players/{hd_player_id}")
 def get_hd_player(hd_player_id: int, session: Session = Depends(get_session)):
     _ensure_agency_ops_schema(session)
@@ -8913,27 +8992,120 @@ def _validate_rating_value(value: Optional[float], label: str, *, minimum: float
     return numeric
 
 
+SCOUTING_MATCH_POSITIONS = {"GK", "RB", "CB", "LB", "RWB", "LWB", "DM", "CM", "AM", "RW", "LW", "ST"}
+SCOUTING_POSITION_TAG_KEY = {
+    "GK": "GK",
+    "RB": "FULLBACK",
+    "CB": "CB",
+    "LB": "FULLBACK",
+    "RWB": "WINGBACK",
+    "LWB": "WINGBACK",
+    "DM": "DM",
+    "CM": "CM",
+    "AM": "AM",
+    "RW": "WINGER",
+    "LW": "WINGER",
+    "ST": "ST",
+}
+SCOUTING_QUALITATIVE_TAGS = {
+    "GK": {
+        "SHOT-STOPPER", "COMMANDING", "SAVIOR", "PENALTY KILLER", "CLEAN SHEET", "SWEEPER KEEPER",
+        "RELIABLE HANDS", "BIG SAVE", "SHAKY", "ERROR-PRONE", "COOL UNDER PRESSURE", "DISTRIBUTOR",
+    },
+    "CB": {
+        "SOLID", "DOMINANT", "AERIAL THREAT", "INTERCEPTOR", "BRICK WALL", "CLEAN SHEET HERO",
+        "COMPOSED ON BALL", "LAST-DITCH TACKLE", "CAUGHT OUT", "ERROR LEADING TO GOAL", "LEADER", "NO-NONSENSE",
+    },
+    "FULLBACK": {
+        "OVERLAPPING", "ENERGETIC", "SOLID DEFENSIVELY", "CROSSING THREAT", "RELENTLESS",
+        "CAUGHT OUT OF POSITION", "ONE-ON-ONE SPECIALIST", "ASSIST PROVIDER", "TIRELESS", "EXPOSED",
+    },
+    "WINGBACK": {
+        "EXPLOSIVE", "ENGINE", "CROSSING THREAT", "BOX-TO-BOX", "OVERLAPPING", "DEFENSIVE LIABILITY",
+        "ASSIST PROVIDER", "RELENTLESS", "GAME CHANGER", "TIRELESS",
+    },
+    "DM": {
+        "SHIELD", "INTERCEPTOR", "DISCIPLINED", "BALL WINNER", "COMPOSED", "DEEP PLAYMAKER",
+        "PRESSING MACHINE", "CARELESS ON BALL", "ANCHOR", "BOOKED / RECKLESS",
+    },
+    "CM": {
+        "ENGINE", "BOX-TO-BOX", "PLAYMAKER", "CONSISTENT", "VISIONARY", "WORK RATE",
+        "GAME CONTROLLER", "SLOPPY PASSING", "INEFFECTIVE", "TWO-WAY THREAT",
+    },
+    "AM": {
+        "CREATIVE", "VISIONARY", "DECISIVE", "CLINICAL", "KEY PASS MACHINE", "UNPREDICTABLE",
+        "GAME CHANGER", "QUIET / INVISIBLE", "SKILLFUL", "LAST-THIRD THREAT",
+    },
+    "WINGER": {
+        "EXPLOSIVE", "SKILLFUL", "DRIBBLER", "FLASHY", "CLINICAL", "ASSIST MACHINE",
+        "UNPREDICTABLE", "WASTEFUL", "ONE-ON-ONE THREAT", "CUT-INSIDE THREAT",
+    },
+    "ST": {
+        "CLINICAL", "POACHER", "SCORER", "HOLD-UP PLAY", "AERIAL THREAT", "RELENTLESS",
+        "WASTEFUL", "ISOLATED", "GAME CHANGER", "COLD-BLOODED",
+    },
+}
+
+
 def _normalize_scouting_matches(matches: Optional[list[ScoutingMatchObservationPayload]]) -> list[dict[str, Any]]:
     if not matches:
         return []
     normalized = []
     for idx, item in enumerate(matches):
         match = item.model_dump() if hasattr(item, "model_dump") else dict(item)
-        has_text = any(str(match.get(key) or "").strip() for key in ["team_a", "team_b", "competition", "match_date"])
-        has_score = any(match.get(key) is not None for key in ["score_a", "score_b", "player_rating"])
+        has_text = any(
+            str(match.get(key) or "").strip()
+            for key in ["team_a", "team_b", "competition", "match_date", "position", "observations"]
+        )
+        has_score = any(match.get(key) is not None for key in ["score_a", "score_b", "player_rating", "minutes_played"])
         if not has_text and not has_score:
             continue
+        source = str(match.get("source") or "").strip() or "legacy"
+        strict_match = source == "nextlegend_ui"
+        if strict_match:
+            for key, label in [
+                ("team_a", "Opponent A"),
+                ("team_b", "Opponent B"),
+                ("competition", "Competition"),
+                ("match_date", "Match date"),
+                ("position", "Position"),
+                ("observations", "Observations"),
+            ]:
+                if not str(match.get(key) or "").strip():
+                    raise HTTPException(status_code=400, detail=f"Match {idx + 1} {label} is required")
+            position = str(match.get("position") or "").strip().upper()
+            if position not in SCOUTING_MATCH_POSITIONS:
+                raise HTTPException(status_code=400, detail=f"Match {idx + 1} Position must be a supported scouting position")
+            match["position"] = position
         for key, label, maximum in [
             ("score_a", "Score A", 30),
             ("score_b", "Score B", 30),
-            ("player_rating", "Player rating", 10),
+            ("player_rating", "Player rating", 5),
+            ("minutes_played", "Minutes played", 130),
         ]:
             value = match.get(key)
             if value is None or value == "":
+                if key == "player_rating" and strict_match:
+                    raise HTTPException(status_code=400, detail=f"Match {idx + 1} Player rating is required")
                 continue
-            match[key] = _validate_rating_value(value, f"Match {idx + 1} {label}", minimum=0, maximum=maximum)
+            minimum = 1 if key == "player_rating" else 0
+            match[key] = _validate_rating_value(value, f"Match {idx + 1} {label}", minimum=minimum, maximum=maximum)
+        raw_tags = match.get("qualitative_tags") or []
+        if isinstance(raw_tags, str):
+            tags = [tag.strip().upper() for tag in re.split(r"[,;]", raw_tags) if tag.strip()]
+        elif isinstance(raw_tags, list):
+            tags = [str(tag).strip().upper() for tag in raw_tags if str(tag).strip()]
+        else:
+            tags = []
+        if strict_match:
+            tag_key = SCOUTING_POSITION_TAG_KEY.get(str(match.get("position") or "").strip().upper())
+            allowed_tags = SCOUTING_QUALITATIVE_TAGS.get(tag_key, set())
+            invalid_tags = [tag for tag in tags if tag not in allowed_tags]
+            if invalid_tags:
+                raise HTTPException(status_code=400, detail=f"Match {idx + 1} Qualitative tags are not valid for this position")
         normalized.append(
             {
+                "source": source,
                 "team_a": str(match.get("team_a") or "").strip(),
                 "score_a": match.get("score_a"),
                 "score_b": match.get("score_b"),
@@ -8941,6 +9113,10 @@ def _normalize_scouting_matches(matches: Optional[list[ScoutingMatchObservationP
                 "competition": str(match.get("competition") or "").strip(),
                 "match_date": str(match.get("match_date") or "").strip(),
                 "player_rating": match.get("player_rating"),
+                "minutes_played": match.get("minutes_played"),
+                "position": str(match.get("position") or "").strip(),
+                "observations": str(match.get("observations") or "").strip(),
+                "qualitative_tags": tags,
             }
         )
     return normalized
@@ -8955,6 +9131,7 @@ def _scouting_rating_fields(payload: ScoutingReportPayload) -> dict[str, Optiona
         "potential_rating": _validate_rating_value(payload.potential_rating, "Potential rating"),
         "overall_rating": _validate_rating_value(payload.overall_rating, "Overall rating"),
         "star_rating": _validate_rating_value(payload.star_rating, "Star rating", minimum=1, maximum=5),
+        "potential_star_rating": _validate_rating_value(payload.potential_star_rating, "Potential", minimum=1, maximum=5),
     }
     legacy_values = [
         ratings["technical_rating"],
@@ -8985,8 +9162,22 @@ def _scouting_report_row(row: Any) -> dict[str, Any]:
         "potential": payload.get("potential_rating"),
         "overall": payload.get("overall_rating"),
         "stars": payload.get("star_rating"),
+        "potential_stars": payload.get("potential_star_rating"),
     }
     return payload
+
+
+def _resolve_scout_username(session: Session, requested: Optional[str], fallback: Optional[str]) -> str:
+    candidate = str(requested or fallback or "").strip()
+    if not candidate:
+        return "unknown"
+    found = session.execute(
+        text("SELECT username FROM auth_users WHERE lower(username) = lower(:username) LIMIT 1"),
+        {"username": candidate},
+    ).fetchone()
+    if found:
+        return found.username
+    raise HTTPException(status_code=400, detail="Reporter must be an existing user")
 
 
 def _load_youth_for_scouting(session: Session, youth_id: Optional[int]) -> Optional[dict[str, Any]]:
@@ -9399,6 +9590,7 @@ def create_youth_scouting_report(
     session: Session = Depends(get_session),
 ):
     _ensure_youth_schema(session)
+    _ensure_auth_schema(session)
     user = getattr(request.state, "user", None) or {}
     youth = _load_youth_for_scouting(session, payload.youth_id)
     raw_youth = youth.get("raw_payload") if youth else {}
@@ -9449,7 +9641,7 @@ def create_youth_scouting_report(
               technical_notes, physical_notes, tactical_notes, mental_notes, game_intelligence,
               strengths, weaknesses, development_projection, comparison, overall_comments,
               technical_rating, physical_rating, tactical_rating, mental_rating, potential_rating,
-              overall_rating, star_rating, photo_key, source, raw_payload
+              overall_rating, star_rating, potential_star_rating, photo_key, source, raw_payload
             )
             VALUES (
               :id, :player_id, :linked_youth_ranking_id, :eyeball_player_id, :portal_url,
@@ -9458,7 +9650,7 @@ def create_youth_scouting_report(
               :technical_notes, :physical_notes, :tactical_notes, :mental_notes, :game_intelligence,
               :strengths, :weaknesses, :development_projection, :comparison, :overall_comments,
               :technical_rating, :physical_rating, :tactical_rating, :mental_rating, :potential_rating,
-              :overall_rating, :star_rating, :photo_key, 'nextlegend', CAST(:raw_payload AS jsonb)
+              :overall_rating, :star_rating, :potential_star_rating, :photo_key, 'nextlegend', CAST(:raw_payload AS jsonb)
             )
             RETURNING *
             """
@@ -9474,7 +9666,7 @@ def create_youth_scouting_report(
             "year_of_birth": year_of_birth,
             "position": position,
             "nationality": nationality,
-            "scout": user.get("username") or payload.scout or "unknown",
+            "scout": _resolve_scout_username(session, payload.scout, user.get("username")),
             "matches_observed": json.dumps(matches),
             "technical_notes": payload.technical_notes,
             "physical_notes": payload.physical_notes,
@@ -9503,6 +9695,7 @@ def update_youth_scouting_report(
     session: Session = Depends(get_session),
 ):
     _ensure_youth_schema(session)
+    _ensure_auth_schema(session)
     user = getattr(request.state, "user", None) or {}
     existing = session.execute(text("SELECT * FROM scouting_reports WHERE id = :id"), {"id": report_id}).fetchone()
     if not existing:
@@ -9532,6 +9725,8 @@ def update_youth_scouting_report(
         "photo_key": payload.photo_key,
         **ratings,
     }
+    if payload.scout is not None:
+        updates["scout"] = _resolve_scout_username(session, payload.scout, existing_payload.get("scout"))
     clean_updates = {key: value for key, value in updates.items() if value is not None}
     if matches is not None:
         clean_updates["matches_observed"] = json.dumps(matches)
