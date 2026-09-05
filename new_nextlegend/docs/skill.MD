@@ -49,6 +49,10 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Use the `nl-field` pattern for text inputs/selects/filters to avoid browser-autofill blue backgrounds and inconsistent dark-mode styling.
 - Scouting filter UX should preserve user selections when possible; default ranking filters are Big 5 Leagues, season `2026/2027`, all positions, 90+ minutes, age 15-45.
 - Player search/autocomplete results should be ordered by club strength/ranking where the backend provides enough context.
+- Youth Reports include a bottom section for human scout observations imported from ScoutYourLegend and created in NextLegend. Keep the statistical Eyeball report and human scouting reports separate but linked by Eyeball player ID when available.
+- ScoutYourLegend CSV files under `apps/api/imports/scoutyourlegend/` are migration inputs only. Do not use CSV as runtime storage; import into `scouting_players` and `scouting_reports` with `apps/api/scripts/import_scoutyourlegend_reports.py`.
+- Preserve legacy ScoutYourLegend UUIDs on import when available. Link reports to `youth_player_rankings` via `eyeball_player_id` extracted from portal URLs before falling back to exact name/year/club matching.
+- Human scouting report edits/deletes are limited to the original scout or admin `yrachid`.
 - AI Assistant layout: keep a two-column desktop composition with `Conversation memory`, `Context lock`, admin-only `Usage`, and brief-input guidance in the left column; the chat/composer stays in the main column. Avoid a third right column because it breaks when the navigation is expanded.
 - AI conversations are user-scoped server-side. The API must use the authenticated session user, not a client-provided `user_id`, as the source of truth for conversation history.
 - AI usage/admin user tooling must remain visible only to admin `yrachid`.

@@ -24,8 +24,8 @@ import {
 
 const TM_BASE_URL = "https://www.transfermarkt.com";
 
-export const ReportCard = ({ children, className = "" }) => (
-  <section className={`surface-panel rounded-lg p-4 ${className}`}>
+export const ReportCard = ({ children, className = "", ...props }) => (
+  <section className={`surface-panel rounded-lg p-4 ${className}`} {...props}>
     {children}
   </section>
 );

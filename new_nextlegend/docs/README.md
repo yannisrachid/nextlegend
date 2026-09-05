@@ -19,6 +19,7 @@ Project snapshot:
 - Object storage: MinIO, S3-compatible.
 - Current product: Next Legend for HD Sports scouting and agency operations.
 - Integrated CRM: `/crm`, backed by `crm_*` tables and documented in `docs/CRM_INTEGRATION.md`.
+- Youth human scouting reports: bottom section of `/youth-scouting/reports`, backed by `scouting_players` and `scouting_reports`.
 
 Key invariants:
 - API root `/` and `/health` are public and must return 200.
@@ -29,6 +30,7 @@ Key invariants:
 - Pipeline writes `player_seasons`, `player_metrics`, `role_scores`, `player_similarity`, and `pipeline_runs`.
 - Scoring v2 uses position groups, not tactical role assignment. Legacy `assigned_role` fields now contain the position group for API compatibility.
 - Transfermarkt fields are stored as `tm_*` columns on `player_seasons` and `tm_id` / `tm_profile_url` on `players`.
+- ScoutYourLegend CSV imports are one-shot/idempotent migration inputs only; runtime source of truth is PostgreSQL.
 - Do not run the full raw pipeline on the current VPS; use local-compute then PRD-load.
 
 Quick commands:
@@ -38,6 +40,9 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml up -d
 
 # dev pipeline refresh from data/wyscout_players_final.csv
 docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm pipeline-refresh
+
+# import legacy ScoutYourLegend youth scouting reports into dev Postgres
+docker compose --env-file .env -f infra/compose/docker-compose.yml run --rm --entrypoint python api scripts/import_scoutyourlegend_reports.py
 
 # prod health checks
 curl -I https://api.nextlegend.fr/
