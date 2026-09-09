@@ -1465,7 +1465,8 @@ def snapshot_current_season_scores(
                 score_snapshot_id = snapshot_ids.get(player_season_id)
                 if not score_snapshot_id:
                     continue
-                position_group = str(getattr(row, "position_group", "") or "")
+                raw_position_group = getattr(row, "position_group", "")
+                position_group = "" if pd.isna(raw_position_group) else str(raw_position_group)
                 specs = metric_specs.get(position_group, {})
                 if not specs:
                     continue
