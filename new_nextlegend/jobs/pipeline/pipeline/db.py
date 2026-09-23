@@ -269,6 +269,76 @@ CREATE TABLE IF NOT EXISTS player_metric_snapshots (
 CREATE INDEX IF NOT EXISTS player_metric_snapshots_metric_idx
     ON player_metric_snapshots(metric_key);
 
+CREATE TABLE IF NOT EXISTS opta_power_ranking_runs (
+    id SERIAL PRIMARY KEY,
+    source_url TEXT NOT NULL,
+    source_bundle_url TEXT,
+    source_last_updated TEXT,
+    source_last_updated_date DATE,
+    gender TEXT NOT NULL DEFAULT 'mens',
+    bundle_hash TEXT,
+    rows_imported INT NOT NULL DEFAULT 0,
+    matched_clubs INT NOT NULL DEFAULT 0,
+    scraped_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(gender, source_last_updated, bundle_hash)
+);
+CREATE INDEX IF NOT EXISTS opta_power_ranking_runs_gender_date_idx
+    ON opta_power_ranking_runs(gender, source_last_updated_date DESC, scraped_at DESC);
+
+CREATE TABLE IF NOT EXISTS opta_power_rankings (
+    id SERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES opta_power_ranking_runs(id) ON DELETE CASCADE,
+    gender TEXT NOT NULL DEFAULT 'mens',
+    opta_contestant_id TEXT NOT NULL,
+    opta_id TEXT,
+    rank INT,
+    team TEXT NOT NULL,
+    contestant_club_name TEXT,
+    contestant_short_name TEXT,
+    rating DOUBLE PRECISION,
+    ranking_change_7_days INT,
+    country TEXT,
+    country_id TEXT,
+    confederation TEXT,
+    confederation_id TEXT,
+    domestic_league_name TEXT,
+    domestic_league_id TEXT,
+    season_average_rating DOUBLE PRECISION,
+    highest_season_rating DOUBLE PRECISION,
+    lowest_season_rating DOUBLE PRECISION,
+    raw JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(run_id, opta_contestant_id)
+);
+CREATE INDEX IF NOT EXISTS opta_power_rankings_run_rank_idx
+    ON opta_power_rankings(run_id, rank);
+CREATE INDEX IF NOT EXISTS opta_power_rankings_team_idx
+    ON opta_power_rankings(team);
+
+CREATE TABLE IF NOT EXISTS opta_power_ranking_club_mappings (
+    id SERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES opta_power_ranking_runs(id) ON DELETE CASCADE,
+    club_id INT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+    opta_ranking_id INT NOT NULL REFERENCES opta_power_rankings(id) ON DELETE CASCADE,
+    wyscout_team TEXT NOT NULL,
+    wyscout_competition TEXT,
+    opta_team TEXT NOT NULL,
+    opta_country TEXT,
+    opta_league TEXT,
+    match_method TEXT NOT NULL,
+    match_score DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(run_id, club_id)
+);
+CREATE INDEX IF NOT EXISTS opta_power_ranking_club_mappings_club_idx
+    ON opta_power_ranking_club_mappings(club_id);
+CREATE INDEX IF NOT EXISTS opta_power_ranking_club_mappings_run_idx
+    ON opta_power_ranking_club_mappings(run_id);
+
 CREATE TABLE IF NOT EXISTS prospects (
     id SERIAL PRIMARY KEY,
     player_id INT UNIQUE REFERENCES players(id) ON DELETE CASCADE,
@@ -1465,7 +1535,8 @@ def snapshot_current_season_scores(
                 score_snapshot_id = snapshot_ids.get(player_season_id)
                 if not score_snapshot_id:
                     continue
-                position_group = str(getattr(row, "position_group", "") or "")
+                raw_position_group = getattr(row, "position_group", "")
+                position_group = "" if pd.isna(raw_position_group) else str(raw_position_group)
                 specs = metric_specs.get(position_group, {})
                 if not specs:
                     continue

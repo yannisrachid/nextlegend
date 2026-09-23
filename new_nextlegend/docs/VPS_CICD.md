@@ -227,6 +227,7 @@ Required PRD artifact tables:
 - `player_similarity`
 
 PRD loader rules:
+- refresh club power rankings before the current-season Wyscout load when running the weekly cycle;
 - keep `PIPELINE_REPLACE_TABLES=0`;
 - use `PIPELINE_REPLACE_INPUT_SLICES=0` for routine weekly refreshes;
 - use `PIPELINE_REPLACE_SIMILARITY=0`; similarity is merged by unique edge then pruned to `SIM_TOPK`;
@@ -245,13 +246,24 @@ Score snapshot behavior:
 
 Next current-season run requirement:
 1. Deploy `main` first so the API/pipeline code contains the snapshot schema and writer.
-2. Confirm the three snapshot tables exist:
+2. Refresh Opta club power rankings first:
+   ```bash
+   cd ~/nextlegend/new_nextlegend
+   DOCKER_COMPOSE_FILE=infra/compose/docker-compose-prod.yml \
+   ./scripts/refresh_club_power_rankings.sh
+   ```
+   Validate the latest run:
+   ```bash
+   docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
+     sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT id, source_last_updated_date, rows_imported, matched_clubs FROM opta_power_ranking_runs ORDER BY id DESC LIMIT 3;"'
+   ```
+3. Confirm the three snapshot tables exist:
    ```bash
    cd ~/nextlegend/new_nextlegend
    docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
      sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT to_regclass('\''public.scoring_snapshot_runs'\''), to_regclass('\''public.player_score_snapshots'\''), to_regclass('\''public.player_metric_snapshots'\'');"'
    ```
-3. Run the current-season enriched load with pure incremental upsert:
+4. Run the current-season enriched load with pure incremental upsert:
    ```bash
    cd ~/nextlegend/new_nextlegend
    DOCKER_COMPOSE_FILE=infra/compose/docker-compose-prod.yml \
@@ -262,7 +274,7 @@ Next current-season run requirement:
    PIPELINE_REPLACE_INPUT_SLICES=0 \
    ./scripts/load_current_season_enriched.sh
    ```
-4. Validate that a snapshot run was written:
+5. Validate that a snapshot run was written:
    ```bash
    docker compose --env-file .env -f infra/compose/docker-compose-prod.yml exec -T db \
      sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT snapshot_key, season_label, rows_snapshotted, metric_rows_snapshotted, scoring_model_version FROM scoring_snapshot_runs ORDER BY id DESC LIMIT 5;"'

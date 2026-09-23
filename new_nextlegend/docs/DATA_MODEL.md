@@ -586,6 +586,7 @@ Owned by: API/import tooling.
 ## Refresh Rules
 
 Weekly/current-season refreshes:
+- refresh Opta Power Rankings first when club-strength inputs are stale;
 - default to incremental upsert;
 - keep historical seasons;
 - preserve player-season rows temporarily missing from scraper output;
@@ -600,9 +601,25 @@ Incremental persistence rules:
 - `player_metric_percentiles_league` key is `player_season_id + metric_key`.
 - `role_scores` key is `player_season_id + profile`.
 - `player_similarity` key is `player_a_season_id + player_b_season_id + profile`.
+- `opta_power_ranking_runs` stores each downloaded Opta bundle/run.
+- `opta_power_rankings` stores team rank/rating history per Opta run.
+- `opta_power_ranking_club_mappings` stores the Wyscout club to Opta team match for each run.
 - Upserts update existing rows only when at least one persisted value is different (`IS DISTINCT FROM`).
 - Routine refreshes must not call slice purges; use `PIPELINE_REPLACE_INPUT_SLICES=0`.
 - `PIPELINE_REPLACE_TABLES=1` is reserved for explicit full rebuilds.
+
+Club power ranking rules:
+- Source is the Opta/The Analyst Dataviz bundle behind `https://dataviz.theanalyst.com/opta-power-rankings/`.
+- Stable Wyscout-to-Opta club overrides live in `helpers/csv/opta_power_club_mapping.csv`.
+- Review files are `helpers/csv/opta_power_mapping_review.csv` for fuzzy/ambiguous mappings and `helpers/csv/opta_power_unmapped_wyscout_clubs.csv` for unmapped clubs.
+- CSV files are globally ignored by the root Git config; force-add these mapping files when they must be versioned.
+- Refresh command:
+  ```bash
+  ./scripts/refresh_club_power_rankings.sh
+  ```
+- The script extracts the latest men rankings, persists the full run, and maps Opta clubs to Wyscout `clubs`.
+- The scoring pipeline reads the latest persisted Opta mappings and attaches `club_power_rating` before `scoring_v2`.
+- `scoring_v2` uses Opta club power as the primary `team_strength_z` input when available, with fallback to the internal Wyscout-derived team strength for unmapped clubs.
 
 Data quality and freshness gates run before persistence:
 - required raw/fact columns must exist;
