@@ -64,6 +64,9 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Keep fuzzy matching conservative: reject ambiguous weak-token matches.
 - Similarities are top-k per position group; default `SIM_TOPK=10`.
 - Use `PIPELINE_REPLACE_SIMILARITY=1` when rebuilding `player_similarity`.
+- Club power rankings are persisted from Opta/The Analyst with `./scripts/refresh_club_power_rankings.sh`.
+- Run the Opta club-power refresh before weekly/current-season Wyscout loads so `scoring_v2` can use fresh `club_power_rating` values.
+- `scoring_v2` uses Opta club power as the primary team-strength signal when available, with fallback to the internal Wyscout-derived team strength.
 - Current-season score snapshots are pipeline-owned and enabled through `SCORE_SNAPSHOT_ENABLED=1`.
 - Snapshot default scope is seasons `2026/2027` and `2026`, controlled by `SCORE_SNAPSHOT_SEASONS`.
 - Snapshot default cadence is biweekly, controlled by `SCORE_SNAPSHOT_CADENCE=biweekly`; monthly is allowed if the product decision changes.

@@ -496,6 +496,17 @@ def _team_strength_z(df: pd.DataFrame) -> pd.Series:
     return z.fillna(0.0).clip(lower=-2.5, upper=2.5)
 
 
+def _external_club_power_z(df: pd.DataFrame) -> pd.Series:
+    if "club_power_rating" not in df.columns:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+    rating = _coerce_numeric(df["club_power_rating"])
+    mask = rating.notna()
+    if int(mask.sum()) < 20:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+    z = _robust_z(rating, mask)
+    return z.where(mask).clip(lower=-2.5, upper=2.5)
+
+
 def _context_adjusted_z(metric_score: pd.Series, family: str, team_strength_z: pd.Series) -> pd.Series:
     clipped_score = metric_score.clip(lower=1e-6, upper=99.999999)
     z = 1.15 * np.log(clipped_score / (100.0 - clipped_score))
@@ -724,7 +735,9 @@ def score_dataframe(df: pd.DataFrame) -> dict[str, pd.DataFrame | pd.Series]:
 
     group_keys = assign_position_groups(df)
     group_names = group_keys.map(lambda key: POSITION_GROUP_BY_KEY[key].display_name if key in POSITION_GROUP_BY_KEY else None)
-    team_strength = _team_strength_z(df)
+    internal_team_strength = _team_strength_z(df)
+    external_team_strength = _external_club_power_z(df)
+    team_strength = external_team_strength.where(external_team_strength.notna(), internal_team_strength)
     minutes = _coerce_numeric(df.get("minutes_played", pd.Series(0, index=df.index))).fillna(0)
     confidence = context_minutes_confidence(df, minutes)
 

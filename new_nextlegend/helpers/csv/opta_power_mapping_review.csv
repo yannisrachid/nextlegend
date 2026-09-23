@@ -1,0 +1,71 @@
+wyscout_team,wyscout_competition,opta_team,opta_country,opta_league,match_method,match_score,rating,rank
+St. Patrick's Ath.,Republic of Ireland. Premier Division,St Patrick's Athletic,Republic of Ireland,Premier Division,fuzzy_country,86.49,73.6490968543,930
+Metalist 1925 Kharkiv,Ukraine. Persha Liga,FK Metalist Kharkiv,Ukraine,Persha Liga,fuzzy_country,86.49,57.7774335496,4689
+Metalist 1925 Kharkiv,Ukraine. VBET League,FK Metalist Kharkiv,Ukraine,Persha Liga,fuzzy_country,86.49,57.7774335496,4689
+Rapid Wien,Austria. Bundesliga,Rapid Wien II,Austria,2. Liga,fuzzy_country,86.96,62.4677702299,3195
+EC São José,Brazil. Serie C,São José AP,Brazil,Amapaense,fuzzy_country,86.96,44.3968478978,10456
+Angers SCO,France. Ligue 1,Angers SCO II,France,,fuzzy_country,86.96,55.3701718675,5484
+Angers SCO,France. Ligue 2,Angers SCO II,France,,fuzzy_country,86.96,55.3701718675,5484
+Panetolikos FC,Greece. Stoiximan Super League,Panaitolikos,Greece,Super League 1,fuzzy_country,86.96,74.2176485407,849
+El Geish,Egypt. Premier League,El Gaish,Egypt,Premier League,fuzzy_country,87.5,72.0339097348,1135
+BB Erzurumspor,Türkiye. 1. Lig,Erzurumspor,Türkiye,Süper Lig,fuzzy_country,88,76.6527691679,599
+Farul Constanţa,Romania. Superliga,FCV Farul Constanţa,Romania,Liga I,fuzzy_country,88.24,73.4546497761,951
+Neuchâtel Xamax,Switzerland. Challenge League,Xamax,Switzerland,Challenge League,fuzzy_country,88.24,67.5482155158,1869
+Guidonia Montecelio,Italy. Serie C,Guidonia Montecelio 1937,Italy,Serie C,fuzzy_country,88.37,62.7895534785,3105
+Univ. Concepción,Chile. Primera B,Universidad Concepción,Chile,Primera División,fuzzy_country,88.89,73.661000918,927
+Univ. Concepción,Chile. Primera División,Universidad Concepción,Chile,Primera División,fuzzy_country,88.89,73.661000918,927
+Steaua Bucureşti,Romania. Liga II,CSA Steaua Bucureşti,Romania,Liga II,fuzzy_country,88.89,63.2624531674,2979
+Al Orubah,Saudi Arabia. Division 1,Al Orobah,Saudi Arabia,First Division League,fuzzy_country,88.89,65.2259490309,2414
+Al Orubah,Saudi Arabia. Pro League,Al Orobah,Saudi Arabia,First Division League,fuzzy_country,88.89,65.2259490309,2414
+Olympiacos Piraeus B,Greece. Super League 2,Olympiakos Piraeus,Greece,Super League 1,fuzzy_country,89.47,86.6761287035,63
+Serik Belediyespor,Türkiye. 1. Lig,Siverek Belediyespor,Türkiye,Bölgesel Amatör Lig,fuzzy_country,89.47,50.6678204285,7567
+Akron Togliatti,Russia. Premier League,Akron,Russia,Premier League,fuzzy_country,89.66,73.5494274489,939
+Académico de Viseu F.C.,Portugal. Primeira Liga,Académico de Viseu,Portugal,Primeira Liga,fuzzy_country,90,79.9669793385,334
+Académico de Viseu F.C.,Portugal. Segunda Liga,Académico de Viseu,Portugal,Primeira Liga,fuzzy_country,90,79.9669793385,334
+Deportivo La Coruña,Spain. La Liga,Deportivo de A Coruña,Spain,Primera División,fuzzy_country,90,84.1145701123,130
+Deportivo La Coruña,Spain. Segunda División,Deportivo de A Coruña,Spain,Primera División,fuzzy_country,90,84.1145701123,130
+Western United,Australia. A-League,Western United II,Australia,Victoria PL 1,fuzzy_country,90.32,27.6032689007,13909
+Sporting Gijón,Spain. Segunda División,Sporting de Gijón,Spain,Segunda División,fuzzy_country,90.32,79.1801261974,396
+AEK Athens B,Greece. Super League 2,AEK Athens,Greece,Super League 1,fuzzy_country,90.91,86.916424081,59
+Cracovia Kraków,Poland. Ekstraklasa,Cracovia Kraków II,Poland,IV Liga,fuzzy_country,90.91,52.4368489465,6651
+Academico Viseu,Portugal. Segunda Liga,Académico de Viseu,Portugal,Primeira Liga,fuzzy_country,90.91,79.9669793385,334
+Al Qadisiyah,Saudi Arabia. Division 1,Al Qadsiah,Saudi Arabia,Saudi League,fuzzy_country,90.91,82.3225475461,203
+Al Qadisiyah,Saudi Arabia. Pro League,Al Qadsiah,Saudi Arabia,Saudi League,fuzzy_country,90.91,82.3225475461,203
+Atlético Madrid,Spain. La Liga,Atlético de Madrid,Spain,Primera División,fuzzy_country,90.91,91.3073743076,24
+Villarreal B,Spain. Segunda División,Villarreal,Spain,Primera División,fuzzy_country,90.91,88.347298021,51
+Talleres Córdoba,Argentina. Liga Profesional de Fútbol,Talleres de Córdoba,Argentina,Liga Profesional Argentina,fuzzy_country,91.43,80.6001897446,302
+Rheindorf Altach,Austria. Bundesliga,Rheindorf Altach II,Austria,Regionalliga,fuzzy_country,91.43,51.7887615066,6970
+Bayer Leverkusen,Germany. Bundesliga,Bayer 04 Leverkusen,Germany,Bundesliga,fuzzy_country,91.43,91.0452616837,26
+Racing Santander,Spain. La Liga,Racing de Santander,Spain,Primera División,fuzzy_country,91.43,83.4220579282,156
+Racing Santander,Spain. Segunda División,Racing de Santander,Spain,Primera División,fuzzy_country,91.43,83.4220579282,156
+Ümranıyespor,Türkiye. 1. Lig,Ümraniyespor,Türkiye,1. Lig,fuzzy_country,91.67,65.5605236046,2335
+Ümranıyespor,Türkiye. Süper Lig,Ümraniyespor,Türkiye,1. Lig,fuzzy_country,91.67,65.5605236046,2335
+Shakhtyor Karagandy,Kazakhstan. Premier League,Shakhter Karagandy,Kazakhstan,1. Division,fuzzy_country,91.89,62.1028896054,3326
+Independiente del Valle,Ecuador. Liga Pro,Independiente Valle,Ecuador,Liga Pro,fuzzy_country,92,87.9552562926,52
+Baku Sporting,Azerbaijan. Birinci Dasta,Baku Sportinq,Azerbaijan,Birinci Dasta,fuzzy_country,92.31,57.4190839921,4799
+Tatran Liptovský Mikuláš,Slovakia. 2. liga,Liptovský Mikuláš,Slovakia,2. liga,fuzzy_country,92.31,62.0636130522,3338
+Tatran Liptovský Mikuláš,Slovakia. Niké Liga,Liptovský Mikuláš,Slovakia,2. liga,fuzzy_country,92.31,62.0636130522,3338
+Metalurh Zaporizhya II,Ukraine. Druha Liga,Metalurh Zaporizhya,Ukraine,Druha Liga,fuzzy_country,92.68,43.7582431353,10687
+Csikszereda Miercurea Ciuc,Romania. Liga II,Csikszereda,Romania,Liga I,fuzzy_country,92.86,69.2805278358,1531
+Csikszereda Miercurea Ciuc,Romania. Superliga,Csikszereda,Romania,Liga I,fuzzy_country,92.86,69.2805278358,1531
+Banik Lehota pod Vtacnikom,Slovakia. 2. liga,Baník Lehota,Slovakia,2. liga,fuzzy_country,92.86,59.4094851164,4114
+Real Sociedad B,Spain. Segunda División,Real Sociedad,Spain,Primera División,fuzzy_country,92.86,85.6607949273,82
+Kifissia,Greece. Stoiximan Super League,Kifisia,Greece,Super League 1,fuzzy_country,93.33,75.3375313507,727
+Kifissia,Greece. Super League 2,Kifisia,Greece,Super League 1,fuzzy_country,93.33,75.3375313507,727
+Varbergs,Sweden. Allsvenskan,Varberg,Sweden,Superettan,fuzzy_country,93.33,69.60291303,1485
+Varbergs,Sweden. Superettan,Varberg,Sweden,Superettan,fuzzy_country,93.33,69.60291303,1485
+Avangard Lozova,Ukraine. Druha Liga,Avanhard Lozova,Ukraine,Druha Liga,fuzzy_country,93.33,39.7730215307,12055
+Ghazl El Mehalla,Egypt. Premier League,Ghazl El Mahalla,Egypt,Premier League,fuzzy_country,93.75,70.6223267027,1316
+El Gounah,Egypt. Premier League,El Gouna,Egypt,Premier League,fuzzy_country,94.12,72.4548886354,1083
+Ethnikos Neou Keramidiou,Greece. Super League 2,Ethnikos Neo Keramidi,Greece,Gamma Ethniki,fuzzy_country,94.12,52.8954454988,6439
+Olympiacos Piraeus,Greece. Stoiximan Super League,Olympiakos Piraeus,Greece,Super League 1,fuzzy_country,94.44,86.6761287035,63
+CSM Râmnicu Vâlcea,Romania. Liga II,SCM Râmnicu Vâlcea,Romania,Liga II,fuzzy_country,94.44,60.9998422185,3626
+Dynamo Makhachkala,Russia. Premier League,Dinamo Makhachkala,Russia,Premier League,fuzzy_country,94.44,75.828784653,676
+Podbeskidzie Bielsko-Biała,Poland. I Liga,Podbeskidzie,Poland,I Liga,fuzzy_country,94.55,66.5019858873,2112
+Al Taawon,Saudi Arabia. Pro League,Al Taawoun,Saudi Arabia,Saudi League,fuzzy_country,94.74,73.1654637328,993
+Grasshopper,Switzerland. Super League,Grasshoppers,Switzerland,Super League,fuzzy_country,95.65,74.3875555449,829
+Ethnikos Achnas,Cyprus. 1. Division,Ethnikos Achna,Cyprus,2. Division,fuzzy_country,96.55,64.2652451791,2683
+Epitsentr Kamyanets-Podilskyi,Ukraine. Persha Liga,Epitsentr,Ukraine,Premier League,fuzzy_country,96.55,69.8989713973,1435
+Epitsentr Kamyanets-Podilskyi,Ukraine. VBET League,Epitsentr,Ukraine,Premier League,fuzzy_country,96.55,69.8989713973,1435
+Ostia Mare Lidocalcio,Italy. Serie C,Ostiamare,Italy,Serie C,fuzzy_country,97.67,62.7874436118,3106
+Chongqing Tongliang Long,China PR. China League One,Chongqing Tonglianglong,China PR,Chinese Super League,fuzzy_country,97.87,63.6788616507,2867
