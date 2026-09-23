@@ -118,6 +118,8 @@ _CRM_SCHEMA_LOCK = threading.Lock()
 _CRM_SCHEMA_READY = False
 _YOUTH_SCHEMA_LOCK = threading.Lock()
 _YOUTH_SCHEMA_READY = False
+_CLUB_POWER_SCHEMA_LOCK = threading.Lock()
+_CLUB_POWER_SCHEMA_READY = False
 
 
 def _auth_json_response(request: Request, detail: str, status_code: int = 401) -> JSONResponse:
@@ -763,6 +765,78 @@ CREATE INDEX IF NOT EXISTS youth_prospects_lookup_idx
     ON youth_prospects(provider, season, source_row_hash);
 """
 
+CLUB_POWER_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS opta_power_ranking_runs (
+    id SERIAL PRIMARY KEY,
+    source_url TEXT NOT NULL,
+    source_bundle_url TEXT,
+    source_last_updated TEXT,
+    source_last_updated_date DATE,
+    gender TEXT NOT NULL DEFAULT 'mens',
+    bundle_hash TEXT,
+    rows_imported INT NOT NULL DEFAULT 0,
+    matched_clubs INT NOT NULL DEFAULT 0,
+    scraped_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(gender, source_last_updated, bundle_hash)
+);
+CREATE INDEX IF NOT EXISTS opta_power_ranking_runs_gender_date_idx
+    ON opta_power_ranking_runs(gender, source_last_updated_date DESC, scraped_at DESC);
+
+CREATE TABLE IF NOT EXISTS opta_power_rankings (
+    id SERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES opta_power_ranking_runs(id) ON DELETE CASCADE,
+    gender TEXT NOT NULL DEFAULT 'mens',
+    opta_contestant_id TEXT NOT NULL,
+    opta_id TEXT,
+    rank INT,
+    team TEXT NOT NULL,
+    contestant_club_name TEXT,
+    contestant_short_name TEXT,
+    rating DOUBLE PRECISION,
+    ranking_change_7_days INT,
+    country TEXT,
+    country_id TEXT,
+    confederation TEXT,
+    confederation_id TEXT,
+    domestic_league_name TEXT,
+    domestic_league_id TEXT,
+    season_average_rating DOUBLE PRECISION,
+    highest_season_rating DOUBLE PRECISION,
+    lowest_season_rating DOUBLE PRECISION,
+    raw JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(run_id, opta_contestant_id)
+);
+CREATE INDEX IF NOT EXISTS opta_power_rankings_run_rank_idx
+    ON opta_power_rankings(run_id, rank);
+CREATE INDEX IF NOT EXISTS opta_power_rankings_team_idx
+    ON opta_power_rankings(team);
+
+CREATE TABLE IF NOT EXISTS opta_power_ranking_club_mappings (
+    id SERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES opta_power_ranking_runs(id) ON DELETE CASCADE,
+    club_id INT NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
+    opta_ranking_id INT NOT NULL REFERENCES opta_power_rankings(id) ON DELETE CASCADE,
+    wyscout_team TEXT NOT NULL,
+    wyscout_competition TEXT,
+    opta_team TEXT NOT NULL,
+    opta_country TEXT,
+    opta_league TEXT,
+    match_method TEXT NOT NULL,
+    match_score DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(run_id, club_id)
+);
+CREATE INDEX IF NOT EXISTS opta_power_ranking_club_mappings_club_idx
+    ON opta_power_ranking_club_mappings(club_id);
+CREATE INDEX IF NOT EXISTS opta_power_ranking_club_mappings_run_idx
+    ON opta_power_ranking_club_mappings(run_id);
+"""
+
 
 class CrmClubPayload(BaseModel):
     name: str
@@ -1235,6 +1309,20 @@ def _ensure_youth_schema(session: Session) -> None:
             session.execute(text(statement))
         session.commit()
         _YOUTH_SCHEMA_READY = True
+
+
+def _ensure_club_power_schema(session: Session) -> None:
+    global _CLUB_POWER_SCHEMA_READY
+    if _CLUB_POWER_SCHEMA_READY:
+        return
+    with _CLUB_POWER_SCHEMA_LOCK:
+        if _CLUB_POWER_SCHEMA_READY:
+            return
+        statements = [chunk.strip() for chunk in CLUB_POWER_SCHEMA_SQL.split(";") if chunk.strip()]
+        for statement in statements:
+            session.execute(text(statement))
+        session.commit()
+        _CLUB_POWER_SCHEMA_READY = True
 
 
 def _hash_password(password: str, algo: str = "bcrypt") -> str:
@@ -4625,7 +4713,83 @@ def _load_opta_power_rankings() -> tuple[
     dict[str, dict[str, float | int | str]],
     list[tuple[str, dict[str, float | int | str]]],
 ]:
-    global _OPTA_CLUBS, _OPTA_CLUBS_MTIME, _OPTA_CLUBS_SORTED
+    global _OPTA_CLUBS, _OPTA_CLUBS_MTIME, _OPTA_CLUBS_SORTED, _OPTA_CLUBS_DB_CACHE_KEY
+    try:
+        with SessionLocal() as db_session:
+            _ensure_club_power_schema(db_session)
+            latest = db_session.execute(
+                text(
+                    """
+                    SELECT id, rows_imported
+                    FROM opta_power_ranking_runs
+                    WHERE gender = 'mens'
+                    ORDER BY source_last_updated_date DESC NULLS LAST, scraped_at DESC, id DESC
+                    LIMIT 1
+                    """
+                )
+            ).mappings().first()
+            if latest:
+                cache_key = (int(latest["id"]), int(latest["rows_imported"] or 0))
+                if (
+                    _OPTA_CLUBS is not None
+                    and _OPTA_CLUBS_DB_CACHE_KEY == cache_key
+                    and _OPTA_CLUBS_SORTED is not None
+                ):
+                    return _OPTA_CLUBS, _OPTA_CLUBS_SORTED
+                rows = db_session.execute(
+                    text(
+                        """
+                        SELECT
+                          rank,
+                          team,
+                          contestant_club_name,
+                          contestant_short_name,
+                          rating,
+                          ranking_change_7_days
+                        FROM opta_power_rankings
+                        WHERE run_id = :run_id
+                          AND team IS NOT NULL
+                          AND rating IS NOT NULL
+                        """
+                    ),
+                    {"run_id": latest["id"]},
+                ).mappings().all()
+                if rows:
+                    clubs: dict[str, dict[str, float | int | str]] = {}
+                    for row in rows:
+                        team = (row.get("team") or "").strip()
+                        if not team:
+                            continue
+                        parsed_rating = float(row.get("rating") or 0.0)
+                        parsed_rank = int(row.get("rank") or 0)
+                        data = {
+                            "team": team,
+                            "rating": parsed_rating,
+                            "rank": parsed_rank,
+                            "ranking_change_7_days": int(row.get("ranking_change_7_days") or 0),
+                        }
+                        aliases = [
+                            team,
+                            row.get("contestant_club_name"),
+                            row.get("contestant_short_name"),
+                        ]
+                        for alias in aliases:
+                            normalized = _normalize_name(str(alias or ""))
+                            if not normalized:
+                                continue
+                            existing = clubs.get(normalized)
+                            if existing and float(existing.get("rating") or 0.0) >= parsed_rating:
+                                continue
+                            clubs[normalized] = data
+                    sorted_clubs = sorted(clubs.items(), key=lambda item: len(item[0]), reverse=True)
+                    _OPTA_CLUBS = clubs
+                    _OPTA_CLUBS_SORTED = [(norm, data) for norm, data in sorted_clubs]
+                    _OPTA_CLUBS_MTIME = None
+                    _OPTA_CLUBS_DB_CACHE_KEY = cache_key
+                    return _OPTA_CLUBS, _OPTA_CLUBS_SORTED
+    except Exception:
+        pass
+
     path = _find_helper_csv("opta_power_rankings.csv")
     if not path:
         return {}, []
@@ -4661,6 +4825,7 @@ def _load_opta_power_rankings() -> tuple[
     )
     _OPTA_CLUBS = clubs
     _OPTA_CLUBS_MTIME = mtime
+    _OPTA_CLUBS_DB_CACHE_KEY = None
     _OPTA_CLUBS_SORTED = [(norm, data) for norm, data in sorted_clubs]
     return clubs, _OPTA_CLUBS_SORTED
 
@@ -5432,6 +5597,7 @@ _LEAGUE_ALIAS_EXTRA_MTIME: Optional[float] = None
 _OPTA_CLUBS: Optional[dict[str, dict[str, float | int | str]]] = None
 _OPTA_CLUBS_MTIME: Optional[float] = None
 _OPTA_CLUBS_SORTED: Optional[list[tuple[str, dict[str, float | int | str]]]] = None
+_OPTA_CLUBS_DB_CACHE_KEY: Optional[tuple[int, int]] = None
 _MERCATO_LEAGUE_LEVELS: Optional[dict[str, Any]] = None
 _MERCATO_LEAGUE_LEVELS_MTIME: Optional[float] = None
 

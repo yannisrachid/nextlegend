@@ -19,6 +19,7 @@ from typing import Mapping, Optional, Tuple
 import numpy as np
 import pandas as pd
 from fuzzywuzzy import fuzz
+from sqlalchemy import create_engine, text
 
 from . import scoring_v2
 
@@ -1273,6 +1274,80 @@ def _stable_generated_player_id(row: pd.Series, fallback_idx: int) -> str:
     return f"gen_{digest}"
 
 
+def _attach_club_power_rankings(df: pd.DataFrame) -> pd.DataFrame:
+    db_url = os.getenv("DATABASE_URL")
+    team_col = "team_in_selected_period" if "team_in_selected_period" in df.columns else "team" if "team" in df.columns else None
+    if not db_url or not team_col or "competition_name" not in df.columns:
+        return df
+    try:
+        engine = create_engine(db_url)
+        mappings = pd.read_sql(
+            text(
+                """
+                WITH latest AS (
+                  SELECT id
+                  FROM opta_power_ranking_runs
+                  WHERE gender = 'mens'
+                  ORDER BY source_last_updated_date DESC NULLS LAST, scraped_at DESC, id DESC
+                  LIMIT 1
+                )
+                SELECT
+                  m.wyscout_team,
+                  m.wyscout_competition,
+                  m.match_method,
+                  m.match_score,
+                  r.rating AS club_power_rating,
+                  r.rank AS club_power_rank,
+                  r.team AS club_power_matched_team
+                FROM opta_power_ranking_club_mappings m
+                JOIN latest ON latest.id = m.run_id
+                JOIN opta_power_rankings r ON r.id = m.opta_ranking_id
+                """
+            ),
+            engine,
+        )
+    except Exception as exc:
+        print(f"[PIPELINE] club power rankings skipped: {exc}")
+        return df
+    if mappings.empty:
+        print("[PIPELINE] club power rankings skipped: no persisted Opta mappings")
+        return df
+
+    work = df.copy()
+    mapping = mappings.copy()
+    work["_club_power_team_key"] = work[team_col].map(_canonical_player_name)
+    work["_club_power_competition_key"] = work["competition_name"].astype("string").fillna("")
+    mapping["_club_power_team_key"] = mapping["wyscout_team"].map(_canonical_player_name)
+    mapping["_club_power_competition_key"] = mapping["wyscout_competition"].astype("string").fillna("")
+    mapping = mapping.sort_values(
+        ["_club_power_team_key", "_club_power_competition_key", "match_score"],
+        ascending=[True, True, False],
+    ).drop_duplicates(subset=["_club_power_team_key", "_club_power_competition_key"])
+    merge_cols = [
+        "_club_power_team_key",
+        "_club_power_competition_key",
+        "club_power_rating",
+        "club_power_rank",
+        "club_power_matched_team",
+        "match_method",
+        "match_score",
+    ]
+    work = work.merge(
+        mapping[merge_cols],
+        on=["_club_power_team_key", "_club_power_competition_key"],
+        how="left",
+    )
+    matched = int(work["club_power_rating"].notna().sum())
+    clubs_matched = int(
+        work.loc[work["club_power_rating"].notna(), ["_club_power_team_key", "_club_power_competition_key"]]
+        .drop_duplicates()
+        .shape[0]
+    )
+    print(f"[PIPELINE] club power rankings matched rows={matched}/{len(work)} clubs={clubs_matched}")
+    work = work.drop(columns=["_club_power_team_key", "_club_power_competition_key"], errors="ignore")
+    return work
+
+
 def _resolve_player_id_conflicts(df: pd.DataFrame) -> tuple[pd.DataFrame, int, int]:
     if "player_id" not in df.columns or "player" not in df.columns:
         return df, 0, 0
@@ -1471,6 +1546,8 @@ def build_artifacts(df_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:
         tm_input = df[tm_base_cols].copy()
         tm_input["_row_id"] = row_ids
         tm_enriched, players = merge_transfermarkt(tm_input, players, tm_sources)
+
+    df = _attach_club_power_rankings(df)
 
     print("[PIPELINE] scoring v2 position groups")
     scoring = scoring_v2.score_dataframe(df)
