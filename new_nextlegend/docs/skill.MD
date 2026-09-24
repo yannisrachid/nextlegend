@@ -67,6 +67,9 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Club power rankings are persisted from Opta/The Analyst with `./scripts/refresh_club_power_rankings.sh`.
 - Run the Opta club-power refresh before weekly/current-season Wyscout loads so `scoring_v2` can use fresh `club_power_rating` values.
 - `scoring_v2` uses Opta club power as the primary team-strength signal when available, with fallback to the internal Wyscout-derived team strength.
+- Weekly PRD current-season automation uses `./scripts/run_weekly_wyscout_chain.sh`.
+- The weekly Wyscout chain expects the standalone scraper at `../nextlegend-wyscout-scraper`, runs it first, copies `final_data/wyscout_players_2026_2027_cleaned.csv` into this app's `data/`, then runs the enriched incremental DB load.
+- Schedule order in PRD is Opta Tuesday 09:00 UTC, then Wyscout current-season chain Tuesday 10:00 UTC.
 - Current-season score snapshots are pipeline-owned and enabled through `SCORE_SNAPSHOT_ENABLED=1`.
 - Snapshot default scope is seasons `2026/2027` and `2026`, controlled by `SCORE_SNAPSHOT_SEASONS`.
 - Snapshot default cadence is biweekly, controlled by `SCORE_SNAPSHOT_CADENCE=biweekly`; monthly is allowed if the product decision changes.
