@@ -244,6 +244,31 @@ Score snapshot behavior:
 - rerunning a job inside the same biweekly/monthly bucket updates that bucket instead of creating duplicates;
 - full fact-table replacement truncates snapshot tables because player-season IDs are rebuilt.
 
+Weekly PRD automation:
+- Opta club power rankings are refreshed every Tuesday at 09:00 UTC.
+- The standalone Wyscout scraper chain runs every Tuesday at 10:00 UTC from `../nextlegend-wyscout-scraper`.
+- The Wyscout chain is orchestrated by:
+  ```bash
+  cd ~/nextlegend/new_nextlegend
+  ./scripts/run_weekly_wyscout_chain.sh
+  ```
+- The chain performs, in order:
+  1. run the standalone Wyscout scraper for calendars `2026/2027 2026`;
+  2. produce `../nextlegend-wyscout-scraper/final_data/wyscout_players_2026_2027_cleaned.csv`;
+  3. copy that file to `data/wyscout_players_2026_2027_cleaned.csv`;
+  4. keep a backup of the previous app CSV in `data/backups/`;
+  5. run `scripts/load_current_season_enriched.sh` with pure incremental settings;
+  6. write score snapshots for `2026/2027` and `2026`;
+  7. validate latest `pipeline_runs` and `scoring_snapshot_runs`.
+- The wrapper has a cheap validation mode:
+  ```bash
+  CHECK_ONLY=1 ./scripts/run_weekly_wyscout_chain.sh
+  ```
+- Operational log:
+  ```text
+  logs/cron_wyscout_weekly_chain.log
+  ```
+
 Next current-season run requirement:
 1. Deploy `main` first so the API/pipeline code contains the snapshot schema and writer.
 2. Refresh Opta club power rankings first:
