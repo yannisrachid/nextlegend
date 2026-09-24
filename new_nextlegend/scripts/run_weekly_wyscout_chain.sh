@@ -17,6 +17,9 @@ FRESH_START="${FRESH_START:-1}"
 HEADLESS="${HEADLESS:-1}"
 SIM_TOPK="${SIM_TOPK:-10}"
 DATA_QUALITY_MIN_ROWS="${DATA_QUALITY_MIN_ROWS:-30000}"
+MIN_AVAILABLE_MEM_MB="${MIN_AVAILABLE_MEM_MB:-1800}"
+MIN_AVAILABLE_MEM_MB_NO_SWAP="${MIN_AVAILABLE_MEM_MB_NO_SWAP:-2800}"
+MIN_AVAILABLE_DISK_GB="${MIN_AVAILABLE_DISK_GB:-10}"
 
 DOCKER_ENV_FILE="${DOCKER_ENV_FILE:-$APP_ROOT/.env}"
 DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-$APP_ROOT/infra/compose/docker-compose-prod.yml}"
@@ -39,6 +42,38 @@ require_dir() {
   local path="$1"
   if [[ ! -d "$path" ]]; then
     log "missing required directory: $path"
+    exit 1
+  fi
+}
+
+available_mem_mb() {
+  awk '/MemAvailable/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo 0
+}
+
+available_disk_gb() {
+  df -BG "$APP_ROOT" | awk 'NR == 2 {gsub(/G/, "", $4); print int($4)}' 2>/dev/null || echo 0
+}
+
+swap_total_mb() {
+  awk '/SwapTotal/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo 0
+}
+
+preflight_capacity() {
+  local mem_mb disk_gb swap_mb required_mem_mb
+  mem_mb="$(available_mem_mb)"
+  disk_gb="$(available_disk_gb)"
+  swap_mb="$(swap_total_mb)"
+  required_mem_mb="$MIN_AVAILABLE_MEM_MB"
+  if [[ "$swap_mb" -lt 1024 ]]; then
+    required_mem_mb="$MIN_AVAILABLE_MEM_MB_NO_SWAP"
+  fi
+  log "capacity available_mem=${mem_mb}MiB swap=${swap_mb}MiB available_disk=${disk_gb}GiB"
+  if [[ "$mem_mb" -lt "$required_mem_mb" ]]; then
+    log "available memory below required=${required_mem_mb}MiB; aborting before scraper"
+    exit 1
+  fi
+  if [[ "$disk_gb" -lt "$MIN_AVAILABLE_DISK_GB" ]]; then
+    log "available disk below MIN_AVAILABLE_DISK_GB=$MIN_AVAILABLE_DISK_GB; aborting before scraper"
     exit 1
   fi
 }
@@ -183,6 +218,7 @@ main() {
     check_only
     return
   fi
+  preflight_capacity
   run_scraper
   handoff_to_app
   load_database
