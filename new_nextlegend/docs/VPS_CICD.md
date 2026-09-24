@@ -264,6 +264,13 @@ Weekly PRD automation:
   ```bash
   CHECK_ONLY=1 ./scripts/run_weekly_wyscout_chain.sh
   ```
+- The wrapper aborts before launching the browser when capacity is too low. Defaults:
+  ```text
+  MIN_AVAILABLE_MEM_MB=1800
+  MIN_AVAILABLE_MEM_MB_NO_SWAP=2800
+  MIN_AVAILABLE_DISK_GB=10
+  ```
+  On the current small VPS, the Wyscout browser scrape should not run without swap or a larger instance.
 - Operational log:
   ```text
   logs/cron_wyscout_weekly_chain.log
