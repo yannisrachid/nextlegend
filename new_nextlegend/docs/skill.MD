@@ -70,6 +70,7 @@ Use this file as the project-specific implementation guide for Codex and contrib
 - Weekly PRD current-season automation uses `./scripts/run_weekly_wyscout_chain.sh`.
 - The weekly Wyscout chain expects the standalone scraper at `../nextlegend-wyscout-scraper`, runs it first, copies `final_data/wyscout_players_2026_2027_cleaned.csv` into this app's `data/`, then runs the enriched incremental DB load.
 - Schedule order in PRD is Opta Tuesday 09:00 UTC, then Wyscout current-season chain Tuesday 10:00 UTC.
+- The weekly Wyscout chain has capacity guards and should abort before browser launch if available memory or disk is too low. On the small PRD VPS, do not run the Playwright scrape without swap or a larger instance.
 - Current-season score snapshots are pipeline-owned and enabled through `SCORE_SNAPSHOT_ENABLED=1`.
 - Snapshot default scope is seasons `2026/2027` and `2026`, controlled by `SCORE_SNAPSHOT_SEASONS`.
 - Snapshot default cadence is biweekly, controlled by `SCORE_SNAPSHOT_CADENCE=biweekly`; monthly is allowed if the product decision changes.
