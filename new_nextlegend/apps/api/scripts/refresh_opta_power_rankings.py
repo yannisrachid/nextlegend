@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from settings import settings
+from scripts.opta_bundle import parse_last_updated, parse_rankings
 
 
 SOURCE_URL = "https://dataviz.theanalyst.com/opta-power-rankings/"
@@ -123,35 +124,6 @@ def resolve_bundle_url(source_url: str) -> str:
     if not match:
         raise RuntimeError("Cannot locate Opta Power Rankings bundle script.")
     return urllib.parse.urljoin(source_url, match.group(1))
-
-
-def parse_js_json_var(bundle: str, variable: str) -> list[dict[str, Any]]:
-    match = re.search(rf"{re.escape(variable)}=JSON\.parse\(`(.*?)`\)", bundle, re.S)
-    if not match:
-        raise RuntimeError(f"Cannot locate JSON.parse block for {variable}.")
-    raw = match.group(1)
-    candidates = [
-        raw,
-        raw.replace("\\\\\"", "\\\""),
-    ]
-    for candidate in candidates:
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-    raise RuntimeError(f"Cannot decode JSON block for {variable}.")
-
-
-def parse_last_updated(bundle: str) -> tuple[str | None, str | None]:
-    match = re.search(r'const\s+N0="([^"]+)"', bundle)
-    if not match:
-        return None, None
-    label = match.group(1).strip()
-    try:
-        parsed = datetime.strptime(label, "%b %d, %Y").date().isoformat()
-    except ValueError:
-        parsed = None
-    return label, parsed
 
 
 def safe_float(value: Any) -> float | None:
@@ -633,8 +605,7 @@ def main() -> None:
     bundle = fetch_text(bundle_url)
     bundle_hash = hashlib.sha256(bundle.encode("utf-8")).hexdigest()
     last_updated, last_updated_date = parse_last_updated(bundle)
-    variable = "f6" if args.gender == "mens" else "C0"
-    rankings = parse_js_json_var(bundle, variable)
+    rankings = parse_rankings(bundle, args.gender)
     if not rankings:
         raise RuntimeError("No Opta Power Ranking rows found.")
 
