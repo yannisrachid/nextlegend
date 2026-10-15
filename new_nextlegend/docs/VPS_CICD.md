@@ -209,6 +209,17 @@ cd /Users/yannis/ylfc/new_nextlegend
 ./scripts/load_current_season_enriched.sh
 ```
 
+When a scored Wyscout export needs fresh club-strength scoring and Transfermarkt matching, recompute it locally before the PRD load. Use a Python 3.11 environment with `jobs/pipeline/requirements.txt` installed. The local PostgreSQL instance must already contain a current Opta club-power run and `helpers/csv` must contain the Transfermarkt references:
+```bash
+cd /Users/yannis/ylfc/new_nextlegend
+POSTGRES_PORT=15432 OPENBLAS_NUM_THREADS=2 python3 scripts/recompute_wyscout_cleaned.py \
+  --input data/wyscout_players_2026_2027_cleaned-3.csv \
+  --profile-fallback data/wyscout_players_2026_2027_cleaned.csv \
+  --output data/recomputed/wyscout_players_2026_2027_cleaned.csv \
+  --similarity-output data/recomputed/current_season_similarity/player_similarity.csv
+```
+Replace the two input paths with the latest and previous exports for future runs. The script ignores stale calculated columns in the input, preserves compatible known TM profiles by TM player ID, and normalizes TM height to centimeters and market value to euros. Check the row counts and transfer the two resulting CSVs to the VPS `data/` paths before running the incremental enriched loader with snapshots enabled. Keep the prior CSV and a PostgreSQL backup until the new `pipeline_runs` row is successful.
+
 Expected local outputs:
 - `data/wyscout_players_2026_2027_cleaned.csv`.
 - `data/current_season_similarity/player_similarity.csv`.
