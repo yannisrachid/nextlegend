@@ -720,7 +720,7 @@ def load_profiles_from_env() -> dict:
     return {}
 
 
-def load_transfermarkt_sources(base_dir: Path = Path("/helpers/csv")) -> dict[str, pd.DataFrame]:
+def load_transfermarkt_sources(base_dir: Path | None = None) -> dict[str, pd.DataFrame]:
     """
     Charge les fichiers Transfermarkt si disponibles dans /helpers/csv.
     Attendu :
@@ -730,6 +730,7 @@ def load_transfermarkt_sources(base_dir: Path = Path("/helpers/csv")) -> dict[st
       - tm_clubs_reference.csv (optionnel)
       - club_mapping_dict.py (curé)
     """
+    base_dir = Path(base_dir or os.getenv("TRANSFERMARKT_SOURCES_DIR", "/helpers/csv"))
     sources = {}
     tm_path = base_dir / "transfermarkt_profiles.csv"
     club_map_path = base_dir / "club_matching_reference.csv"
