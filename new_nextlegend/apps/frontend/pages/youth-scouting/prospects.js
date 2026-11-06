@@ -32,7 +32,7 @@ const Card = ({ children, className = "" }) => (
 );
 
 const Label = ({ children, htmlFor }) => (
-  <label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">
+  <label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
     {children}
   </label>
 );
@@ -253,8 +253,8 @@ export default function YouthProspectsPage() {
           <p className="nl-kicker">Youth Scouting</p>
           <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold tracking-normal text-white md:text-4xl">Youth prospects</h1>
-              <p className="mt-2 max-w-3xl text-sm text-[#A0A8A3]">
+              <h1 className="text-3xl font-semibold tracking-normal text-foreground md:text-4xl">Youth prospects</h1>
+              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 Track selected Eyeball profiles from youth reports and monitor them by season, competition and position group.
               </p>
             </div>
@@ -273,7 +273,7 @@ export default function YouthProspectsPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0 flex-1">
               <p className="nl-kicker">Add prospect</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Search the current youth dataset</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Search the current youth dataset</h2>
               <div className="relative mt-3 max-w-2xl">
                 <input
                   className="nl-field"
@@ -288,9 +288,9 @@ export default function YouthProspectsPage() {
                   placeholder="Search by player, club or competition"
                 />
                 {showResults && query.trim().length >= 2 ? (
-                  <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[1000] max-h-80 overflow-auto rounded-lg border border-white/10 bg-[#080B0A] p-2 shadow-[0_22px_70px_rgba(0,0,0,0.45)]">
+                  <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[1000] max-h-80 overflow-auto rounded-lg border border-border bg-card p-2 shadow-[0_22px_70px_rgba(0,0,0,0.45)]">
                     {results.length === 0 ? (
-                      <div className="rounded-md border border-dashed border-white/10 bg-white/[0.03] px-4 py-6 text-center text-sm font-semibold text-[#A0A8A3]">
+                      <div className="rounded-md border border-dashed border-border bg-secondary px-4 py-6 text-center text-sm font-semibold text-muted-foreground">
                         No youth player found.
                       </div>
                     ) : (
@@ -298,16 +298,16 @@ export default function YouthProspectsPage() {
                         <button
                           key={player.id}
                           type="button"
-                          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition hover:bg-white/[0.055]"
+                          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left transition hover:bg-secondary"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => addProspect(player)}
                           disabled={busy}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-sm font-semibold text-white">{player.display_name}</span>
-                            <span className="block truncate text-xs text-[#6F7772]">{selectedLabel(player)}</span>
+                            <span className="block truncate text-sm font-semibold text-foreground">{player.display_name}</span>
+                            <span className="block truncate text-xs text-muted-foreground">{selectedLabel(player)}</span>
                           </span>
-                          <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-2 py-1 text-[11px] font-semibold text-[#8CC7A7]">
+                          <span className="rounded-md border border-primary/25 bg-accent px-2 py-1 text-[11px] font-semibold text-primary">
                             {formatScore(player.score)}
                           </span>
                         </button>
@@ -317,22 +317,22 @@ export default function YouthProspectsPage() {
                 ) : null}
               </div>
             </div>
-            <div className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-4 py-3 text-right">
-              <p className="text-2xl font-semibold text-[#8CC7A7]">{formatNumber(total)}</p>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8CC7A7]">Tracked prospects</p>
+            <div className="rounded-md border border-primary/25 bg-accent px-4 py-3 text-right">
+              <p className="text-2xl font-semibold text-primary">{formatNumber(total)}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">Tracked prospects</p>
             </div>
           </div>
-          {message ? <p className="mt-3 text-xs font-semibold text-[#A0A8A3]">{message}</p> : null}
+          {message ? <p className="mt-3 text-xs font-semibold text-muted-foreground">{message}</p> : null}
         </Card>
 
         <Card className="nl-filter-bar p-0">
-          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="nl-kicker">Prospect filters</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Refine the tracked list</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Refine the tracked list</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-[#A0A8A3]">
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-muted-foreground">
                 {activeFilterCount} custom filters
               </span>
               <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={() => updateFilter(DEFAULT_FILTERS)}>
@@ -419,8 +419,8 @@ export default function YouthProspectsPage() {
                 ["Club", formatFilterValue(filters.club, "All clubs")],
                 ["Minutes", `${filters.min_minutes}+`],
               ].map(([label, value]) => (
-                <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-[#A0A8A3]">
-                  <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+                <span key={label} className="rounded-md border border-border bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                  <span className="text-foreground">{label}</span> <span className="text-foreground">{value}</span>
                 </span>
               ))}
             </div>
@@ -428,20 +428,20 @@ export default function YouthProspectsPage() {
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 border-b border-border px-4 py-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-white">Tracked youth players</p>
-              <p className="mt-0.5 text-xs font-semibold text-[#6F7772]">
+              <p className="text-sm font-semibold text-foreground">Tracked youth players</p>
+              <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
                 Page {page + 1} / {totalPages} - {formatNumber(total)} prospects
               </p>
             </div>
-            <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-[#A0A8A3]">
+            <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-muted-foreground">
               Sorted by last added
             </span>
           </div>
 
           {error ? (
-            <div className="p-4 text-sm font-semibold text-rose-200">{error}</div>
+            <div className="p-4 text-sm font-semibold text-rose-700">{error}</div>
           ) : loading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 6 }).map((_, index) => <div key={index} className="nl-skeleton h-14 rounded-md" />)}
@@ -449,15 +449,15 @@ export default function YouthProspectsPage() {
           ) : items.length === 0 ? (
             <div className="p-6">
               <div className="nl-empty-state">
-                <p className="text-sm font-semibold text-white">No youth prospects match these filters.</p>
-                <p className="mt-1 text-xs text-[#6F7772]">Add one from a Youth Report or use the search box above.</p>
+                <p className="text-sm font-semibold text-foreground">No youth prospects match these filters.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Add one from a Youth Report or use the search box above.</p>
               </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-[1120px] w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-[#6F7772]">
+                  <tr className="border-b border-border text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                     <th className="px-4 py-3">Player</th>
                     <th className="px-4 py-3">Club / level</th>
                     <th className="px-4 py-3">Profile</th>
@@ -466,44 +466,44 @@ export default function YouthProspectsPage() {
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-border">
                   {items.map((row) => (
                     <tr key={row.id} className="align-middle">
                       <td className="px-4 py-3">
                         <Link href={`/youth-scouting/reports?youth_id=${row.id}`} className="flex min-w-0 items-center gap-3">
-                          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 text-xs font-semibold text-[#8CC7A7]">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-primary/25 bg-accent text-xs font-semibold text-primary">
                             {initials(row.display_name)}
                           </span>
                           <span className="min-w-0">
-                            <span className="block truncate font-semibold text-white">{row.display_name}</span>
-                            <span className="block truncate text-xs text-[#A0A8A3]">
+                            <span className="block truncate font-semibold text-foreground">{row.display_name}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
                               {[row.nationality_label || row.nationality_code, row.birth_year ? `Born ${row.birth_year}` : null].filter(Boolean).join(" - ") || "Youth profile"}
                             </span>
                           </span>
                         </Link>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="truncate font-medium text-white">{row.club_name || "-"}</p>
-                        <p className="truncate text-xs text-[#6F7772]">{[row.championship, row.calendar || formatYouthSeason(row.season)].filter(Boolean).join(" - ") || "-"}</p>
+                        <p className="truncate font-medium text-foreground">{row.club_name || "-"}</p>
+                        <p className="truncate text-xs text-muted-foreground">{[row.championship, row.calendar || formatYouthSeason(row.season)].filter(Boolean).join(" - ") || "-"}</p>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex max-w-[320px] flex-wrap gap-1.5">
                           {[row.position_group, row.position, row.age_category].filter(Boolean).map((item) => (
-                            <span key={item} className="rounded-md border border-white/10 bg-white/[0.035] px-2 py-1 text-[11px] font-semibold text-[#A0A8A3]">{item}</span>
+                            <span key={item} className="rounded-md border border-border bg-secondary px-2 py-1 text-[11px] font-semibold text-muted-foreground">{item}</span>
                           ))}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <p className="text-xl font-semibold text-[#8CC7A7]">{formatScore(row.score)}</p>
-                        <p className="text-[11px] text-[#6F7772]">Score</p>
+                        <p className="text-xl font-semibold text-primary">{formatScore(row.score)}</p>
+                        <p className="text-[11px] text-muted-foreground">Score</p>
                       </td>
-                      <td className="px-4 py-3 text-right text-white">{formatNumber(row.minutes_played)}</td>
+                      <td className="px-4 py-3 text-right text-foreground">{formatNumber(row.minutes_played)}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
                           <Link href={`/youth-scouting/reports?youth_id=${row.id}`} className="nl-button-secondary px-3 py-2 text-xs">
                             Report
                           </Link>
-                          <button type="button" className="nl-button-secondary px-3 py-2 text-xs text-rose-200" disabled={busy} onClick={() => removeProspect(row.id)}>
+                          <button type="button" className="nl-button-secondary px-3 py-2 text-xs text-rose-700" disabled={busy} onClick={() => removeProspect(row.id)}>
                             Remove
                           </button>
                         </div>
@@ -515,8 +515,8 @@ export default function YouthProspectsPage() {
             </div>
           )}
 
-          <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-xs font-semibold text-[#6F7772]">
+          <div className="flex flex-col gap-3 border-t border-border px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs font-semibold text-muted-foreground">
               Showing {items.length ? page * filters.limit + 1 : 0}-{Math.min(total, (page + 1) * filters.limit)} of {formatNumber(total)}
             </p>
             <div className="flex items-center gap-2">
@@ -529,7 +529,7 @@ export default function YouthProspectsPage() {
               <button type="button" className="nl-button-secondary px-3" disabled={page === 0 || loading} onClick={() => setPage((current) => Math.max(0, current - 1))}>
                 Prev
               </button>
-              <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-[#A0A8A3]">{page + 1} / {totalPages}</span>
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-muted-foreground">{page + 1} / {totalPages}</span>
               <button type="button" className="nl-button-secondary px-3" disabled={page + 1 >= totalPages || loading} onClick={() => setPage((current) => current + 1)}>
                 Next
               </button>

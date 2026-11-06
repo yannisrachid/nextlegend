@@ -30,7 +30,7 @@ module.exports = {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
-          glow: "rgba(13, 148, 136, 0.24)",
+          glow: "rgba(37, 99, 235, 0.12)",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -68,7 +68,7 @@ module.exports = {
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "hero-pattern":
-          "linear-gradient(135deg, #02040a 0%, #05070c 48%, #0b1f1d 100%)",
+          "linear-gradient(135deg, #ffffff 0%, #f8fafc 70%, #eff6ff 100%)",
       },
       keyframes: {
         "accordion-down": {

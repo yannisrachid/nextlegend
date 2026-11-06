@@ -22,7 +22,7 @@ const PROSPECT_DEFAULT_MIN_MINUTES = 0;
 
 const Card = ({ children, className = "", ...props }) => (
   <div
-    className={`glass-panel rounded-xl p-4 border border-white/5 ${className}`}
+    className={`glass-panel rounded-xl p-4 border border-border ${className}`}
     {...props}
   >
     {children}
@@ -30,13 +30,13 @@ const Card = ({ children, className = "", ...props }) => (
 );
 
 const Badge = ({ children }) => (
-  <span className="px-2 py-1 rounded-full bg-slate-800 text-xs text-slate-200 border border-white/5">
+  <span className="px-2 py-1 rounded-full bg-card text-xs text-foreground border border-border">
     {children}
   </span>
 );
 
 const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+  <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
     {children}
   </label>
 );
@@ -721,8 +721,8 @@ export default function ProspectPage() {
     <main className="nl-page">
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
         <div>
-          <h1 className="text-3xl font-semibold text-white">Prospect pipeline</h1>
-          <p className="text-slate-400 mt-2">
+          <h1 className="text-3xl font-semibold text-foreground">Prospect pipeline</h1>
+          <p className="text-muted-foreground mt-2">
             Track watched players, active club needs and the next recruitment conversations to pursue.
           </p>
         </div>
@@ -735,7 +735,7 @@ export default function ProspectPage() {
               className={`rounded-full px-4 py-2 text-xs uppercase tracking-[0.2em] border ${
                 activeTab === tab
                   ? "border-primary text-primary"
-                  : "border-slate-700 text-slate-300"
+                  : "border-slate-700 text-foreground"
               }`}
               onClick={() => setActiveTab(tab)}
             >
@@ -747,16 +747,16 @@ export default function ProspectPage() {
         {activeTab === "players" ? (
           <>
             <Card className="nl-filter-bar p-0">
-              <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="nl-kicker">Prospect filters</p>
-                  <h2 className="mt-1 text-lg font-semibold text-white">Control the watched-player cohort</h2>
+                  <h2 className="mt-1 text-lg font-semibold text-foreground">Control the watched-player cohort</h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                  <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                     {total} prospects
                   </span>
-                  <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+                  <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
                     {activeFilterCount} custom filters
                   </span>
                   <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetFilters}>
@@ -900,8 +900,8 @@ export default function ProspectPage() {
                   ["Minutes", `${filters.min_minutes}+`],
                   ["Age", `${filters.age_min}-${filters.age_max}`],
                 ].map(([label, value]) => (
-                  <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
-                    <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+                  <span key={label} className="rounded-md border border-border bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                    <span className="text-foreground">{label}</span> <span className="text-foreground">{value}</span>
                   </span>
                 ))}
               </div>
@@ -910,7 +910,7 @@ export default function ProspectPage() {
             <Card>
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                  <h3 className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
                     Add a prospect
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
@@ -918,7 +918,7 @@ export default function ProspectPage() {
                   </p>
                 </div>
                 {addProspectMessage ? (
-                  <span className="text-xs text-slate-300">{addProspectMessage}</span>
+                  <span className="text-xs text-foreground">{addProspectMessage}</span>
                 ) : null}
               </div>
               <div className="relative max-w-xl" ref={addProspectAnchorRef}>
@@ -936,7 +936,7 @@ export default function ProspectPage() {
                 {showAddProspectResults && addProspectQuery.trim().length >= 2 && addProspectPos
                   ? createPortal(
                       <div
-                        className="fixed z-[9999] max-h-56 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl"
+                        className="fixed z-[9999] max-h-56 overflow-auto rounded-lg border border-slate-700 bg-card shadow-xl"
                         style={{
                           left: `${addProspectPos.left}px`,
                           top: `${addProspectPos.top}px`,
@@ -944,7 +944,7 @@ export default function ProspectPage() {
                         }}
                       >
                         {addProspectOptions.length === 0 ? (
-                          <div className="px-3 py-2 text-sm text-slate-400">
+                          <div className="px-3 py-2 text-sm text-muted-foreground">
                             No matches found.
                           </div>
                         ) : (
@@ -952,7 +952,7 @@ export default function ProspectPage() {
                             <button
                               key={player.id}
                               type="button"
-                              className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80 disabled:opacity-60"
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-card disabled:opacity-60"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => handleAddProspect(player.raw)}
                               disabled={addProspectBusy}
@@ -977,11 +977,11 @@ export default function ProspectPage() {
             <section className="grid grid-cols-1 gap-4">
               {loading ? (
                 <Card>
-                  <p className="text-slate-400">Loading prospects…</p>
+                  <p className="text-muted-foreground">Loading prospects…</p>
                 </Card>
               ) : items.length === 0 ? (
                 <Card>
-                  <p className="text-slate-400">No prospects match these filters.</p>
+                  <p className="text-muted-foreground">No prospects match these filters.</p>
                 </Card>
               ) : (
                 items.map((row) => (
@@ -1004,21 +1004,21 @@ export default function ProspectPage() {
                                 <img
                                   src={tmPhotoUrl}
                                   alt={row.name}
-                                  className="h-14 w-14 rounded-full object-cover border border-white/10"
+                                  className="h-14 w-14 rounded-full object-cover border border-border"
                                 />
                               ) : (
-                                <div className="h-14 w-14 rounded-full bg-slate-800 border border-white/10 flex items-center justify-center text-slate-200 font-semibold">
+                                <div className="h-14 w-14 rounded-full bg-card border border-border flex items-center justify-center text-foreground font-semibold">
                                   {getInitials(row.name)}
                                 </div>
                               )}
                               <div>
-                                <div className="text-lg font-semibold text-white flex items-center gap-2">
+                                <div className="text-lg font-semibold text-foreground flex items-center gap-2">
                                   {row.name}
                                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800" aria-label="Prospect">
                                     Prospect
                                   </span>
                                 </div>
-                                <div className="text-slate-400 text-sm">
+                                <div className="text-muted-foreground text-sm">
                                   {row.team || "—"} • {row.competition_name} •{" "}
                                   {row.calendar || "–"}
                                 </div>
@@ -1033,7 +1033,7 @@ export default function ProspectPage() {
                                   </a>
                                 ) : null}
                                 {tmMarketValue || tmAgentName ? (
-                                  <div className="text-xs text-slate-400 mt-1">
+                                  <div className="text-xs text-muted-foreground mt-1">
                                     {tmMarketValue ? `Market value: ${tmMarketValue}` : null}
                                     {tmMarketValue && tmAgentName ? " • " : null}
                                     {tmAgentName ? `Agent: ${tmAgentName}` : null}
@@ -1053,14 +1053,14 @@ export default function ProspectPage() {
                       <div className="flex items-center gap-4">
                         <button
                           type="button"
-                          className="text-xs uppercase tracking-[0.2em] px-4 py-2 border border-yellow-400/70 text-yellow-200 rounded-full"
+                          className="text-xs uppercase tracking-[0.2em] px-4 py-2 border border-yellow-400/70 text-yellow-700 rounded-full"
                           onClick={() => handleRemoveProspect(row.player_id)}
                         >
                           Remove to Prospect
                         </button>
                         <button
                           type="button"
-                          className="text-xs uppercase tracking-[0.2em] px-4 py-2 border border-slate-700 text-slate-200 rounded-full"
+                          className="text-xs uppercase tracking-[0.2em] px-4 py-2 border border-slate-700 text-foreground rounded-full"
                           onClick={() =>
                             window.open(
                               `/report?player_id=${row.player_id}`,
@@ -1104,7 +1104,7 @@ export default function ProspectPage() {
                 >
                   Prev
                 </button>
-                <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
                   {page + 1} / {totalPages}
                 </span>
                 <button
@@ -1121,7 +1121,7 @@ export default function ProspectPage() {
         ) : (
           <>
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-white">Club Pipeline</h2>
+              <h2 className="text-xl font-semibold text-foreground">Club Pipeline</h2>
               <button
                 type="button"
                 className="text-xs uppercase tracking-[0.2em] px-4 py-2 border border-primary text-primary rounded-full"
@@ -1228,7 +1228,7 @@ export default function ProspectPage() {
 
             {needsLoading ? (
               <Card>
-                <p className="text-slate-400">Loading club needs…</p>
+                <p className="text-muted-foreground">Loading club needs…</p>
               </Card>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1237,15 +1237,15 @@ export default function ProspectPage() {
                   return (
                     <div
                       key={stage}
-                      className="rounded-xl border border-white/10 bg-slate-900/40 p-3 min-h-[300px]"
+                      className="rounded-xl border border-border bg-card p-3 min-h-[300px]"
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={() => handleNeedDrop(stage)}
                     >
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="text-sm uppercase tracking-[0.2em] text-slate-300">
+                        <h3 className="text-sm uppercase tracking-[0.2em] text-foreground">
                           {stage}
                         </h3>
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs text-muted-foreground">
                           {stageNeeds.length}
                         </span>
                       </div>
@@ -1253,7 +1253,7 @@ export default function ProspectPage() {
                         {stageNeeds.map((need) => (
                           <div
                             key={need.id}
-                            className="rounded-lg border border-white/10 bg-slate-950/80 p-3 space-y-3"
+                            className="rounded-lg border border-border bg-card p-3 space-y-3"
                             draggable
                             onDragStart={() => setDragNeedId(need.id)}
                             onDragEnd={() => setDragNeedId(null)}
@@ -1265,23 +1265,23 @@ export default function ProspectPage() {
                           >
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="text-sm font-semibold text-white">
+                                <p className="text-sm font-semibold text-foreground">
                                   {need.need_label}
                                 </p>
-                                <p className="text-xs text-slate-400">
+                                <p className="text-xs text-muted-foreground">
                                   {need.club_name || "Club"}{" "}
                                   {need.competition_name ? `• ${need.competition_name}` : ""}
                                 </p>
                               </div>
                               <Badge>{need.assigned_user || "admin"}</Badge>
                             </div>
-                            <div className="text-xs text-slate-400">
+                            <div className="text-xs text-muted-foreground">
                               {need.contact_name || "No contact"}{" "}
                               {need.contact_phone ? `• ${need.contact_phone}` : ""}
                             </div>
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                                   Players
                                 </p>
                                 <button
@@ -1320,7 +1320,7 @@ export default function ProspectPage() {
                                   addPlayerPos
                                     ? createPortal(
                                         <div
-                                          className="fixed z-[9999] max-h-56 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl"
+                                          className="fixed z-[9999] max-h-56 overflow-auto rounded-lg border border-slate-700 bg-card shadow-xl"
                                           style={{
                                             left: `${addPlayerPos.left}px`,
                                             top: `${addPlayerPos.top}px`,
@@ -1328,7 +1328,7 @@ export default function ProspectPage() {
                                           }}
                                         >
                                           {playerOptions.length === 0 ? (
-                                            <div className="px-3 py-2 text-sm text-slate-400">
+                                            <div className="px-3 py-2 text-sm text-muted-foreground">
                                               No matches found.
                                             </div>
                                           ) : (
@@ -1336,7 +1336,7 @@ export default function ProspectPage() {
                                               <button
                                                 key={player.id}
                                                 type="button"
-                                                className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
+                                                className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-card"
                                                 onMouseDown={(e) => e.preventDefault()}
                                                 onClick={() =>
                                                   handleAddPlayer(need.id, player.raw)
@@ -1367,7 +1367,7 @@ export default function ProspectPage() {
                                       key={`${need.id}-${player.player_id}`}
                                       role="button"
                                       tabIndex={0}
-                                      className="w-full rounded-md border border-white/10 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 hover:border-primary"
+                                      className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground hover:border-primary"
                                       draggable
                                       onDragStart={() =>
                                         setDragPlayer({
@@ -1401,17 +1401,17 @@ export default function ProspectPage() {
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div>
-                                          <div className="font-semibold text-white">
+                                          <div className="font-semibold text-foreground">
                                             {player.name}
                                           </div>
-                                          <div className="text-xs text-slate-400">
+                                          <div className="text-xs text-muted-foreground">
                                             {player.calendar || "—"} •{" "}
                                             {player.competition_name || "—"}
                                           </div>
                                         </div>
                                         <button
                                           type="button"
-                                          className="shrink-0 rounded-full border border-red-500/60 p-1 text-red-400 hover:border-red-400 hover:text-red-300"
+                                          className="shrink-0 rounded-full border border-red-500/60 p-1 text-red-700 hover:border-red-400 hover:text-red-700"
                                           onClick={(event) => {
                                             event.stopPropagation();
                                             handleRemoveNeedPlayer(need.id, player.player_id);

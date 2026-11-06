@@ -10,24 +10,24 @@ const STATUSES = ["new", "searching", "shortlist_ready", "proposed", "discussion
 const DEAL_TYPES = ["any", "transfer", "loan", "free"];
 
 const Card = ({ children, className = "" }) => (
-  <div className={`glass-panel rounded-lg border border-white/5 p-4 ${className}`}>{children}</div>
+  <div className={`glass-panel rounded-lg border border-border p-4 ${className}`}>{children}</div>
 );
 
 const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.18em] text-slate-400">{children}</label>
+  <label className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{children}</label>
 );
 
 const TextInput = (props) => (
   <input
     {...props}
-    className={`w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary ${props.className || ""}`}
+    className={`w-full rounded-md border border-slate-700 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary ${props.className || ""}`}
   />
 );
 
 const Select = ({ children, ...props }) => (
   <select
     {...props}
-    className={`w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary ${props.className || ""}`}
+    className={`w-full rounded-md border border-slate-700 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary ${props.className || ""}`}
   >
     {children}
   </select>
@@ -36,17 +36,17 @@ const Select = ({ children, ...props }) => (
 const TextArea = (props) => (
   <textarea
     {...props}
-    className={`w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary ${props.className || ""}`}
+    className={`w-full rounded-md border border-slate-700 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary ${props.className || ""}`}
   />
 );
 
 const Badge = ({ children, tone = "default" }) => {
   const tones = {
-    default: "border-slate-700 bg-slate-900 text-slate-200",
+    default: "border-slate-700 bg-card text-foreground",
     green: "border-primary/50 bg-primary/10 text-primary",
-    amber: "border-amber-400/40 bg-amber-400/10 text-amber-200",
-    red: "border-red-400/40 bg-red-400/10 text-red-200",
-    blue: "border-sky-400/40 bg-sky-400/10 text-sky-200",
+    amber: "border-amber-400/40 bg-amber-400/10 text-amber-700",
+    red: "border-red-400/40 bg-red-400/10 text-red-700",
+    blue: "border-sky-400/40 bg-sky-400/10 text-sky-700",
   };
   return (
     <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${tones[tone] || tones.default}`}>
@@ -132,9 +132,9 @@ const buildEditForm = (requestItem) => {
 };
 
 const MatchingCinematic = ({ selectedCount }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 px-4 backdrop-blur-md">
-    <div className="w-full max-w-2xl rounded-xl border border-primary/30 bg-slate-950 p-6 shadow-2xl">
-      <div className="relative overflow-hidden rounded-lg border border-slate-800 bg-slate-900/60 p-5">
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-card px-4 backdrop-blur-md">
+    <div className="w-full max-w-2xl rounded-xl border border-primary/30 bg-card p-6 shadow-2xl">
+      <div className="relative overflow-hidden rounded-lg border border-slate-800 bg-card p-5">
         <div className="mercato-pitch" aria-hidden="true">
           <span className="mercato-orbit orbit-a" />
           <span className="mercato-orbit orbit-b" />
@@ -144,8 +144,8 @@ const MatchingCinematic = ({ selectedCount }) => (
         </div>
         <div className="relative z-10">
           <p className="text-xs uppercase tracking-[0.3em] text-primary">Mercato 2026</p>
-          <h2 className="mt-2 text-2xl font-semibold text-white">Building the shortlist</h2>
-          <p className="mt-2 max-w-lg text-sm text-slate-300">
+          <h2 className="mt-2 text-2xl font-semibold text-foreground">Building the shortlist</h2>
+          <p className="mt-2 max-w-lg text-sm text-foreground">
             Scanning profiles, recalibrating league context and checking squad-fit constraints.
           </p>
           <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -154,12 +154,12 @@ const MatchingCinematic = ({ selectedCount }) => (
               selectedCount > 0 ? `${selectedCount} selected leagues` : "All leagues",
               "Top 5 recommendation",
             ].map((label) => (
-              <div key={label} className="rounded-md border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs text-slate-200">
+              <div key={label} className="rounded-md border border-slate-800 bg-card px-3 py-2 text-xs text-foreground">
                 {label}
               </div>
             ))}
           </div>
-          <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-slate-800">
+          <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-card">
             <div className="mercato-progress h-full rounded-full bg-primary" />
           </div>
         </div>
@@ -259,20 +259,20 @@ const CandidateCard = ({ candidate, onStatus, onNote }) => {
             <img
               src={photoUrl}
               alt={candidate.name}
-              className="h-20 w-20 shrink-0 rounded-lg border border-white/10 object-cover"
+              className="h-20 w-20 shrink-0 rounded-lg border border-border object-cover"
             />
           ) : (
-            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-slate-800 text-lg font-semibold text-slate-100">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-lg font-semibold text-foreground">
               {getInitials(candidate.name)}
             </div>
           )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-lg font-semibold text-white">{candidate.name}</h3>
+              <h3 className="truncate text-lg font-semibold text-foreground">{candidate.name}</h3>
               <Badge tone={statusTone(candidate.status)}>{candidate.status}</Badge>
               <Badge tone="blue">{candidate.source}</Badge>
             </div>
-            <p className="mt-1 text-sm text-slate-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {candidate.age ? `${Number(candidate.age).toFixed(0)} yrs - ` : ""}
               {[candidate.position, candidate.second_position].filter(Boolean).join(" / ") || "-"}
               {" - "}
@@ -282,21 +282,21 @@ const CandidateCard = ({ candidate, onStatus, onNote }) => {
               {candidate.competition_name || "-"} - {candidate.calendar || "-"}
             </p>
             {explanation.recommendation_reason ? (
-              <p className="mt-3 text-sm text-slate-300">{explanation.recommendation_reason}</p>
+              <p className="mt-3 text-sm text-foreground">{explanation.recommendation_reason}</p>
             ) : null}
           </div>
         </button>
 
         <div className="grid shrink-0 grid-cols-3 gap-2 lg:w-56">
-          <div className="rounded-md border border-slate-800 bg-slate-950/70 p-2">
+          <div className="rounded-md border border-slate-800 bg-card p-2">
             <p className="text-xs text-slate-500">Raw</p>
-            <p className="text-lg font-semibold text-white">{candidate.raw_player_level != null ? Number(candidate.raw_player_level).toFixed(0) : "-"}</p>
+            <p className="text-lg font-semibold text-foreground">{candidate.raw_player_level != null ? Number(candidate.raw_player_level).toFixed(0) : "-"}</p>
           </div>
-          <div className="rounded-md border border-slate-800 bg-slate-950/70 p-2">
+          <div className="rounded-md border border-slate-800 bg-card p-2">
             <p className="text-xs text-slate-500">Adjusted</p>
-            <p className="text-lg font-semibold text-white">{candidate.calibrated_player_level != null ? Number(candidate.calibrated_player_level).toFixed(0) : "-"}</p>
+            <p className="text-lg font-semibold text-foreground">{candidate.calibrated_player_level != null ? Number(candidate.calibrated_player_level).toFixed(0) : "-"}</p>
           </div>
-          <div className="rounded-md border border-slate-800 bg-slate-950/70 p-2">
+          <div className="rounded-md border border-slate-800 bg-card p-2">
             <p className="text-xs text-slate-500">Match</p>
             <p className="text-lg font-semibold text-primary">{candidate.match_score != null ? Number(candidate.match_score).toFixed(0) : "-"}</p>
           </div>
@@ -309,7 +309,7 @@ const CandidateCard = ({ candidate, onStatus, onNote }) => {
             <p key={item} className="text-xs text-primary">{item}</p>
           ))}
           {risks.slice(0, 2).map((item) => (
-            <p key={item} className="text-xs text-amber-200">{item}</p>
+            <p key={item} className="text-xs text-amber-700">{item}</p>
           ))}
         </div>
         <div className="space-y-3">
@@ -318,7 +318,7 @@ const CandidateCard = ({ candidate, onStatus, onNote }) => {
               <button
                 key={status}
                 type="button"
-                className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-200 hover:border-primary hover:text-primary"
+                className="rounded-full border border-slate-700 px-2 py-1 text-xs text-foreground hover:border-primary hover:text-primary"
                 onClick={() => onStatus(candidate.id, status)}
               >
                 {status}
@@ -386,7 +386,7 @@ const LeagueSelector = ({ competitions, selected, onChange }) => {
         </Badge>
         <button
           type="button"
-          className="text-xs text-slate-300 hover:text-white"
+          className="text-xs text-foreground hover:text-foreground"
           onClick={selectVisible}
           disabled={filteredCompetitions.length === 0}
         >
@@ -394,7 +394,7 @@ const LeagueSelector = ({ competitions, selected, onChange }) => {
         </button>
         <button
           type="button"
-          className="text-xs text-slate-300 hover:text-white disabled:opacity-40"
+          className="text-xs text-foreground hover:text-foreground disabled:opacity-40"
           onClick={() => onChange([])}
           disabled={selected.length === 0}
         >
@@ -403,7 +403,7 @@ const LeagueSelector = ({ competitions, selected, onChange }) => {
       </div>
 
       {selected.length > 0 ? (
-        <div className="flex max-h-24 flex-wrap gap-2 overflow-auto rounded-md border border-slate-800 bg-slate-950/50 p-2">
+        <div className="flex max-h-24 flex-wrap gap-2 overflow-auto rounded-md border border-slate-800 bg-card p-2">
           {selected.map((competition) => (
             <button
               key={competition}
@@ -417,12 +417,12 @@ const LeagueSelector = ({ competitions, selected, onChange }) => {
           ))}
         </div>
       ) : (
-        <p className="rounded-md border border-slate-800 bg-slate-950/50 px-3 py-2 text-xs text-slate-500">
+        <p className="rounded-md border border-slate-800 bg-card px-3 py-2 text-xs text-slate-500">
           No league selected. Matching will search every league.
         </p>
       )}
 
-      <div className="max-h-80 overflow-auto rounded-md border border-slate-800 bg-slate-950/70">
+      <div className="max-h-80 overflow-auto rounded-md border border-slate-800 bg-card">
         {filteredCompetitions.length === 0 ? (
           <p className="px-3 py-3 text-sm text-slate-500">No matching league.</p>
         ) : (
@@ -432,8 +432,8 @@ const LeagueSelector = ({ competitions, selected, onChange }) => {
               <button
                 key={competition}
                 type="button"
-                className={`flex w-full items-center gap-3 border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-slate-900 ${
-                  checked ? "bg-primary/10 text-primary" : "text-slate-200"
+                className={`flex w-full items-center gap-3 border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-card ${
+                  checked ? "bg-primary/10 text-primary" : "text-foreground"
                 }`}
                 onClick={() => toggleCompetition(competition)}
               >
@@ -691,31 +691,31 @@ export default function MercatoNeedDetailPage() {
       <div className="mx-auto max-w-7xl px-4 py-8 space-y-6">
         <button
           type="button"
-          className="text-sm text-slate-300 hover:text-white"
+          className="text-sm text-foreground hover:text-foreground"
           onClick={() => router.push("/mercato-2026")}
         >
           Back to Mercato
         </button>
 
         {loading ? <Card>Loading need...</Card> : null}
-        {error ? <Card className="border-red-400/30 text-red-200">{error}</Card> : null}
+        {error ? <Card className="border-red-400/30 text-red-700">{error}</Card> : null}
 
         {!loading && requestItem && need ? (
           <>
-            <section className="rounded-xl border border-white/5 bg-slate-900/50 p-5">
+            <section className="rounded-xl border border-border bg-card p-5">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div className="flex min-w-0 items-start gap-4">
-                  <ClubLogo name={requestItem.club_name} className="h-16 w-16 rounded-lg border-slate-700 bg-slate-950" />
+                  <ClubLogo name={requestItem.club_name} className="h-16 w-16 rounded-lg border-slate-700 bg-card" />
                   <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge tone={priorityTone(requestItem.priority)}>{requestItem.priority}</Badge>
                     <Badge tone={statusTone(requestItem.status)}>{requestItem.status}</Badge>
                     <Badge>{requestItem.season}</Badge>
                   </div>
-                  <h1 className="mt-3 text-4xl font-semibold text-white">
+                  <h1 className="mt-3 text-4xl font-semibold text-foreground">
                     {requestItem.club_name || "Club to confirm"} - {need.position || "Open requirement"}
                   </h1>
-                  <p className="mt-2 text-sm text-slate-400">
+                  <p className="mt-2 text-sm text-muted-foreground">
                     {requestItem.competition_name || "League to confirm"} - {requestItem.title || "Recruitment need"}
                   </p>
                   </div>
@@ -723,14 +723,14 @@ export default function MercatoNeedDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="rounded-full border border-slate-700 px-4 py-3 text-sm font-semibold text-slate-200 hover:border-primary hover:text-primary"
+                    className="rounded-full border border-slate-700 px-4 py-3 text-sm font-semibold text-foreground hover:border-primary hover:text-primary"
                     onClick={openEdit}
                   >
                     Edit need
                   </button>
                   <button
                     type="button"
-                    className="rounded-full border border-red-400/40 px-4 py-3 text-sm font-semibold text-red-200 hover:border-red-300 disabled:opacity-50"
+                    className="rounded-full border border-red-400/40 px-4 py-3 text-sm font-semibold text-red-700 hover:border-red-300 disabled:opacity-50"
                     disabled={deleting}
                     onClick={deleteNeed}
                   >
@@ -749,20 +749,20 @@ export default function MercatoNeedDetailPage() {
 
               <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-6">
                 {statItems.map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                  <div key={label} className="rounded-lg border border-slate-800 bg-card p-3">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</p>
-                    <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+                    <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
                   </div>
                 ))}
               </div>
             </section>
 
-            {message ? <Card className="border-primary/30 text-slate-200">{message}</Card> : null}
+            {message ? <Card className="border-primary/30 text-foreground">{message}</Card> : null}
 
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-4">
                 <Card>
-                  <h2 className="text-lg font-semibold text-white">Need brief</h2>
+                  <h2 className="text-lg font-semibold text-foreground">Need brief</h2>
                   <div className="mt-4 grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
                     <p className="flex items-center gap-2">
                       <ClubLogo name={requestItem.club_name} className="h-7 w-7" />
@@ -777,13 +777,13 @@ export default function MercatoNeedDetailPage() {
                     <p><span className="text-slate-500">Max salary:</span> {formatMoney(requestItem.salary_max)}</p>
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="rounded-lg border border-slate-800 bg-card p-3">
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Additional information</p>
-                      <p className="mt-2 text-sm text-slate-300">{requestItem.extra_info || "-"}</p>
+                      <p className="mt-2 text-sm text-foreground">{requestItem.extra_info || "-"}</p>
                     </div>
-                    <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                    <div className="rounded-lg border border-slate-800 bg-card p-3">
                       <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Need notes</p>
-                      <p className="mt-2 text-sm text-slate-300">{need.notes || "-"}</p>
+                      <p className="mt-2 text-sm text-foreground">{need.notes || "-"}</p>
                     </div>
                   </div>
                 </Card>
@@ -791,15 +791,15 @@ export default function MercatoNeedDetailPage() {
                 <div className="space-y-3">
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <h2 className="text-xl font-semibold text-white">Shortlist</h2>
-                      <p className="text-sm text-slate-400">Saved candidates are shared with all authenticated users.</p>
+                      <h2 className="text-xl font-semibold text-foreground">Shortlist</h2>
+                      <p className="text-sm text-muted-foreground">Saved candidates are shared with all authenticated users.</p>
                     </div>
                     <Badge tone="green">{candidates.length} players</Badge>
                   </div>
                   {candidates.length === 0 ? (
                     <Card>
-                      <p className="font-semibold text-white">No player has been assigned to this requirement yet.</p>
-                      <p className="mt-1 text-sm text-slate-400">Run matching or add a player manually.</p>
+                      <p className="font-semibold text-foreground">No player has been assigned to this requirement yet.</p>
+                      <p className="mt-1 text-sm text-muted-foreground">Run matching or add a player manually.</p>
                     </Card>
                   ) : null}
                   {candidates.map((candidate) => (
@@ -815,7 +815,7 @@ export default function MercatoNeedDetailPage() {
 
               <aside className="space-y-4">
                 <Card>
-                  <h2 className="text-lg font-semibold text-white">Matching setup</h2>
+                  <h2 className="text-lg font-semibold text-foreground">Matching setup</h2>
                   <div className="mt-4">
                     <LeagueSelector
                       competitions={competitions}
@@ -834,7 +834,7 @@ export default function MercatoNeedDetailPage() {
                 </Card>
 
                 <Card>
-                  <h2 className="text-lg font-semibold text-white">Add player manually</h2>
+                  <h2 className="text-lg font-semibold text-foreground">Add player manually</h2>
                   <div className="mt-4 space-y-3">
                     <TextInput
                       placeholder="Search player"
@@ -849,7 +849,7 @@ export default function MercatoNeedDetailPage() {
                       disabled={requestItem.status === "closed"}
                     />
                     {playerResults.length > 0 ? (
-                      <div className="max-h-72 overflow-auto rounded-md border border-slate-800 bg-slate-950">
+                      <div className="max-h-72 overflow-auto rounded-md border border-slate-800 bg-card">
                         {playerResults.map((player) => {
                           const tmFields = player.tm_fields || {};
                           const photoUrl = toAbsoluteUrl(tmFields.tm_profile_image_url || tmFields.profile_image_url);
@@ -857,20 +857,20 @@ export default function MercatoNeedDetailPage() {
                             <button
                               key={`${player.id}-${player.player_season_id}`}
                               type="button"
-                              className="flex w-full gap-3 border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-slate-900"
+                              className="flex w-full gap-3 border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-card"
                               onClick={() => addCandidate(player)}
                               disabled={candidateBusy || requestItem.status === "closed"}
                             >
                               {photoUrl ? (
                                 <img src={photoUrl} alt={player.name} className="h-10 w-10 rounded-md object-cover" />
                               ) : (
-                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-slate-800 text-xs font-semibold text-slate-200">
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-card text-xs font-semibold text-foreground">
                                   {getInitials(player.name)}
                                 </span>
                               )}
                               <span className="min-w-0">
-                                <span className="block truncate font-medium text-white">{player.name}</span>
-                                <span className="mt-1 flex items-center gap-2 truncate text-xs text-slate-400">
+                                <span className="block truncate font-medium text-foreground">{player.name}</span>
+                                <span className="mt-1 flex items-center gap-2 truncate text-xs text-muted-foreground">
                                   <ClubLogo name={player.team} className="h-5 w-5 rounded" />
                                   <span className="min-w-0 truncate">{player.team || "-"} - {player.competition_name || "-"} - {player.calendar || "-"}</span>
                                 </span>
@@ -890,13 +890,13 @@ export default function MercatoNeedDetailPage() {
 
       {showEdit && editForm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-700 bg-slate-950 p-5 shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-700 bg-card p-5 shadow-2xl">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-white">Edit Mercato need</h2>
-                <p className="text-sm text-slate-400">Update the club brief, constraints and ownership.</p>
+                <h2 className="text-xl font-semibold text-foreground">Edit Mercato need</h2>
+                <p className="text-sm text-muted-foreground">Update the club brief, constraints and ownership.</p>
               </div>
-              <button type="button" className="text-sm text-slate-300" onClick={() => setShowEdit(false)}>
+              <button type="button" className="text-sm text-foreground" onClick={() => setShowEdit(false)}>
                 Close
               </button>
             </div>
@@ -916,7 +916,7 @@ export default function MercatoNeedDetailPage() {
                   placeholder="Type a club name"
                 />
                 {editForm.club_query && !editForm.club_id ? (
-                  <div className="max-h-48 overflow-auto rounded-md border border-slate-800 bg-slate-950">
+                  <div className="max-h-48 overflow-auto rounded-md border border-slate-800 bg-card">
                     {filteredClubOptions.length === 0 ? (
                       <p className="px-3 py-2 text-sm text-slate-500">No matching club.</p>
                     ) : (
@@ -924,7 +924,7 @@ export default function MercatoNeedDetailPage() {
                         <button
                           key={club.id}
                           type="button"
-                          className="block w-full border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-slate-900"
+                          className="block w-full border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-card"
                           onClick={() =>
                             setEditForm((prev) => ({
                               ...(prev || {}),
@@ -1024,7 +1024,7 @@ export default function MercatoNeedDetailPage() {
             </div>
 
             <div className="mt-5 flex justify-end gap-3">
-              <button type="button" className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200" onClick={() => setShowEdit(false)}>
+              <button type="button" className="rounded-full border border-slate-700 px-4 py-2 text-sm text-foreground" onClick={() => setShowEdit(false)}>
                 Cancel
               </button>
               <button

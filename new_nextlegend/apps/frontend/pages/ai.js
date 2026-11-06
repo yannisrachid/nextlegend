@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import EvidenceMessage from "@/components/EvidenceMessage";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { fetchJson, fetchJsonCached, postJson, patchJson } from "@/lib/api";
 import {
   DEFAULT_SCOUTING_SEASON,
@@ -9,7 +11,7 @@ const TM_BASE_URL = "https://www.transfermarkt.com";
 
 const Card = ({ children, className = "", ...rest }) => (
   <div
-    className={`glass-panel min-w-0 rounded-xl border border-white/5 p-4 ${className}`}
+    className={`glass-panel min-w-0 rounded-xl border border-border ${className.includes("p-0") ? "" : "p-4"} ${className}`}
     {...rest}
   >
     {children}
@@ -17,7 +19,7 @@ const Card = ({ children, className = "", ...rest }) => (
 );
 
 const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+  <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
     {children}
   </label>
 );
@@ -80,14 +82,14 @@ const MetricTile = ({ label, value, tone = "default" }) => (
   <div
     className={`min-w-0 rounded-lg border px-3 py-3 ${
       tone === "green"
-        ? "border-[#3A8967]/35 bg-[#2F7D5C]/15"
-        : "border-white/10 bg-white/[0.025]"
+        ? "border-primary/25 bg-accent"
+        : "border-border bg-secondary"
     }`}
   >
     <p className="break-words text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
       {label}
     </p>
-    <p className={`mt-1 break-words text-sm font-semibold leading-5 ${tone === "green" ? "text-[#8CC7A7]" : "text-slate-100"}`}>
+    <p className={`mt-1 break-words text-sm font-semibold leading-5 ${tone === "green" ? "text-primary" : "text-foreground"}`}>
       {value}
     </p>
   </div>
@@ -97,7 +99,7 @@ const PromptChip = ({ children, onClick }) => (
   <button
     type="button"
     onClick={onClick}
-    className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-xs font-medium text-slate-300 transition hover:border-[#3A8967]/35 hover:bg-[#2F7D5C]/12 hover:text-white"
+    className="rounded-md border border-border bg-secondary px-3 py-2 text-left text-xs font-medium text-foreground transition hover:border-primary/25 hover:bg-accent hover:text-foreground"
   >
     {children}
   </button>
@@ -170,6 +172,9 @@ const extractTmFields = (row) => {
 
 export default function AIPage() {
   const [mode, setMode] = useState("scout");
+  const messageEnd = useRef(null);
+  const incomingDraft = useRef(false);
+  const [historyQuery, setHistoryQuery] = useState("");
   const [prompt, setPrompt] = useState("");
   const [language, setLanguage] = useState("auto");
   const [loading, setLoading] = useState(false);
@@ -196,6 +201,20 @@ export default function AIPage() {
   const isUsageAdmin = currentUser?.role === "admin" && currentUser?.username === "yrachid";
 
   useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("nl_scout_draft");
+      if (!saved) return;
+      const draft = JSON.parse(saved);
+      if (typeof draft.prompt === "string" && draft.prompt.trim()) {
+        incomingDraft.current = true;
+        setPrompt(draft.prompt.slice(0, 16000));
+        if (/^\d{4}\/\d{4}$/.test(draft.season)) setSelectedSeason(draft.season);
+        sessionStorage.removeItem("nl_scout_draft");
+      }
+    } catch { /* A blocked browser store should not prevent using the chat. */ }
+  }, []);
+
+  useEffect(() => {
     fetchJson("/auth/me")
       .then((res) => {
         if (res?.username) {
@@ -213,7 +232,7 @@ export default function AIPage() {
     setConversations(items);
     if (targetId) {
       setActiveConversationId(targetId);
-    } else if (!activeConversationId && items.length > 0) {
+    } else if (!incomingDraft.current && !activeConversationId && items.length > 0) {
       setActiveConversationId(items[0].id);
     }
   };
@@ -452,7 +471,7 @@ export default function AIPage() {
           mode === "player" && selectedPlayerSeasonId
             ? Number(selectedPlayerSeasonId)
             : null,
-        season: mode === "scout" ? selectedSeason || null : null,
+        season: mode === "scout" ? selectedSeason || "all" : null,
         language,
       });
       setMessages((prev) => [
@@ -467,6 +486,7 @@ export default function AIPage() {
         const next = prev.filter((item) => item.id !== updated.id);
         return [updated, ...next];
       });
+      await loadUsage(conversationId);
     } catch (err) {
       setMessages((prev) =>
         prev.filter(
@@ -526,26 +546,27 @@ export default function AIPage() {
     }
   };
 
+  useEffect(() => { const box = messageEnd.current?.parentElement; if (box) box.scrollTop = box.scrollHeight; }, [messages]);
   const activeConversation = conversations.find((item) => item.id === activeConversationId);
   const activeModeLabel = mode === "player" ? "Player report" : "Scout advisor";
   const promptSuggestions = [
     "Build a shortlist of U23 centre backs ready for a Big 5 move.",
-    "Identify undervalued wide forwards with strong ball progression.",
-    "Summarize the risk profile for a player before a recruitment meeting.",
+    "Which tracked players are improving across comparable score snapshots?",
+    "Find young players combining observed performance with verified FM potential.",
   ];
   const contextPanels = (
     <>
       <Card className="space-y-2.5">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 text-[#8CC7A7]">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-primary/25 bg-accent text-primary">
             <Icon name="database" className="h-4 w-4" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-white">Context lock</p>
+            <p className="text-sm font-semibold text-foreground">Context lock</p>
             <p className="text-xs text-slate-500">Current query scope</p>
           </div>
         </div>
-        <div className="overflow-hidden rounded-md border border-white/10 bg-white/[0.025]">
+        <div className="overflow-hidden rounded-md border border-border bg-secondary">
           {[
             ["Mode", activeModeLabel],
             ["Language", language === "auto" ? "Auto" : language.toUpperCase()],
@@ -554,13 +575,13 @@ export default function AIPage() {
             <div
               key={label}
               className={`flex min-w-0 items-center justify-between gap-3 px-3 py-2 ${
-                index === 0 ? "bg-[#2F7D5C]/10" : "border-t border-white/5"
+                index === 0 ? "bg-accent" : "border-t border-border"
               }`}
             >
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {label}
               </span>
-              <span className={`min-w-0 truncate text-right text-xs font-semibold ${index === 0 ? "text-[#8CC7A7]" : "text-slate-200"}`}>
+              <span className={`min-w-0 truncate text-right text-xs font-semibold ${index === 0 ? "text-primary" : "text-foreground"}`}>
                 {value}
               </span>
             </div>
@@ -569,25 +590,25 @@ export default function AIPage() {
       </Card>
 
       {isUsageAdmin ? (
-        <Card className="space-y-3 text-xs text-slate-300">
+        <Card className="space-y-3 text-xs text-foreground">
           <div className="flex items-center justify-between gap-3">
-            <span className="inline-flex items-center gap-2 font-semibold text-white">
-              <Icon name="gauge" className="h-4 w-4 text-[#8CC7A7]" />
+            <span className="inline-flex items-center gap-2 font-semibold text-foreground">
+              <Icon name="gauge" className="h-4 w-4 text-primary" />
               Usage
             </span>
-            <span className="truncate text-slate-500">{usageTotal?.model || "gpt-4o"}</span>
+            <span className="truncate text-slate-500">{[...messages].reverse().find((message) => message.payload?.model)?.payload?.model || "—"}</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <MetricTile label="This chat" value={`${formatTokens(usageConversation?.total_tokens)} tokens`} />
-            <MetricTile label="Chat cost" value={formatUsd(usageConversation?.estimated_cost_usd)} />
+            <MetricTile label="Chat cost" value="See billing" />
             <MetricTile label="Total" value={`${formatTokens(usageTotal?.total_tokens)} tokens`} />
-            <MetricTile label="Total cost" value={formatUsd(usageTotal?.estimated_cost_usd)} />
+            <MetricTile label="Total cost" value="See billing" />
           </div>
-          <div className="rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-[11px] leading-5 text-slate-500">
+          <div className="rounded-md border border-border bg-secondary px-3 py-2 text-[11px] leading-5 text-slate-500">
             Remaining balance is not available via OpenAI API.
           </div>
           {usageError ? (
-            <div className="rounded-md border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+            <div className="rounded-md border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700">
               {usageError}
             </div>
           ) : null}
@@ -596,15 +617,15 @@ export default function AIPage() {
 
       <Card className="space-y-3">
         <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-slate-300">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-secondary text-foreground">
             <Icon name="filter" className="h-4 w-4" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-white">Good brief inputs</p>
+            <p className="text-sm font-semibold text-foreground">Good brief inputs</p>
             <p className="text-xs text-slate-500">Keep answers operational.</p>
           </div>
         </div>
-        <div className="space-y-2 text-xs leading-5 text-slate-400">
+        <div className="space-y-2 text-xs leading-5 text-muted-foreground">
           <p>Define role, league level, budget, age range and minutes threshold.</p>
           <p>For player reports, lock one player before asking for tactical or market analysis.</p>
           <p>Open candidate cards to jump directly to the full player report.</p>
@@ -614,10 +635,10 @@ export default function AIPage() {
   );
 
   return (
-    <main className="nl-page px-4 py-8">
+    <main className="nl-page px-4 py-4">
       <div className="mx-auto max-w-[1760px] space-y-5">
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[340px_minmax(0,1fr)]">
-          <aside className="min-w-0 space-y-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:self-start xl:overflow-auto xl:pr-1">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_260px] 2xl:grid-cols-[minmax(0,1fr)_280px]">
+          <aside className="min-w-0 space-y-3 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:self-start xl:overflow-auto xl:pr-1">
             <button
               type="button"
               className="nl-button-primary w-full justify-center"
@@ -628,18 +649,22 @@ export default function AIPage() {
               New conversation
             </button>
 
+            <Link href="/" className="nl-button-ghost w-full justify-start">← Back to your briefing</Link>
+
             <Card className="overflow-hidden p-0">
-              <div className="border-b border-white/10 px-4 py-3">
-                <p className="nl-kicker">Conversation memory</p>
+              <div className="border-b border-border px-4 py-3">
+                <p className="nl-kicker">Your conversations</p>
+                <input aria-label="Search conversations" placeholder="Search history…" value={historyQuery} onChange={e => setHistoryQuery(e.target.value)} className="nl-field mt-3" />
               </div>
               <div className="max-h-[360px] space-y-1 overflow-auto p-2">
+                {historyQuery && !conversations.some(conv => (conv.title || "New chat").toLowerCase().includes(historyQuery.toLowerCase())) ? <p className="px-3 py-5 text-sm text-muted-foreground">No conversations match your search.</p> : null}
                 {conversations.length === 0 ? (
-                  <div className="rounded-md border border-dashed border-white/10 bg-white/[0.025] px-3 py-8 text-center">
-                    <p className="text-sm font-semibold text-slate-200">No conversation yet</p>
+                  <div className="rounded-md border border-dashed border-border bg-secondary px-3 py-8 text-center">
+                    <p className="text-sm font-semibold text-foreground">No conversation yet</p>
                     <p className="mt-1 text-xs text-slate-500">Start with a brief and it will appear here.</p>
                   </div>
                 ) : (
-                  conversations.map((conv) => {
+                  conversations.filter(conv => (conv.title || "New chat").toLowerCase().includes(historyQuery.toLowerCase())).map((conv) => {
                     const isActive = conv.id === activeConversationId;
                     const isEditing = editingConversationId === conv.id;
                     return (
@@ -647,8 +672,8 @@ export default function AIPage() {
                         key={conv.id}
                         className={`rounded-md border p-2 transition ${
                           isActive
-                            ? "border-[#3A8967]/40 bg-[#2F7D5C]/16"
-                            : "border-transparent bg-transparent hover:border-white/10 hover:bg-white/[0.035]"
+                            ? "border-primary/25 bg-accent"
+                            : "border-transparent bg-transparent hover:border-border hover:bg-secondary"
                         }`}
                       >
                         {isEditing ? (
@@ -679,10 +704,11 @@ export default function AIPage() {
                           <div className="flex items-start gap-2">
                             <button
                               type="button"
+                              disabled={loading}
                               onClick={() => setActiveConversationId(conv.id)}
                               className="min-w-0 flex-1 text-left"
                             >
-                              <div className="truncate text-sm font-semibold text-slate-100">
+                              <div className="truncate text-sm font-semibold text-foreground">
                                 {conv.title || "New chat"}
                               </div>
                               <div className="mt-1 flex items-center gap-2 text-[11px] font-medium text-slate-500">
@@ -693,7 +719,7 @@ export default function AIPage() {
                             </button>
                             <button
                               type="button"
-                              className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/[0.06] hover:text-white"
+                              className="rounded-md p-1.5 text-slate-500 transition hover:bg-secondary hover:text-foreground"
                               onClick={() => startEditConversation(conv)}
                               aria-label="Edit conversation title"
                             >
@@ -705,50 +731,30 @@ export default function AIPage() {
                     );
                   })
                 )}
+
               </div>
             </Card>
 
-            {contextPanels}
+            <details className="rounded-xl border border-border bg-card p-4"><summary className="cursor-pointer text-sm font-medium text-muted-foreground">Context & usage</summary><div className="mt-3 space-y-3">{contextPanels}</div></details>
           </aside>
 
-          <section className="min-w-0 space-y-4">
-            <header className="overflow-hidden rounded-lg border border-white/10 bg-[#070807]">
-              <div className="relative grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-end">
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#559A78]/70 to-transparent" />
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-2 rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-1.5 text-xs font-semibold text-[#8CC7A7]">
-                      <Icon name="spark" className="h-3.5 w-3.5" />
-                      AI Assistant
-                    </span>
-                    <span className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-400">
-                      {activeModeLabel}
-                    </span>
-                  </div>
-                  <h1 className="mt-4 text-3xl font-semibold tracking-tight text-white md:text-4xl">
-                    Scouting brief assistant
-                  </h1>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                    Query the Next Legend database, structure recruitment thinking, and turn player context into usable scouting briefs.
-                  </p>
-                </div>
-                <div className={`grid gap-2 ${isUsageAdmin ? "grid-cols-3 sm:min-w-[420px]" : "grid-cols-2 sm:min-w-[300px]"}`}>
-                  <MetricTile label="Season" value={selectedSeason || "All"} tone="green" />
-                  <MetricTile label="Messages" value={messages.length} />
-                  {isUsageAdmin ? <MetricTile label="Model" value={usageTotal?.model || "gpt-4o"} /> : null}
-                </div>
-              </div>
+          <section className="order-first min-w-0 space-y-3 xl:order-first">
+            <header className="px-1 py-2">
+              <button className="nl-button-secondary float-right mb-2 ml-2 xl:hidden" onClick={() => createConversation(mode)} disabled={!userId}>+ New</button>
+              <p className="nl-kicker">Scouting intelligence</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Your scouting thinking partner.</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Ask a question. Follow the evidence. Build your shortlist.</p>
             </header>
 
             <Card className="overflow-visible p-0">
-              <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-4 border-b border-border px-4 py-4 xl:flex-row xl:items-center xl:justify-between">
                 <div>
-                  <p className="nl-kicker">Assistant context</p>
-                  <h2 className="mt-1 text-lg font-semibold text-white">
-                    {activeConversation?.title || "Untitled scouting brief"}
+                  <p className="nl-kicker">Conversation</p>
+                  <h2 className="mt-1 text-sm font-semibold text-foreground">
+                    {activeConversation?.title || "New research conversation"}
                   </h2>
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:min-w-[520px]">
+                <details className="w-full xl:max-w-[440px]"><summary className="cursor-pointer text-sm text-muted-foreground">Research settings · {selectedSeason || "All seasons"} · {language === "auto" ? "Auto language" : language.toUpperCase()}</summary><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                   <div>
                     <Label>Mode</Label>
                     <Select
@@ -772,7 +778,7 @@ export default function AIPage() {
                       <option value="fr">French</option>
                     </Select>
                   </div>
-                  <div>
+                  <div className="col-span-2 sm:col-span-1">
                     <Label>Season</Label>
                     <Select
                       id="ai-season"
@@ -795,33 +801,33 @@ export default function AIPage() {
                       ))}
                     </Select>
                   </div>
-                </div>
+                </div></details>
               </div>
             </Card>
 
-            <Card className="min-h-[520px] overflow-hidden p-0">
-              <div className="border-b border-white/10 bg-white/[0.018] px-4 py-3">
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-border bg-secondary px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-white">Conversation</p>
-                    <p className="mt-1 text-xs text-slate-500">Chat history, candidate cards and database context.</p>
+                    <p className="text-sm font-semibold text-foreground">Conversation</p>
+                    <p className="mt-1 text-xs text-slate-500">Ask, investigate, and compare the evidence.</p>
                   </div>
-                  <span className="rounded-md border border-white/10 bg-black/20 px-2.5 py-1 text-xs font-semibold text-slate-400">
+                  <span className="rounded-md border border-border bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
                     {messages.length || 0} messages
                   </span>
                 </div>
               </div>
 
-              <div className="space-y-6 p-4 md:p-5">
+              <div className="h-[clamp(260px,calc(100dvh-560px),760px)] overflow-y-auto overscroll-contain space-y-6 p-4 md:p-5">
                 {messages.length === 0 ? (
-                  <div className="grid min-h-[360px] place-items-center rounded-lg border border-dashed border-white/10 bg-black/[0.16] px-4 py-10 text-center">
+                  <div className="grid min-h-[300px] place-items-center px-4 py-8 text-center">
                     <div className="max-w-xl">
-                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-[#3A8967]/35 bg-[#2F7D5C]/15 text-[#8CC7A7]">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-primary/25 bg-accent text-primary">
                         <Icon name="spark" className="h-5 w-5" />
                       </div>
-                      <h3 className="mt-4 text-lg font-semibold text-white">Start a structured scouting brief</h3>
-                      <p className="mt-2 text-sm leading-6 text-slate-400">
-                        Use a focused prompt, select the right context, and the assistant will answer from the scouting database.
+                      <h3 className="mt-4 text-sm font-semibold text-foreground">What’s your next scouting question?</h3>
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        Explore performance, compare a cohort, or investigate potential. Every finding starts with your actual scouting data.
                       </p>
                       <div className="mt-5 grid gap-2 text-left sm:grid-cols-3">
                         {promptSuggestions.map((suggestion) => (
@@ -847,7 +853,7 @@ export default function AIPage() {
                       >
                         {!isUser ? (
                         <div
-                          className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-slate-300"
+                          className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-foreground"
                         >
                           <Icon name="bot" className="h-4 w-4" />
                         </div>
@@ -855,12 +861,12 @@ export default function AIPage() {
                         <div
                           className={`min-w-0 rounded-lg border px-4 py-3 ${
                             isUser
-                              ? "max-w-[min(760px,82%)] border-[#3A8967]/35 bg-[#2F7D5C]/16 text-slate-100"
-                              : "w-full max-w-[1180px] border-white/10 bg-[#0A0C0B]/80 text-slate-200"
+                              ? "max-w-[min(760px,82%)] border-primary/25 bg-accent text-foreground"
+                              : "w-full max-w-[1180px] border-transparent bg-card text-foreground"
                           }`}
                         >
                           {isPending ? (
-                            <div className="flex items-center gap-3 text-sm text-slate-400" aria-label="Loading">
+                            <div className="flex items-center gap-3 text-sm text-muted-foreground" aria-label="Loading">
                               <div className="typing-dots">
                                 <span />
                                 <span />
@@ -869,14 +875,12 @@ export default function AIPage() {
                               <span>Composing answer</span>
                             </div>
                           ) : (
-                            <p className="whitespace-pre-wrap text-sm leading-7">
-                              {message.content}
-                            </p>
+                            <EvidenceMessage content={message.content} payload={payload} />
                           )}
 
                           {payload?.filters && !isPending ? (
-                            <details className="mt-4 rounded-md border border-white/10 bg-black/[0.22] px-3 py-2 text-xs text-slate-400">
-                              <summary className="cursor-pointer font-semibold text-slate-300">
+                            <details className="mt-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+                              <summary className="cursor-pointer font-semibold text-foreground">
                                 Applied filters
                               </summary>
                               <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-slate-500">
@@ -942,31 +946,31 @@ export default function AIPage() {
                                         }
                                       }
                                     }}
-                                    className="cursor-pointer rounded-lg border border-white/10 bg-white/[0.025] p-4 transition hover:border-[#3A8967]/35 hover:bg-[#2F7D5C]/10 focus:outline-none focus:ring-2 focus:ring-[#3A8967]/50"
+                                    className="cursor-pointer rounded-lg border border-border bg-secondary p-4 transition hover:border-primary/25 hover:bg-accent focus:outline-none focus:ring-2 focus:ring-[#3A8967]/50"
                                   >
                                     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px] xl:items-start">
                                       <div className="flex min-w-0 items-start gap-3">
-                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 text-sm font-semibold text-[#8CC7A7]">
+                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-accent text-sm font-semibold text-primary">
                                           {cardIndex + 1}
                                         </div>
                                         {tmPhotoUrl ? (
                                           <img
                                             src={tmPhotoUrl}
                                             alt={candidate.player_name}
-                                            className="h-12 w-12 shrink-0 rounded-md border border-white/10 object-cover"
+                                            className="h-12 w-12 shrink-0 rounded-md border border-border object-cover"
                                           />
                                         ) : (
-                                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-sm font-semibold text-slate-200">
+                                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-sm font-semibold text-foreground">
                                             {getInitials(candidate.player_name)}
                                           </div>
                                         )}
                                         <div className="min-w-0 flex-1">
                                           <div className="min-w-0">
-                                            <h4 className="break-words text-lg font-semibold leading-6 text-white">
+                                            <h4 className="break-words text-lg font-semibold leading-6 text-foreground">
                                               {candidate.player_name}
                                             </h4>
                                           </div>
-                                          <p className="mt-1 text-sm text-slate-400">
+                                          <p className="mt-1 text-sm text-muted-foreground">
                                             {candidate.team || "—"} · {candidate.competition_name || "—"} · {candidate.calendar || "—"}
                                           </p>
                                           {tmProfileUrl ? (
@@ -974,7 +978,7 @@ export default function AIPage() {
                                               href={tmProfileUrl}
                                               target="_blank"
                                               rel="noreferrer"
-                                              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#8CC7A7] hover:text-white"
+                                              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-foreground"
                                               onClick={(event) => event.stopPropagation()}
                                             >
                                               Transfermarkt profile
@@ -997,48 +1001,48 @@ export default function AIPage() {
                                     </div>
                                     <div className="mt-3 flex flex-wrap gap-2">
                                       {candidate.assigned_role ? (
-                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                        <span className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-foreground">
                                           {candidate.assigned_role}
                                         </span>
                                       ) : null}
                                       {candidate.position ? (
-                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                        <span className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-foreground">
                                           {candidate.position}
                                         </span>
                                       ) : null}
                                       {candidate.age ? (
-                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                        <span className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-foreground">
                                           {candidate.age} yrs
                                         </span>
                                       ) : null}
-                                      <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                      <span className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-foreground">
                                         {Math.round(candidate.minutes_played || 0)} mins
                                       </span>
                                       {tmMarketValue ? (
-                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                        <span className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-foreground">
                                           Market value: {tmMarketValue}
                                         </span>
                                       ) : null}
                                       {tmAgentName ? (
-                                        <span className="rounded-md border border-white/10 bg-black/[0.2] px-2 py-1 text-xs font-medium text-slate-300">
+                                        <span className="rounded-md border border-border bg-muted px-2 py-1 text-xs font-medium text-foreground">
                                           Agent: {tmAgentName}
                                         </span>
                                       ) : null}
                                     </div>
                                     <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                                      <div className="rounded-md border border-white/10 bg-black/[0.18] p-3">
+                                      <div className="rounded-md border border-border bg-muted p-3">
                                         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                                           Reason
                                         </p>
-                                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                                        <p className="mt-2 text-sm leading-6 text-foreground">
                                           {candidate.reason || "—"}
                                         </p>
                                       </div>
-                                      <div className="rounded-md border border-white/10 bg-black/[0.18] p-3">
+                                      <div className="rounded-md border border-border bg-muted p-3">
                                         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                                           Role summary
                                         </p>
-                                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                                        <p className="mt-2 text-sm leading-6 text-foreground">
                                           {candidate.role_summary || "—"}
                                         </p>
                                       </div>
@@ -1049,9 +1053,9 @@ export default function AIPage() {
                             </div>
                           ) : null}
 
-                          {payload?.report ? (
-                            <details className="mt-4 rounded-md border border-white/10 bg-black/[0.22] px-3 py-2 text-xs text-slate-400">
-                              <summary className="cursor-pointer font-semibold text-slate-300">
+                          {payload?.report && payload?.context ? (
+                            <details className="mt-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+                              <summary className="cursor-pointer font-semibold text-foreground">
                                 Context used
                               </summary>
                               <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap text-[11px] text-slate-500">
@@ -1064,20 +1068,17 @@ export default function AIPage() {
                     );
                   })
                 )}
+                <div ref={messageEnd} />
               </div>
             </Card>
 
             {error ? (
               <Card className="border-rose-400/35 bg-rose-500/10">
-                <p className="text-sm font-semibold text-rose-200">Error: {error}</p>
+                <p className="text-sm font-semibold text-rose-700">Error: {error}</p>
               </Card>
             ) : null}
 
             <Card className="overflow-visible p-0">
-              <div className="border-b border-white/10 px-4 py-3">
-                <p className="text-sm font-semibold text-white">Composer</p>
-                <p className="mt-1 text-xs text-slate-500">Write the exact recruitment question or player report request.</p>
-              </div>
               <div className="space-y-3 p-4">
                 {mode === "player" ? (
                   <div className="relative z-30">
@@ -1096,9 +1097,9 @@ export default function AIPage() {
                       onBlur={() => setTimeout(() => setShowResults(false), 150)}
                     />
                     {showResults && playerQuery.trim().length >= 2 ? (
-                      <div className="absolute z-50 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-white/10 bg-[#080B0A] shadow-2xl">
+                      <div className="absolute z-50 mt-2 max-h-72 w-full overflow-auto rounded-lg border border-border bg-card shadow-2xl">
                         {playerOptions.length === 0 ? (
-                          <div className="px-3 py-3 text-sm text-slate-400">
+                          <div className="px-3 py-3 text-sm text-muted-foreground">
                             No matches found.
                           </div>
                         ) : (
@@ -1106,7 +1107,7 @@ export default function AIPage() {
                             <button
                               key={`${player.id}-${player.seasonId || "latest"}`}
                               type="button"
-                              className="w-full border-b border-white/5 px-3 py-2.5 text-left text-sm text-slate-300 transition last:border-b-0 hover:bg-[#2F7D5C]/12 hover:text-white"
+                              className="w-full border-b border-border px-3 py-2.5 text-left text-sm text-foreground transition last:border-b-0 hover:bg-accent hover:text-foreground"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
                                 setSelectedPlayerId(player.id);
@@ -1124,10 +1125,12 @@ export default function AIPage() {
                   </div>
                 ) : null}
                 <div className="space-y-2">
-                  <Label>Message</Label>
+                  <label htmlFor="scouting-message" className="sr-only">Message</label>
                   <textarea
-                    className="nl-field min-h-[132px] resize-y"
-                    placeholder="Describe the scouting brief or the report you need..."
+                    id="scouting-message"
+                    maxLength={16000}
+                    className="nl-field min-h-[84px] max-h-[240px] resize-y border-transparent bg-secondary/50 focus:border-primary/30"
+                    placeholder="Ask about a player, a market, or the next opportunity…"
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     onKeyDown={(event) => {
@@ -1140,7 +1143,7 @@ export default function AIPage() {
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-slate-500">
-                    Cmd/Ctrl + Enter to send. Answers keep the selected mode, language and season.
+                    Cmd/Ctrl + Enter to send · Check the evidence before acting.
                   </p>
                   <button
                     type="button"
@@ -1149,7 +1152,7 @@ export default function AIPage() {
                     disabled={loading || !prompt.trim()}
                   >
                     <Icon name="send" className="h-4 w-4" />
-                    {loading ? "Sending" : "Send brief"}
+                    {loading ? "Sending" : "Send message"}
                   </button>
                 </div>
               </div>

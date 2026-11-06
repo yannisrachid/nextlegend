@@ -646,11 +646,11 @@ function YouthScoreHistory({ data, onSelect }) {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="nl-kicker">Score history</p>
-          <h3 className="mt-2 text-xl font-black text-white">Youth rating evolution</h3>
-          <p className="mt-1 text-sm text-[#A0A8A3]">Season-by-season evolution for this player across imported Eyeball campaigns.</p>
+          <h3 className="mt-2 text-xl font-black text-foreground">Youth rating evolution</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Season-by-season evolution for this player across imported Eyeball campaigns.</p>
         </div>
       </div>
-      <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
+      <div className="rounded-lg border border-border bg-secondary p-4">
         {points.length ? (
           <>
             <svg viewBox="0 0 100 106" className="h-64 w-full overflow-visible" role="img" aria-label="Youth score history">
@@ -696,13 +696,13 @@ function YouthScoreHistory({ data, onSelect }) {
                   key={seasonId || row.calendar}
                   type={Wrapper === "button" ? "button" : undefined}
                   onClick={seasonId && onSelect ? () => onSelect(String(seasonId)) : undefined}
-                  className="flex w-full items-center justify-between gap-4 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2 text-left transition hover:border-[#3A8967]/35 hover:bg-[#2F7D5C]/10"
+                  className="flex w-full items-center justify-between gap-4 rounded-md border border-border bg-secondary px-3 py-2 text-left transition hover:border-primary/25 hover:bg-accent"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-black text-white">{row.calendar}</p>
-                    <p className="truncate text-xs text-[#6F7772]">{[row.team, row.competition_name].filter(Boolean).join(" - ") || "-"}</p>
+                    <p className="text-sm font-black text-foreground">{row.calendar}</p>
+                    <p className="truncate text-xs text-muted-foreground">{[row.team, row.competition_name].filter(Boolean).join(" - ") || "-"}</p>
                   </div>
-                  <p className="text-xl font-black text-[#8CC7A7]">{formatValue(row.global_score_adjusted, "score")}</p>
+                  <p className="text-xl font-black text-primary">{formatValue(row.global_score_adjusted, "score")}</p>
                 </Wrapper>
               );})}
             </div>
@@ -724,7 +724,7 @@ function Stars({ value, onChange, disabled = false }) {
           type="button"
           disabled={disabled}
           onClick={() => onChange(star)}
-          className={`text-2xl leading-none transition ${star <= current ? "text-[#F2C75C]" : "text-white/20"} ${disabled ? "cursor-default" : "hover:text-[#F2C75C]"}`}
+          className={`text-2xl leading-none transition ${star <= current ? "text-[#F2C75C]" : "text-foreground"} ${disabled ? "cursor-default" : "hover:text-[#F2C75C]"}`}
           aria-label={`${star} stars`}
         >
           ★
@@ -1221,7 +1221,7 @@ function YouthReportPhotoUploader({ report, youthId, me }) {
   return (
     <div className="w-full max-w-[170px]">
       <div
-        className={`relative flex h-[210px] items-center justify-center overflow-hidden rounded-lg border border-[#3A8967]/25 bg-[#06100C] p-2 shadow-sm ${
+        className={`relative flex h-[210px] items-center justify-center overflow-hidden rounded-lg border border-primary/25 bg-secondary p-2 shadow-sm ${
           photoDragging ? "ring-2 ring-[#559A78]" : ""
         }`}
         onDragOver={(event) => {
@@ -1234,7 +1234,7 @@ function YouthReportPhotoUploader({ report, youthId, me }) {
           uploadPhoto(event.dataTransfer.files?.[0]);
         }}
       >
-        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-md border border-white/10 bg-white/[0.04] text-4xl font-black text-[#8CC7A7]">
+        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-md border border-border bg-secondary text-4xl font-black text-primary">
           {photoUrl ? (
             <img src={photoUrl} alt="" className="h-full w-full object-cover" />
           ) : (
@@ -1258,12 +1258,12 @@ function YouthReportPhotoUploader({ report, youthId, me }) {
           </a>
         ) : null}
       </div>
-      <div className="mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2 shadow-sm">
+      <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-secondary px-3 py-2 shadow-sm">
         <ClubLogo name={player.team} className="h-8 w-8 rounded-md" />
-        <span className="min-w-0 truncate text-xs font-black text-slate-300">{player.team || "No club"}</span>
+        <span className="min-w-0 truncate text-xs font-black text-foreground">{player.team || "No club"}</span>
       </div>
-      <p className="mt-2 text-[11px] leading-5 text-[#6F7772]">Drop an image on the player photo or upload one manually.</p>
-      {error ? <p className="mt-2 text-xs font-semibold text-rose-200">{error}</p> : null}
+      <p className="mt-2 text-[11px] leading-5 text-muted-foreground">Drop an image on the player photo or upload one manually.</p>
+      {error ? <p className="mt-2 text-xs font-semibold text-rose-700">{error}</p> : null}
     </div>
   );
 }
@@ -1479,8 +1479,8 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
     <ReportCard className="relative z-10 scroll-mt-8" id="human-scouting-reports">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h3 className="text-xl font-black uppercase tracking-[0.08em] text-white">Scout observations</h3>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#A0A8A3]">
+          <h3 className="text-xl font-black uppercase tracking-[0.08em] text-foreground">Scout observations</h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
             Structured scout assessment combining qualitative notes, observed-match evidence and accountable reporting.
           </p>
         </div>
@@ -1489,22 +1489,22 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
         </button>
       </div>
 
-      {error ? <p className="mt-4 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-200">{error}</p> : null}
-      {message ? <p className="mt-4 rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-2 text-sm font-semibold text-[#8CC7A7]">{message}</p> : null}
+      {error ? <p className="mt-4 rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+      {message ? <p className="mt-4 rounded-md border border-primary/25 bg-accent px-3 py-2 text-sm font-semibold text-primary">{message}</p> : null}
 
       {loading ? (
-        <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.025] p-4 text-sm text-[#A0A8A3]">Loading scout observations...</div>
+        <div className="mt-5 rounded-lg border border-border bg-secondary p-4 text-sm text-muted-foreground">Loading scout observations...</div>
       ) : null}
 
       {!editable ? (
-        <p className="mt-5 rounded-md border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-sm font-semibold text-amber-100">
+        <p className="mt-5 rounded-md border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-sm font-semibold text-amber-700">
           This report is read-only for your account.
         </p>
       ) : null}
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr_260px]">
-          <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#6F7772]">Scouting note</p>
+          <div className="rounded-lg border border-border bg-secondary p-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">Scouting note</p>
             <div className="mt-2 flex items-center justify-between gap-3">
               <Stars
                 value={form.star_rating}
@@ -1514,11 +1514,11 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                   saveReport({ star_rating: value }, false);
                 }}
               />
-              <span className="text-sm font-black text-white">{form.star_rating ? `${form.star_rating}/5` : "Not rated"}</span>
+              <span className="text-sm font-black text-foreground">{form.star_rating ? `${form.star_rating}/5` : "Not rated"}</span>
             </div>
           </div>
-          <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#6F7772]">Potential</p>
+          <div className="rounded-lg border border-border bg-secondary p-4">
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">Potential</p>
             <div className="mt-2 flex items-center justify-between gap-3">
               <Stars
                 value={form.potential_star_rating}
@@ -1528,11 +1528,11 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                   saveReport({ potential_star_rating: value }, false);
                 }}
               />
-              <span className="text-sm font-black text-white">{form.potential_star_rating ? `${form.potential_star_rating}/5` : "Not rated"}</span>
+              <span className="text-sm font-black text-foreground">{form.potential_star_rating ? `${form.potential_star_rating}/5` : "Not rated"}</span>
             </div>
           </div>
-          <label className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
-            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-[#6F7772]">Reporter</span>
+          <label className="rounded-lg border border-border bg-secondary p-4">
+            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">Reporter</span>
             <select
               className="nl-field mt-2"
               value={form.scout || me?.username || ""}
@@ -1552,13 +1552,13 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
           </label>
         </div>
 
-      <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.025] p-4">
+      <div className="mt-4 rounded-lg border border-border bg-secondary p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#6F7772]">Resume</p>
-            <p className="mt-1 text-sm text-[#A0A8A3]">General scout observations and decision-useful context.</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">Resume</p>
+            <p className="mt-1 text-sm text-muted-foreground">General scout observations and decision-useful context.</p>
           </div>
-          <p className="text-xs font-semibold text-[#6F7772]">{saving ? "Saving..." : "Autosaved"}</p>
+          <p className="text-xs font-semibold text-muted-foreground">{saving ? "Saving..." : "Autosaved"}</p>
         </div>
         <textarea
           className="nl-field mt-4 min-h-[180px] text-sm leading-6"
@@ -1570,18 +1570,18 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
         />
       </div>
 
-      <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.025] p-4">
+      <div className="mt-4 rounded-lg border border-border bg-secondary p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#6F7772]">Detailed assessment</p>
-            <p className="mt-1 text-sm text-[#A0A8A3]">Four core scouting dimensions rated on a five-star scale.</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">Detailed assessment</p>
+            <p className="mt-1 text-sm text-muted-foreground">Four core scouting dimensions rated on a five-star scale.</p>
           </div>
-          <p className="text-xs font-semibold text-[#6F7772]">{saving ? "Saving..." : "Autosaved"}</p>
+          <p className="text-xs font-semibold text-muted-foreground">{saving ? "Saving..." : "Autosaved"}</p>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {SCOUTING_DETAIL_RATING_FIELDS.map(([key, label]) => (
-            <div key={key} className="rounded-lg border border-white/10 bg-[#070807] p-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">{label}</p>
+            <div key={key} className="rounded-lg border border-border bg-card p-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
               <div className="mt-3 flex items-center justify-between gap-3">
                 <Stars
                   value={form[key]}
@@ -1591,24 +1591,24 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                     saveReport({ [key]: value }, false);
                   }}
                 />
-                <span className="text-sm font-black text-white">{form[key] ? `${form[key]}/5` : "Not rated"}</span>
+                <span className="text-sm font-black text-foreground">{form[key] ? `${form[key]}/5` : "Not rated"}</span>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.025] p-4">
+      <div className="mt-4 rounded-lg border border-border bg-secondary p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#6F7772]">Matches observed</p>
-            <p className="mt-1 text-sm text-[#A0A8A3]">Every match must include a date, competition, teams, position, rating and observations.</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-muted-foreground">Matches observed</p>
+            <p className="mt-1 text-sm text-muted-foreground">Every match must include a date, competition, teams, position, rating and observations.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" className="nl-button-secondary px-3 py-2 text-xs uppercase tracking-[0.14em]" disabled={!editable || saving || editingMatchIndex !== null} onClick={addMatch}>
               Add
             </button>
-            <p className="self-center text-xs font-semibold text-[#6F7772]">{saving ? "Saving..." : editingMatchIndex !== null ? "Editing draft" : "Locked after save"}</p>
+            <p className="self-center text-xs font-semibold text-muted-foreground">{saving ? "Saving..." : editingMatchIndex !== null ? "Editing draft" : "Locked after save"}</p>
           </div>
         </div>
         <div className="mt-4 space-y-3">
@@ -1618,22 +1618,22 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
             const locked = !isEditing;
             const selectedTags = parseQualitativeTags(match.qualitative_tags);
             return (
-            <div key={`match-${idx}`} className={`rounded-lg border p-4 transition ${isEditing ? "border-[#3A8967]/45 bg-[#0A0C0B]" : "border-white/10 bg-[#070807]"}`}>
+            <div key={`match-${idx}`} className={`rounded-lg border p-4 transition ${isEditing ? "border-primary/25 bg-card" : "border-border bg-card"}`}>
               <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
                   {isNew ? "New match draft" : `Match ${idx + 1}`}
                 </p>
-                <span className={`rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${isEditing ? "border-[#3A8967]/35 bg-[#2F7D5C]/15 text-[#8CC7A7]" : "border-white/10 bg-white/[0.035] text-[#6F7772]"}`}>
+                <span className={`rounded-md border px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${isEditing ? "border-primary/25 bg-accent text-primary" : "border-border bg-secondary text-muted-foreground"}`}>
                   {isEditing ? "Editing" : "Locked"}
                 </span>
               </div>
               <div className="grid gap-3 xl:grid-cols-[1fr_112px_auto_112px_1fr]">
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Opponent A</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Opponent A</span>
                   <input className="nl-field" disabled={!editable || saving || locked} value={match.team_a || ""} onChange={(event) => updateMatch(idx, "team_a", event.target.value)} />
                 </label>
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Score A</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Score A</span>
                   <input className="nl-field" type="number" min="0" max="30" disabled={!editable || saving || locked} value={match.score_a ?? ""} onChange={(event) => updateMatch(idx, "score_a", event.target.value)} />
                 </label>
                 <div className="flex items-end justify-center">
@@ -1642,25 +1642,25 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                   </button>
                 </div>
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Score B</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Score B</span>
                   <input className="nl-field" type="number" min="0" max="30" disabled={!editable || saving || locked} value={match.score_b ?? ""} onChange={(event) => updateMatch(idx, "score_b", event.target.value)} />
                 </label>
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Opponent B</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Opponent B</span>
                   <input className="nl-field" disabled={!editable || saving || locked} value={match.team_b || ""} onChange={(event) => updateMatch(idx, "team_b", event.target.value)} />
                 </label>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Match date</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Match date</span>
                   <input className="nl-field" type="date" disabled={!editable || saving || locked} value={match.match_date || todayIso()} onChange={(event) => updateMatch(idx, "match_date", event.target.value)} />
                 </label>
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Competition</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Competition</span>
                   <input className="nl-field" disabled={!editable || saving || locked} value={match.competition || ""} onChange={(event) => updateMatch(idx, "competition", event.target.value)} />
                 </label>
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Position</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Position</span>
                   <select className="nl-field" disabled={!editable || saving || locked} value={match.position || ""} onChange={(event) => updateMatchPosition(idx, event.target.value)}>
                     <option value="">Select position</option>
                     {MATCH_POSITIONS.map((position) => (
@@ -1669,36 +1669,36 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                   </select>
                 </label>
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Minutes</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Minutes</span>
                   <input className="nl-field" type="number" min="0" max="130" disabled={!editable || saving || locked} value={match.minutes_played ?? ""} onChange={(event) => updateMatch(idx, "minutes_played", event.target.value)} />
                 </label>
                 <div>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Match rating</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Match rating</span>
                   <Stars value={match.player_rating} disabled={!editable || saving || locked} onChange={(value) => updateMatch(idx, "player_rating", value)} />
                 </div>
               </div>
               <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_420px_auto]">
                 <label>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Observations</span>
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Observations</span>
                   <textarea className="nl-field min-h-[92px]" disabled={!editable || saving || locked} value={match.observations || ""} onChange={(event) => updateMatch(idx, "observations", event.target.value)} />
                 </label>
                 <div>
-                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-[#6F7772]">Qualitative tags</span>
-                  <div className="min-h-[92px] rounded-md border border-white/10 bg-white/[0.025] p-2">
+                  <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">Qualitative tags</span>
+                  <div className="min-h-[92px] rounded-md border border-border bg-secondary p-2">
                     {locked ? (
                       selectedTags.length ? (
                         <div className="flex flex-wrap content-start gap-1.5">
                           {selectedTags.map((tag) => (
                             <span
                               key={tag}
-                              className="rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] text-[#8CC7A7]"
+                              className="rounded-md border border-primary/25 bg-accent px-2 py-1 text-[9px] font-black uppercase tracking-[0.08em] text-primary"
                             >
                               {tag}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <p className="px-2 py-3 text-sm text-[#6F7772]">No qualitative tag selected.</p>
+                        <p className="px-2 py-3 text-sm text-muted-foreground">No qualitative tag selected.</p>
                       )
                     ) : match.position ? (
                       <div className="flex flex-wrap gap-2">
@@ -1712,8 +1712,8 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                               onClick={() => toggleQualitativeTag(idx, tag)}
                               className={`rounded-md border px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] transition ${
                                 selected
-                                  ? "border-[#3A8967]/45 bg-[#2F7D5C]/20 text-[#8CC7A7]"
-                                  : "border-white/10 bg-white/[0.035] text-[#A0A8A3] hover:border-[#3A8967]/30 hover:text-white"
+                                  ? "border-primary/25 bg-accent text-primary"
+                                  : "border-border bg-secondary text-muted-foreground hover:border-primary/25 hover:text-foreground"
                               }`}
                             >
                               {tag}
@@ -1722,7 +1722,7 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                         })}
                       </div>
                     ) : (
-                      <p className="px-2 py-3 text-sm text-[#6F7772]">Select a position to display available tags.</p>
+                      <p className="px-2 py-3 text-sm text-muted-foreground">Select a position to display available tags.</p>
                     )}
                   </div>
                 </div>
@@ -1748,7 +1748,7 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
                   )}
                   <button
                     type="button"
-                    className="nl-button-secondary w-full px-3 py-2 text-xs uppercase tracking-[0.14em] text-rose-200"
+                    className="nl-button-secondary w-full px-3 py-2 text-xs uppercase tracking-[0.14em] text-rose-700"
                     disabled={!editable || saving || (editingMatchIndex !== null && editingMatchIndex !== idx)}
                     onClick={() => (isNew ? discardNewMatch(idx) : removeMatch(idx))}
                   >
@@ -1759,9 +1759,9 @@ function YouthScoutingReportsPanel({ report, youthId, me }) {
             </div>
             );
           }) : (
-            <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.02] p-6 text-center">
-              <p className="text-sm font-black text-white">No observed match yet.</p>
-              <p className="mt-1 text-sm text-[#A0A8A3]">Use Add to capture the first live scouting observation for this player.</p>
+            <div className="rounded-lg border border-dashed border-border bg-secondary p-6 text-center">
+              <p className="text-sm font-black text-foreground">No observed match yet.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Use Add to capture the first live scouting observation for this player.</p>
             </div>
           )}
         </div>
@@ -1994,19 +1994,19 @@ export default function YouthReportsPage() {
 
               <div>
                 <p className="nl-kicker">Player report</p>
-                <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-[-0.04em] text-white md:text-6xl">
+                <h1 className="mt-3 max-w-4xl text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
                   {report?.player?.name || "Youth scouting dossier"}
                 </h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-[#A0A8A3] md:text-base">
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground md:text-base">
                   Position-based youth report using Eyeball statistics, competition context, raw metrics and positional percentiles.
                 </p>
                 {report ? (
                   <>
                     <div className="mt-5 flex flex-wrap items-center gap-2">
-                      <span className="rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-[#8CC7A7]">{positionGroup}</span>
-                      <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-bold text-slate-300">{report.player.team || "No club"}</span>
-                      <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-bold text-slate-300">{report.player.competition_name || "No competition"}</span>
-                      <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-bold text-slate-300">{report.player.nationality || "No nationality"}</span>
+                      <span className="rounded-md border border-primary/25 bg-accent px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-primary">{positionGroup}</span>
+                      <span className="rounded-md border border-border bg-secondary px-3 py-1 text-xs font-bold text-foreground">{report.player.team || "No club"}</span>
+                      <span className="rounded-md border border-border bg-secondary px-3 py-1 text-xs font-bold text-foreground">{report.player.competition_name || "No competition"}</span>
+                      <span className="rounded-md border border-border bg-secondary px-3 py-1 text-xs font-bold text-foreground">{report.player.nationality || "No nationality"}</span>
                     </div>
                     <div className="mt-5 flex flex-wrap gap-2">
                       <button
@@ -2024,7 +2024,7 @@ export default function YouthReportsPage() {
                       ) : null}
                     </div>
                     {prospectMessage ? (
-                      <p className={`mt-3 text-xs font-semibold ${isProspect ? "text-[#8CC7A7]" : "text-amber-200"}`}>
+                      <p className={`mt-3 text-xs font-semibold ${isProspect ? "text-primary" : "text-amber-700"}`}>
                         {prospectMessage}
                       </p>
                     ) : null}
@@ -2037,9 +2037,9 @@ export default function YouthReportsPage() {
                         ["Category", rawReport?.player?.age_category],
                         ["Strong foot", rawReport?.player?.strong_foot],
                       ].map(([label, value]) => (
-                        <div key={label} className="rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2">
-                          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-                          <p className="mt-1 truncate text-sm font-black text-white">{value || "-"}</p>
+                        <div key={label} className="rounded-lg border border-border bg-secondary px-3 py-2">
+                          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+                          <p className="mt-1 truncate text-sm font-black text-foreground">{value || "-"}</p>
                         </div>
                       ))}
                     </div>
@@ -2049,7 +2049,7 @@ export default function YouthReportsPage() {
             </div>
 
             <div className="relative z-[9999] space-y-3 2xl:pt-2">
-              <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+              <div className="rounded-lg border border-border bg-secondary p-3">
                 <label htmlFor="youth-report-search-season" className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
                   Search season
                 </label>
@@ -2091,8 +2091,8 @@ export default function YouthReportsPage() {
                 onSelect={selectPlayer}
               />
               {report && seasons.length > 1 ? (
-                <div className="rounded-lg border border-[#3A8967]/25 bg-[#2F7D5C]/10 p-3">
-                  <label htmlFor="youth-report-season" className="text-[10px] font-black uppercase tracking-[0.16em] text-[#8CC7A7]">
+                <div className="rounded-lg border border-primary/25 bg-accent p-3">
+                  <label htmlFor="youth-report-season" className="text-[10px] font-black uppercase tracking-[0.16em] text-primary">
                     Report season
                   </label>
                   <select
@@ -2116,8 +2116,8 @@ export default function YouthReportsPage() {
           </div>
         </header>
 
-        {error ? <ReportCard><p className="text-sm font-semibold text-red-300">{error}</p></ReportCard> : null}
-        {loading ? <ReportCard><p className="text-sm text-[#A0A8A3]">Loading report...</p></ReportCard> : null}
+        {error ? <ReportCard><p className="text-sm font-semibold text-red-700">{error}</p></ReportCard> : null}
+        {loading ? <ReportCard><p className="text-sm text-muted-foreground">Loading report...</p></ReportCard> : null}
 
         {report ? (
           <>
@@ -2126,7 +2126,7 @@ export default function YouthReportsPage() {
                 <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
                   <div>
                     <p className="nl-kicker">Available reports</p>
-                    <h2 className="mt-2 text-xl font-black text-white">Season history</h2>
+                    <h2 className="mt-2 text-xl font-black text-foreground">Season history</h2>
                   </div>
                   <p className="text-xs font-semibold text-slate-500">Click a season to open the full report.</p>
                 </div>
@@ -2189,10 +2189,10 @@ export default function YouthReportsPage() {
             <ReportCard>
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#8CC7A7]">Data coverage</p>
-                  <p className="mt-2 text-sm text-[#A0A8A3]">Configured report metrics available: {metricsSummary.available.length}. Missing or unavailable for this youth provider: {metricsSummary.missing.length}.</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Data coverage</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Configured report metrics available: {metricsSummary.available.length}. Missing or unavailable for this youth provider: {metricsSummary.missing.length}.</p>
                 </div>
-                <p className="text-xs text-[#6F7772]">Missing Eyeball values are shown as "-" and are never coerced to zero.</p>
+                <p className="text-xs text-muted-foreground">Missing Eyeball values are shown as "-" and are never coerced to zero.</p>
               </div>
             </ReportCard>
 
@@ -2200,8 +2200,8 @@ export default function YouthReportsPage() {
           </>
         ) : !loading ? (
           <ReportCard className="py-14 text-center">
-            <p className="text-lg font-black text-white">Search a player to open a youth scouting report.</p>
-            <p className="mt-2 text-sm text-[#A0A8A3]">All statistics and percentiles are loaded from the Eyeball youth table.</p>
+            <p className="text-lg font-black text-foreground">Search a player to open a youth scouting report.</p>
+            <p className="mt-2 text-sm text-muted-foreground">All statistics and percentiles are loaded from the Eyeball youth table.</p>
           </ReportCard>
         ) : null}
       </div>

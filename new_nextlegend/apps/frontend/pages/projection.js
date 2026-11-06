@@ -29,13 +29,13 @@ const DEFAULT_RADAR_METRICS = [
 ];
 
 const Card = ({ children, className = "" }) => (
-  <div className={`glass-panel rounded-xl p-4 border border-white/5 ${className}`}>
+  <div className={`glass-panel rounded-xl p-4 border border-border ${className}`}>
     {children}
   </div>
 );
 
 const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+  <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
     {children}
   </label>
 );
@@ -95,10 +95,10 @@ const ProjectionRadarTooltip = ({ active, payload, label, isPercentile, valueKey
   const point = payload[0]?.payload;
   if (!point) return null;
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-900/95 px-3 py-2 text-xs text-slate-100 shadow-xl">
-      <div className="font-semibold text-white">{point.metric}</div>
-      <div className="text-slate-400">{label}</div>
-      <div className="text-slate-300 mt-2">
+    <div className="rounded-md border border-slate-700 bg-card px-3 py-2 text-xs text-foreground shadow-xl">
+      <div className="font-semibold text-foreground">{point.metric}</div>
+      <div className="text-muted-foreground">{label}</div>
+      <div className="text-foreground mt-2">
         {isPercentile ? (
           <>Percentile: {Number(point[valueKey] ?? 0).toFixed(0)}</>
         ) : (
@@ -306,25 +306,25 @@ export default function ProjectionPage() {
     <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
             Projection
           </p>
-          <h1 className="text-4xl font-bold text-white tracking-tight">
+          <h1 className="text-4xl font-bold text-foreground tracking-tight">
             League fit projection
           </h1>
-          <p className="text-slate-300 max-w-3xl">
+          <p className="text-foreground max-w-3xl">
             Estimate how a player’s output may translate when the competitive context changes.
           </p>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="relative z-30 lg:col-span-2 nl-filter-bar p-0">
-            <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="nl-kicker">Projection setup</p>
-                <h2 className="mt-1 text-lg font-semibold text-white">Select the player baseline</h2>
+                <h2 className="mt-1 text-lg font-semibold text-foreground">Select the player baseline</h2>
               </div>
-              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+              <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                 {selectedSeason || "All seasons"}
               </span>
             </div>
@@ -388,9 +388,9 @@ export default function ProjectionPage() {
               </div>
               </div>
               {showResults && playerQuery.trim().length >= 2 ? (
-                <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl">
+                <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-card shadow-xl">
                   {playerOptions.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-slate-400">
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
                       No matches found.
                     </div>
                   ) : (
@@ -398,7 +398,7 @@ export default function ProjectionPage() {
                       <button
                         key={`${player.id}-${player.seasonId || "latest"}`}
                         type="button"
-                        className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
+                        className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-card"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handlePlayerSelect(player)}
                       >
@@ -426,7 +426,7 @@ export default function ProjectionPage() {
                 ))}
               </Select>
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-300">
+            <label className="flex items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
                 className="accent-emerald-400"
@@ -435,19 +435,19 @@ export default function ProjectionPage() {
               />
               Percentile view
             </label>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-muted-foreground">
               Translation coeff: {coeff.toFixed(3)}
             </div>
-            <div className="rounded-lg border border-slate-700/70 bg-slate-900/50 px-3 py-2 text-xs text-slate-300">
+            <div className="rounded-lg border border-slate-700/70 bg-card px-3 py-2 text-xs text-foreground">
               <div className="flex items-center justify-between">
                 <span>Current score</span>
-                <span className="text-slate-100">
+                <span className="text-foreground">
                   {formatValue(currentScore, 2)}
                 </span>
               </div>
               <div className="flex items-center justify-between mt-1">
                 <span>Projected score</span>
-                <span className="text-emerald-200">
+                <span className="text-emerald-700">
                   {formatValue(projectedScore, 2)}
                 </span>
               </div>
@@ -463,15 +463,15 @@ export default function ProjectionPage() {
 
         {loading ? (
           <Card>
-            <p className="text-slate-400">Loading player...</p>
+            <p className="text-muted-foreground">Loading player...</p>
           </Card>
         ) : report ? (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 items-center">
               <Card>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-white">{currentLeague}</h3>
-                  <span className="text-xs text-slate-400">Current</span>
+                  <h3 className="text-lg font-semibold text-foreground">{currentLeague}</h3>
+                  <span className="text-xs text-muted-foreground">Current</span>
                 </div>
                 <div className="h-80 mt-4">
                   <ResponsiveContainer width="100%" height="100%">
@@ -511,12 +511,12 @@ export default function ProjectionPage() {
                 </div>
               </Card>
 
-              <div className="text-4xl text-emerald-300 px-2">-&gt;</div>
+              <div className="text-4xl text-emerald-700 px-2">-&gt;</div>
 
               <Card>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-white">{targetLeague || "Projection"}</h3>
-                  <span className="text-xs text-slate-400">Projected</span>
+                  <h3 className="text-lg font-semibold text-foreground">{targetLeague || "Projection"}</h3>
+                  <span className="text-xs text-muted-foreground">Projected</span>
                 </div>
                 <div className="h-80 mt-4">
                   <ResponsiveContainer width="100%" height="100%">
@@ -558,13 +558,13 @@ export default function ProjectionPage() {
             </div>
 
             <Card>
-              <h3 className="text-lg font-semibold text-white mb-3">
+              <h3 className="text-lg font-semibold text-foreground mb-3">
                 Aggregated summary scores
               </h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs uppercase text-slate-400 border-b border-white/5">
+                    <tr className="text-xs uppercase text-muted-foreground border-b border-border">
                       <th className="text-left py-2">Metric</th>
                       <th className="text-left py-2">{currentLeague || "Current"}</th>
                       <th className="text-left py-2">{targetLeague || "Projected"}</th>
@@ -572,10 +572,10 @@ export default function ProjectionPage() {
                   </thead>
                   <tbody>
                     {summaryRows.map((row) => (
-                      <tr key={row.key} className="border-b border-white/5">
-                        <td className="py-2 text-slate-200">{row.label}</td>
-                        <td className="py-2 text-slate-300">{formatValue(row.current)}</td>
-                        <td className="py-2 text-slate-300">{formatValue(row.projected)}</td>
+                      <tr key={row.key} className="border-b border-border">
+                        <td className="py-2 text-foreground">{row.label}</td>
+                        <td className="py-2 text-foreground">{formatValue(row.current)}</td>
+                        <td className="py-2 text-foreground">{formatValue(row.projected)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -585,7 +585,7 @@ export default function ProjectionPage() {
           </>
         ) : (
           <Card>
-            <p className="text-slate-400">
+            <p className="text-muted-foreground">
               Select a player to see projection results.
             </p>
           </Card>

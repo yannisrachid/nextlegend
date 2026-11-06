@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { deleteJson, fetchJson, patchJson, postJson } from "@/lib/api";
 
 const Card = ({ children, className = "" }) => (
-  <div className={`glass-panel rounded-xl border border-white/5 p-4 ${className}`}>
+  <div className={`glass-panel rounded-xl border border-border p-4 ${className}`}>
     {children}
   </div>
 );
 
 const Field = ({ label, children }) => (
-  <label className="flex flex-col gap-2 text-sm text-slate-200">
-    <span className="text-xs uppercase tracking-[0.2em] text-slate-400">
+  <label className="flex flex-col gap-2 text-sm text-foreground">
+    <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
       {label}
     </span>
     {children}
@@ -162,8 +162,8 @@ export default function AdminPage() {
       <main className="nl-page px-4 py-12">
         <div className="max-w-4xl mx-auto">
           <Card>
-            <h1 className="text-xl font-semibold text-white">HD Sports access control</h1>
-            <p className="text-sm text-slate-300 mt-2">Access denied.</p>
+            <h1 className="text-xl font-semibold text-foreground">HD Sports access control</h1>
+            <p className="text-sm text-foreground mt-2">Access denied.</p>
           </Card>
         </div>
       </main>
@@ -174,32 +174,32 @@ export default function AdminPage() {
     <main className="nl-page px-4 py-12">
       <div className="max-w-6xl mx-auto space-y-8">
         <header className="space-y-2">
-          <h1 className="text-2xl font-semibold text-white">Team access control</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="text-2xl font-semibold text-foreground">Team access control</h1>
+          <p className="text-sm text-muted-foreground">
             Manage users, invitations and workspace access.
           </p>
         </header>
 
         {error ? (
-          <Card className="border-red-500/40 text-red-200">{error}</Card>
+          <Card className="border-red-500/40 text-red-700">{error}</Card>
         ) : null}
         {success ? (
-          <Card className="border-emerald-500/40 text-emerald-200">{success}</Card>
+          <Card className="border-emerald-500/40 text-emerald-700">{success}</Card>
         ) : null}
 
         <Card className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Users</h2>
+            <h2 className="text-lg font-semibold text-foreground">Users</h2>
             <button
               type="button"
               onClick={handleImport}
-              className="rounded-md border border-white/10 px-4 py-2 text-sm text-slate-100 hover:border-white/20"
+              className="rounded-md border border-border px-4 py-2 text-sm text-foreground hover:border-border"
             >
               Import credentials.toml
             </button>
           </div>
           {loading ? (
-            <p className="text-sm text-slate-400">Loading users…</p>
+            <p className="text-sm text-muted-foreground">Loading users…</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
@@ -212,12 +212,12 @@ export default function AdminPage() {
                     <th className="py-2 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody className="divide-y divide-border">
                   {users.map((user) => (
                     <tr key={user.username}>
                       <td className="py-3">
-                        <div className="text-white font-medium">{user.username}</div>
-                        <div className="text-xs text-slate-400">{user.display_name || "—"}</div>
+                        <div className="text-foreground font-medium">{user.username}</div>
+                        <div className="text-xs text-muted-foreground">{user.display_name || "—"}</div>
                       </td>
                       <td className="py-3">{user.email || "—"}</td>
                       <td className="py-3 capitalize">{user.role || "user"}</td>
@@ -231,7 +231,7 @@ export default function AdminPage() {
                               password: "",
                             })
                           }
-                          className="text-xs text-slate-200 hover:text-white"
+                          className="text-xs text-foreground hover:text-foreground"
                         >
                           Edit
                         </button>
@@ -239,7 +239,7 @@ export default function AdminPage() {
                           type="button"
                           onClick={() => handleDelete(user.username)}
                           disabled={user.username === "yrachid"}
-                          className="text-xs text-red-400 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-35"
+                          className="text-xs text-red-700 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-35"
                         >
                           Delete
                         </button>
@@ -253,13 +253,13 @@ export default function AdminPage() {
         </Card>
 
         <Card>
-          <h2 className="text-lg font-semibold text-white">Create user</h2>
+          <h2 className="text-lg font-semibold text-foreground">Create user</h2>
           <form onSubmit={handleCreate} className="mt-4 grid gap-4 md:grid-cols-2">
             <Field label="Username">
               <input
                 id="admin-create-username"
                 name="username"
-                className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                 value={creating.username}
                 onChange={(event) =>
                   setCreating((prev) => ({ ...prev, username: event.target.value }))
@@ -272,7 +272,7 @@ export default function AdminPage() {
               <input
                 id="admin-create-display-name"
                 name="display_name"
-                className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                 value={creating.display_name}
                 onChange={(event) =>
                   setCreating((prev) => ({
@@ -287,7 +287,7 @@ export default function AdminPage() {
                 id="admin-create-email"
                 name="email"
                 type="email"
-                className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                 value={creating.email}
                 onChange={(event) =>
                   setCreating((prev) => ({ ...prev, email: event.target.value }))
@@ -300,7 +300,7 @@ export default function AdminPage() {
               <select
                 id="admin-create-role"
                 name="role"
-                className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                 value={creating.role}
                 onChange={(event) =>
                   setCreating((prev) => ({ ...prev, role: event.target.value }))
@@ -322,7 +322,7 @@ export default function AdminPage() {
 
         {editing ? (
           <Card>
-            <h2 className="text-lg font-semibold text-white">
+            <h2 className="text-lg font-semibold text-foreground">
               Edit user: {editing.username}
             </h2>
             <form onSubmit={handleSave} className="mt-4 grid gap-4 md:grid-cols-2">
@@ -339,7 +339,7 @@ export default function AdminPage() {
                 <input
                   id="admin-edit-display-name"
                   name="display_name"
-                  className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                  className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                   value={editing.display_name || ""}
                   onChange={(event) =>
                     setEditing((prev) => ({
@@ -354,7 +354,7 @@ export default function AdminPage() {
                   id="admin-edit-email"
                   name="email"
                   type="email"
-                  className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                  className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                   value={editing.email || ""}
                   onChange={(event) =>
                     setEditing((prev) => ({ ...prev, email: event.target.value }))
@@ -365,7 +365,7 @@ export default function AdminPage() {
                 <select
                   id="admin-edit-role"
                   name="role"
-                  className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                  className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                   value={editing.role || "user"}
                   onChange={(event) =>
                     setEditing((prev) => ({ ...prev, role: event.target.value }))
@@ -380,7 +380,7 @@ export default function AdminPage() {
                   id="admin-edit-password"
                   name="password"
                   type="password"
-                  className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-slate-100"
+                  className="rounded-md border border-slate-700 bg-card px-3 py-2 text-foreground"
                   value={editing.password || ""}
                   onChange={(event) =>
                     setEditing((prev) => ({ ...prev, password: event.target.value }))
@@ -398,7 +398,7 @@ export default function AdminPage() {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-white/10 px-4 py-2 text-sm text-slate-200"
+                  className="rounded-md border border-border px-4 py-2 text-sm text-foreground"
                   onClick={() => setEditing(null)}
                 >
                   Cancel

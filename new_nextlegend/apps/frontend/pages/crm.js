@@ -206,7 +206,7 @@ function Tag({ children, tone = "slate" }) {
 }
 
 function EmptyState({ label }) {
-  return <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.035] p-8 text-center text-sm font-bold text-slate-500">{label}</div>;
+  return <div className="rounded-lg border border-dashed border-border bg-secondary p-8 text-center text-sm font-bold text-slate-500">{label}</div>;
 }
 
 export default function CRM() {
@@ -422,15 +422,15 @@ export default function CRM() {
   };
 
   return (
-    <main className="nl-page px-4 py-8 md:py-10">
+    <main className="nl-page px-4 py-4 md:py-6">
       <div className="mx-auto max-w-[1560px] space-y-6">
-        <section className="surface-panel relative overflow-hidden rounded-lg p-6 md:p-8">
+        <section className="surface-panel relative overflow-hidden rounded-lg p-5">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-200/50 to-transparent" />
-          <div className="relative grid gap-8 xl:grid-cols-[minmax(0,1fr)_620px] xl:items-end">
+          <div className="relative grid gap-5 xl:grid-cols-[minmax(0,1fr)_480px] xl:items-end">
             <div>
               <p className="nl-kicker">Network CRM</p>
-              <h1 className="mt-3 max-w-4xl text-3xl font-semibold tracking-tight text-slate-950 md:text-5xl">
-                Football relationship OS.
+              <h1 className="mt-3 max-w-4xl text-2xl font-semibold tracking-tight text-foreground">
+                Your football network.
               </h1>
               <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-slate-600 md:text-base">
                 Clubs, players, free-role contacts and prospecting in one operational workspace. Click any club, logo or player to inspect the relationship graph.
@@ -445,7 +445,7 @@ export default function CRM() {
           </div>
         </section>
 
-        <section className="sticky top-[76px] z-20 rounded-lg border border-white/10 bg-black/75 p-1.5 shadow-[0_16px_44px_rgba(0,0,0,0.30)] backdrop-blur-xl">
+        <section className="sticky top-[76px] z-20 rounded-lg border border-border bg-card p-1.5 shadow-sm">
           <nav className="flex gap-1 overflow-x-auto">
             {TABS.map((item) => (
               <button
@@ -454,8 +454,8 @@ export default function CRM() {
                 onClick={() => setTab(item.id)}
                 className={`whitespace-nowrap rounded-md px-4 py-2.5 text-sm font-semibold transition ${
                   tab === item.id
-                    ? "border border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8] shadow-[inset_0_0_0_1px_rgba(85,154,120,0.12)]"
-                    : "border border-transparent text-white/60 hover:border-white/10 hover:bg-white/[0.07] hover:text-white"
+                    ? "border border-primary/25 bg-accent text-primary shadow-[inset_0_0_0_1px_rgba(85,154,120,0.12)]"
+                    : "border border-transparent text-foreground hover:border-border hover:bg-secondary hover:text-foreground"
                 }`}
               >
                 {item.label}
@@ -649,7 +649,7 @@ function PlayersView(props) {
               <div className="relative border-b border-slate-100 bg-[radial-gradient(circle_at_80%_0%,rgba(15,118,110,0.14),transparent_34%),linear-gradient(135deg,#ffffff,#f8fafc)] p-5">
                 <div className="absolute right-4 top-4 flex gap-2">
                   <button type="button" className="nl-button-secondary px-3 py-1" onClick={(event) => { event.stopPropagation(); editPlayer(player); }}>Edit</button>
-                  <button type="button" className="rounded-md border border-rose-200 bg-white/80 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-rose-700 hover:bg-rose-50" onClick={(event) => { event.stopPropagation(); removeEntity("players", player); }}>Delete</button>
+                  <button type="button" className="rounded-md border border-rose-200 bg-secondary px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-rose-700 hover:bg-rose-50" onClick={(event) => { event.stopPropagation(); removeEntity("players", player); }}>Delete</button>
                 </div>
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-teal-100 bg-teal-50 text-xl font-black text-teal-800 shadow-sm">
                   {initials(fullName(player))}
@@ -1085,7 +1085,7 @@ function ClubLeafletMap({ clusters, selected, setMapSelection, openDetail }) {
   return (
     <div className="relative h-[680px] w-full bg-slate-100">
       <div ref={containerRef} className="h-full w-full" />
-      <div className="pointer-events-none absolute bottom-4 left-4 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 shadow-lg backdrop-blur">
+      <div className="pointer-events-none absolute bottom-4 left-4 rounded-2xl border border-slate-200 bg-secondary px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 shadow-lg backdrop-blur">
         Scroll to zoom - drag to pan - click logos
       </div>
     </div>
@@ -1155,8 +1155,8 @@ function ListPanel({ children }) {
 function ModalShell({ title, eyebrow = "Network CRM", children, close, size = "max-w-4xl" }) {
   return (
     <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/70 p-3 backdrop-blur-md md:p-6" role="dialog" aria-modal="true">
-      <div className={`max-h-[92vh] w-full ${size} overflow-hidden rounded-lg border border-white/10 bg-[#080b12] shadow-[0_40px_120px_rgba(0,0,0,0.55)]`}>
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-white/[0.035] p-5 md:p-6">
+      <div className={`max-h-[92vh] w-full ${size} overflow-hidden rounded-lg border border-border bg-card shadow-[0_40px_120px_rgba(0,0,0,0.55)]`}>
+        <div className="flex items-start justify-between gap-4 border-b border-border bg-secondary p-5 md:p-6">
           <div>
             <p className="nl-kicker">{eyebrow}</p>
             <h2 className="mt-1 text-3xl font-black tracking-tight text-slate-950">{title}</h2>

@@ -113,13 +113,13 @@ const SECTIONS = [
 ];
 
 const Card = ({ children, className = "" }) => (
-  <div className={`glass-panel rounded-xl p-4 border border-white/5 ${className}`}>
+  <div className={`glass-panel rounded-xl p-4 border border-border ${className}`}>
     {children}
   </div>
 );
 
 const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+  <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
     {children}
   </label>
 );
@@ -228,8 +228,8 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
       hovertemplate:
         "<b>%{customdata[0]}</b><br>" +
         "%{customdata[2]}<br><br>" +
-        '<span style="color:#A0A8A3">Percentile</span>: %{customdata[1]}<br>' +
-        '<span style="color:#8CC7A7">Target threshold</span>: 75' +
+        '<span style="color:#526176">Percentile</span>: %{customdata[1]}<br>' +
+        '<span style="color:#15803d">Target threshold</span>: 75' +
         "<extra></extra>",
     },
     {
@@ -244,7 +244,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
       },
       text: rounded.map((value) => `${value}`),
       textfont: {
-        color: rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#FFFFFF" : "#DDE3DF")),
+        color: rounded.map((value) => (value >= GLOBAL_THRESHOLD ? "#FFFFFF" : "#334155")),
         size: textSizes,
         family: "Inter, system-ui, sans-serif",
       },
@@ -254,7 +254,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
       hovertemplate:
         "<b>%{customdata[0]}</b><br>" +
         "%{customdata[2]}<br><br>" +
-        '<span style="color:#A0A8A3">Percentile</span>: %{customdata[1]}' +
+        '<span style="color:#526176">Percentile</span>: %{customdata[1]}' +
         "<extra></extra>",
     },
   ];
@@ -266,14 +266,14 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
           showticklabels: false,
           ticks: "",
           showline: false,
-          gridcolor: "rgba(255,255,255,0.055)",
+          gridcolor: "#e2e8f0",
           showgrid: true,
         },
         angularaxis: {
           tickmode: "array",
           tickvals: angles,
           ticktext: labels,
-          tickfont: { color: "#E2E8F0", size: 10 },
+          tickfont: { color: "#334155", size: 10 },
           rotation: 90,
           direction: "clockwise",
           showline: false,
@@ -285,11 +285,11 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
       margin: { l: 82, r: 82, t: 138, b: 150 },
       paper_bgcolor: "rgba(5,7,6,0)",
       plot_bgcolor: "rgba(5,7,6,0)",
-      font: { color: "#A0A8A3", family: "Inter, system-ui, sans-serif" },
+      font: { color: "#526176", family: "Inter, system-ui, sans-serif" },
       hoverlabel: {
-        bgcolor: "#0A0C0B",
+        bgcolor: "#ffffff",
         bordercolor: "#3A8967",
-        font: { color: "#F3F5F4", size: 12 },
+        font: { color: "#17243b", size: 12 },
         align: "left",
       },
       annotations: [
@@ -300,7 +300,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 16, color: "#F3F5F4", family: "Inter, system-ui, sans-serif" },
+          font: { size: 16, color: "#17243b", family: "Inter, system-ui, sans-serif" },
         },
         {
           text: subtitle,
@@ -309,7 +309,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 12, color: "#A0A8A3", family: "Inter, system-ui, sans-serif" },
+          font: { size: 12, color: "#526176", family: "Inter, system-ui, sans-serif" },
         },
         {
           text: "Data: StatsBomb / Your Legend",
@@ -318,7 +318,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 9, color: "#6F7772" },
+          font: { size: 9, color: "#526176" },
           align: "right",
         },
         {
@@ -328,7 +328,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
           xref: "paper",
           yref: "paper",
           showarrow: false,
-          font: { size: 9, color: "#6F7772" },
+          font: { size: 9, color: "#526176" },
           align: "left",
         },
       ],
@@ -408,7 +408,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
     }
   };
     return (
-    <div className="relative h-[700px] overflow-hidden rounded-lg border border-white/10 bg-black/[0.22]">
+    <div className="relative h-[700px] overflow-hidden rounded-lg border border-border bg-muted">
       <div className="absolute right-3 top-3 z-10 flex items-center gap-2">
         <button
           type="button"
@@ -426,7 +426,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
         </button>
       </div>
       {copyStatus ? (
-        <div className="absolute right-3 top-12 z-10 text-xs text-slate-300">
+        <div className="absolute right-3 top-12 z-10 text-xs text-foreground">
           {copyStatus}
         </div>
       ) : null}
@@ -456,7 +456,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
               onClick={() => setShowZoom(false)}
             >
               <div
-                className="relative h-[82vh] w-full max-w-5xl rounded-lg border border-white/10 bg-[#050706] shadow-xl"
+                className="relative h-[82vh] w-full max-w-5xl rounded-lg border border-border bg-card shadow-xl"
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="absolute right-4 top-4 flex items-center gap-2">
@@ -483,7 +483,7 @@ const PizzaChart = ({ labels, values, playerLabel, subtitle }) => {
                   </button>
                 </div>
                 {copyStatus ? (
-                  <div className="absolute right-4 top-14 text-xs text-slate-300">
+                  <div className="absolute right-4 top-14 text-xs text-foreground">
                     {copyStatus}
                   </div>
                 ) : null}
@@ -724,10 +724,10 @@ export default function VizualisationPage() {
     return createPortal(
       <div
         ref={positionsMenuRef}
-        className="max-h-64 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-2xl p-3"
+        className="max-h-64 overflow-auto rounded-lg border border-slate-700 bg-card shadow-2xl p-3"
         style={positionsMenuStyle}
       >
-        <label className="flex items-center gap-2 text-sm text-slate-200 mb-2">
+        <label className="flex items-center gap-2 text-sm text-foreground mb-2">
           <input
             type="checkbox"
             checked={positionsAll}
@@ -740,7 +740,7 @@ export default function VizualisationPage() {
         </label>
         <div className="space-y-2">
           {positions.map((pos) => (
-            <label key={pos.code} className="flex items-center gap-2 text-sm text-slate-200">
+            <label key={pos.code} className="flex items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
                 checked={!positionsAll && selectedPositions.includes(pos.code)}
@@ -767,21 +767,21 @@ export default function VizualisationPage() {
     <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Visuals</p>
-          <h1 className="text-4xl font-bold text-white tracking-tight">Scouting visual studio</h1>
-          <p className="text-slate-300 max-w-3xl">
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Visuals</p>
+          <h1 className="text-4xl font-bold text-foreground tracking-tight">Scouting visual studio</h1>
+          <p className="text-foreground max-w-3xl">
             Build clear percentile visuals for reports, decks and club conversations.
           </p>
         </header>
 
         <Card className="relative z-30 nl-filter-bar p-0">
-          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="nl-kicker">Visual setup</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Select a player and season context</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Select a player and season context</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+              <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                 {selectedSeason || "All seasons"}
               </span>
               <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetVisualFilters}>
@@ -849,15 +849,15 @@ export default function VizualisationPage() {
             </div>
             </div>
             {showResults && playerQuery.trim().length >= 2 ? (
-              <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl">
+              <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-card shadow-xl">
                 {playerOptions.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-slate-400">No matches found.</div>
+                  <div className="px-3 py-2 text-sm text-muted-foreground">No matches found.</div>
                 ) : (
                   playerOptions.map((player) => (
                     <button
                       key={`${player.id}-${player.seasonId || "latest"}`}
                       type="button"
-                      className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
+                      className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-card"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handlePlayerSelect(player)}
                     >
@@ -871,12 +871,12 @@ export default function VizualisationPage() {
         </Card>
 
         <Card className="nl-filter-bar p-0">
-          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="nl-kicker">Output filters</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Tune the visual reference group</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Tune the visual reference group</h2>
             </div>
-            <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+            <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
               {activeFilterCount} custom filters
             </span>
           </div>
@@ -916,7 +916,7 @@ export default function VizualisationPage() {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Generate with only +75 percentile values</Label>
-              <label className="flex items-center gap-2 text-sm text-slate-300">
+              <label className="flex items-center gap-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   className="accent-emerald-400"
@@ -928,7 +928,7 @@ export default function VizualisationPage() {
             </div>
           </div>
           {vizData ? (
-          <p className="text-xs text-slate-400 mt-3">
+          <p className="text-xs text-muted-foreground mt-3">
             Scout Analyst Engine: {reason}
           </p>
           ) : null}
@@ -939,8 +939,8 @@ export default function VizualisationPage() {
               ["Positions", positionsSummary || "All"],
               ["Minutes", `${minMinutes}+`],
             ].map(([label, value]) => (
-              <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
-                <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+              <span key={label} className="rounded-md border border-border bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                <span className="text-foreground">{label}</span> <span className="text-foreground">{value}</span>
               </span>
             ))}
           </div>
@@ -955,15 +955,15 @@ export default function VizualisationPage() {
 
         {loading ? (
           <Card>
-            <p className="text-slate-400">Loading visualisation...</p>
+            <p className="text-muted-foreground">Loading visualisation...</p>
           </Card>
         ) : !selectedPlayerId ? (
           <Card>
-            <p className="text-slate-400">Select a player to see visualisations.</p>
+            <p className="text-muted-foreground">Select a player to see visualisations.</p>
           </Card>
         ) : activeSections.length === 0 ? (
           <Card>
-            <p className="text-slate-400">No relevant metrics found for the current filters.</p>
+            <p className="text-muted-foreground">No relevant metrics found for the current filters.</p>
           </Card>
         ) : (
           activeSections.map((section) => {
@@ -972,7 +972,7 @@ export default function VizualisationPage() {
             if (availableMetrics.length === 0) {
               return (
                 <Card key={sectionKey}>
-                  <p className="text-slate-400">No metrics available for {section.title}.</p>
+                  <p className="text-muted-foreground">No metrics available for {section.title}.</p>
                 </Card>
               );
             }
@@ -991,17 +991,17 @@ export default function VizualisationPage() {
 
             return (
               <div key={sectionKey}>
-                <div className="border-t border-white/5 my-6" />
+                <div className="border-t border-border my-6" />
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                   <div>
                     <p className="nl-kicker">Visualization</p>
-                    <h3 className="mt-1 text-xl font-semibold text-white">{section.title}</h3>
+                    <h3 className="mt-1 text-xl font-semibold text-foreground">{section.title}</h3>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+                    <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
                       {metricsToPlot.length} selected
                     </span>
-                    <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                    <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                       {highMetricsCount} above P75
                     </span>
                   </div>
@@ -1010,7 +1010,7 @@ export default function VizualisationPage() {
                   <Card className="overflow-hidden p-0">
                     {metricsToPlot.length === 0 ? (
                       <div className="p-5">
-                        <p className="text-slate-400">No metrics to display with current filters.</p>
+                        <p className="text-muted-foreground">No metrics to display with current filters.</p>
                       </div>
                     ) : (
                       <div className="w-full">
@@ -1024,14 +1024,14 @@ export default function VizualisationPage() {
                     )}
                   </Card>
                   <Card className="overflow-hidden p-0">
-                    <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-col gap-3 border-b border-border px-4 py-4 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <p className="text-sm font-semibold text-white">Metric selection</p>
+                        <p className="text-sm font-semibold text-foreground">Metric selection</p>
                         <p className="mt-1 text-xs font-semibold text-slate-500">
                           Toggle the signals displayed in this export.
                         </p>
                       </div>
-                      <label className="flex items-center gap-2 text-xs text-slate-300">
+                      <label className="flex items-center gap-2 text-xs text-foreground">
                         <input
                           type="checkbox"
                           className="accent-emerald-400"
@@ -1058,8 +1058,8 @@ export default function VizualisationPage() {
                             key={metric}
                             className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border px-3 py-2 text-sm transition ${
                               isChecked
-                                ? "border-[#3A8967]/35 bg-[#2F7D5C]/12 text-white"
-                                : "border-white/10 bg-white/[0.025] text-slate-300 hover:border-white/20 hover:bg-white/[0.045]"
+                                ? "border-primary/25 bg-accent text-foreground"
+                                : "border-border bg-secondary text-foreground hover:border-border hover:bg-secondary"
                             }`}
                           >
                             <span className="flex min-w-0 items-center gap-2">
@@ -1081,8 +1081,8 @@ export default function VizualisationPage() {
                             </span>
                             <span className={`rounded-md border px-2 py-1 text-xs font-semibold tabular-nums ${
                               isHigh
-                                ? "border-[#3A8967]/35 bg-[#2F7D5C]/15 text-[#8CC7A7]"
-                                : "border-white/10 bg-white/[0.03] text-slate-500"
+                                ? "border-primary/25 bg-accent text-primary"
+                                : "border-border bg-secondary text-slate-500"
                             }`}>
                               P{percentile != null ? Math.round(percentile) : "--"} · {value != null ? Number(value).toFixed(2) : "--"}
                             </span>
