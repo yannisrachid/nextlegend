@@ -119,3 +119,25 @@ curl -sk -o /tmp/front.out -w "%{http_code}\n" https://app.nextlegend.fr
 - Do not commit credentials.
 - Prefer small, reviewable edits over broad rewrites.
 - Update docs when changing deployment, data refresh, auth, or schema behavior.
+
+## FM26 and scouting intelligence
+- See `docs/fm26-intelligence.md` for schema, DEV import, provenance and tests.
+- Homepage `/` is the dynamic authenticated workspace landing; AI conversations live at `/ai`. Preserve agenda/Kanban at `/hq`.
+- FM saved-game ratings are dated simulation. Preserve the unknown-build warning and never substitute them for real performance.
+- Only accepted, namespaced identity matches enter recommendations; ambiguous matches remain in review.
+- Assistant tools are bounded, read-only queries. Never give the LLM unrestricted SQL or access to credentials, sessions, contact/medical data or other users conversations.
+
+## Light blue design and analytical assistant (2026-11-06)
+- Current work: `feature/light-blue-scouting`, includes the uncommitted FM26 intelligence work. No production deployment or merge performed.
+- User-selected visual direction supersedes the earlier dark/green direction: white surfaces, cool neutral background, blue primary actions, semantic status colors. Tokens live in `apps/frontend/styles/globals.css`. Use `nl-field`, shared buttons and semantic Tailwind colors, not pale text on white or dark inline panels.
+- Navigation remains collapsible on the left; `/` hosts the dynamic landing, `/ai` hosts the assistant, and `/hq` retains calendar/Kanban. Mercato stays hidden.
+- `scouting_queries.py` compiles validated analytical plans into parameterized SQL on a separate read-only transaction (8-second statement timeout, 30-row cap). Do not allow arbitrary model SQL or expose authentication/medical/contact tables.
+- Use `query_catalog` for supported metric/position/competition keys, then `query_players` for combined constraints and grouped means. Reject unsupported constraints instead of silently dropping them.
+- EvidenceMessage renders tables and exposes SQL + bindings. Preserve NULLs and each source's freshness; FM PA is simulation, not a probability.
+- Detailed verification and known limits: `docs/fm26-intelligence.md`.
+
+## Dynamic homepage and AI UX (2026-11-06)
+- Home `/` reads `/ai/briefing` and `/meta/seasons`; no mock players or fabricated trends. Respect loading/error/empty states and source freshness. Watchlist profiles may refer to their latest available season.
+- Home questions transfer via one-time sessionStorage draft to `/ai` with the selected season. No auto-send or API charge on navigation; the user can edit before sending. Drafts start a fresh conversation without appending to an old history.
+- AI sidebar contains searchable personal history and collapsible context/usage; research settings remain accessible above the thread.
+- Keep Home and AI as separate navigation entries. AI is no longer wrapped in the secondary ScoutingLab navigation.

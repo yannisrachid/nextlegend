@@ -110,20 +110,20 @@ export default function LoginPage() {
 
   return (
     <main className="nl-page flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-white/10 bg-white/[0.045] shadow-[0_32px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="hidden min-h-[560px] flex-col justify-between border-r border-white/10 bg-black/40 p-8 text-white lg:flex">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-border bg-secondary shadow-[0_32px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl lg:grid-cols-[1.05fr_0.95fr]">
+        <section className="hidden min-h-[560px] flex-col justify-between border-r border-border bg-muted p-8 text-foreground lg:flex">
           <div>
-            <img src="/logo_nl.png" alt="Next Legend" className="h-12 w-12 rounded-md bg-white p-1" />
-            <p className="mt-6 text-xs font-bold uppercase tracking-[0.16em] text-white/50">
+            <img src="/logo-blue.png" alt="Next Legend" className="h-12 w-12 rounded-md bg-white p-1" />
+            <p className="mt-6 text-xs font-bold uppercase tracking-[0.16em] text-foreground">
               Next Legend by HD Sports
             </p>
-            <h1 className="mt-4 max-w-sm text-4xl font-semibold leading-tight text-white">
+            <h1 className="mt-4 max-w-sm text-4xl font-semibold leading-tight text-foreground">
               Intelligence for football decisions that move markets.
             </h1>
           </div>
           <div className="grid grid-cols-2 gap-3">
             {["Player reports", "Market ranking", "Portfolio rooms", "Scouting briefs"].map((item) => (
-              <div key={item} className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-3 text-sm font-semibold text-white">
+              <div key={item} className="rounded-md border border-border bg-secondary px-3 py-3 text-sm font-semibold text-foreground">
                 {item}
               </div>
             ))}
@@ -162,7 +162,7 @@ export default function LoginPage() {
                 />
               </div>
               {error ? <p className="text-sm font-semibold text-rose-700">{error}</p> : null}
-              {message ? <p className="text-sm font-semibold text-[#8CC7A7]">{message}</p> : null}
+              {message ? <p className="text-sm font-semibold text-primary">{message}</p> : null}
               <button type="submit" disabled={loading} className="nl-button-primary w-full">
                 {loading ? "Sending..." : "Send reset link"}
               </button>
@@ -220,7 +220,7 @@ export default function LoginPage() {
                 />
               </div>
               {error ? <p className="text-sm font-semibold text-rose-700">{error}</p> : null}
-              {message ? <p className="text-sm font-semibold text-[#8CC7A7]">{message}</p> : null}
+              {message ? <p className="text-sm font-semibold text-primary">{message}</p> : null}
               <button type="submit" disabled={loading} className="nl-button-primary w-full">
                 {loading ? "Updating..." : "Update password"}
               </button>
@@ -257,7 +257,7 @@ export default function LoginPage() {
                 />
               </div>
               {error ? <p className="text-sm font-semibold text-rose-700">{error}</p> : null}
-              {message ? <p className="text-sm font-semibold text-[#8CC7A7]">{message}</p> : null}
+              {message ? <p className="text-sm font-semibold text-primary">{message}</p> : null}
               <button
                 type="submit"
                 disabled={loading}
@@ -267,7 +267,7 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                className="w-full text-center text-sm font-semibold text-slate-500 transition hover:text-white"
+                className="w-full text-center text-sm font-semibold text-slate-500 transition hover:text-foreground"
                 onClick={() => {
                   setMode("forgot");
                   setError("");

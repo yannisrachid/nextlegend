@@ -396,3 +396,6 @@ Future automation should add:
 - post-deploy health checks.
 
 Until that exists, treat the manual deploy commands in this file as the release process.
+
+## FM26 and light workspace release (2026-11-06)
+Includes the blue/white brand assets (`logo-blue.png`, `favicon-blue.png`), Home landing, AI SQL tools and FM26 integration. Import FM players from the processed JSONL + provenance manifest with `apps/api/scripts/import_fm26.py` before switching the API/frontend. Run in a one-off container from the new API image, mount input read-only, retain DB backup and the import report. Do not send the raw save to the VPS or commit processed game data.

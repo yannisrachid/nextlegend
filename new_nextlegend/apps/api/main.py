@@ -2830,6 +2830,18 @@ def ai_usage(
     )
 
 
+@app.get("/ai/briefing")
+def ai_briefing(request: Request, season: str = "2026/2027", session: Session = Depends(get_session)):
+    if not _current_user_id(request):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    from scouting_intelligence import briefing, Search
+    try:
+        Search(source="wyscout", season=season)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid season")
+    return briefing(session, season)
+
+
 @app.post("/ai/conversations/{conversation_id}/messages", response_model=AIMessageResponse)
 def ai_conversation_message(
     conversation_id: int,
@@ -2891,61 +2903,28 @@ def ai_conversation_message(
         session,
         conversation_id,
         exclude_message_id=user_row.id if user_row else None,
-        include_roles={"user"},
+        include_roles={"user", "assistant"},
+        max_chars=10000,
     )
-    prompt_with_context = payload.prompt
-    if conversation_context:
-        prompt_with_context = f"{conversation_context}\n\nLatest request: {payload.prompt}"
-
-    requested_count = extract_requested_count(payload.prompt)
-    if not requested_count and conversation_context:
-        requested_count = extract_requested_count(conversation_context)
-
+    from scouting_intelligence import run_intelligence
+    focus = None
+    effective_season = payload.season
     if mode == "player":
         if not payload.player_id:
             raise HTTPException(status_code=400, detail="player_id is required for player mode")
-        report = player_report(
-            payload.player_id,
-            player_season_id=payload.player_season_id,
-            session=session,
-        )
-        player_context = _build_player_context(report)
-        try:
-            llm = get_llm()
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"OpenAI client error: {exc}") from exc
-        model_name = _resolve_llm_model_name(llm)
-        with get_openai_callback() as cb:
-            report_text = run_player_agent(
-                user_text=prompt_with_context,
-                player_context=player_context,
-                language=language,
-                llm=llm,
-            )
-        usage_summary = _merge_usage_calls([_usage_from_callback(cb, model_name, "player_report")])
-        assistant_payload = {
-            "report": report_text,
-            "context": player_context,
-            "player_id": payload.player_id,
-            "usage": usage_summary,
-        }
-        assistant_content = report_text
-    else:
-        result = _run_scout_flow(
-            session=session,
-            prompt=payload.prompt,
-            overrides={"season": payload.season} if payload.season else {},
-            language_override=language,
-            conversation_context=conversation_context,
-            requested_count_hint=requested_count,
-        )
-        assistant_payload = result
-        count = len(result.get("candidates", []))
-        assistant_content = (
-            f"I found {count} profiles matching your brief. Click any card to open the report."
-            if count
-            else "I could not find profiles matching the brief."
-        )
+        focus = {"source": "wyscout", "player_id": payload.player_id}
+        if payload.player_season_id:
+            effective_season = session.execute(text("SELECT calendar FROM player_seasons WHERE id=:id AND player_id=:pid"),
+                {"id": payload.player_season_id, "pid": payload.player_id}).scalar_one_or_none()
+            if not effective_season:
+                raise HTTPException(status_code=404, detail="Player season not found")
+            focus["season"] = effective_season
+    try:
+        result = run_intelligence(session, payload.prompt, conversation_context, effective_season, language, focus)
+    except Exception:
+        raise HTTPException(status_code=502, detail="The scouting assistant is temporarily unavailable. Please retry.")
+    assistant_payload = result
+    assistant_content = result["report"]
 
     assistant_row = session.execute(
         text(

@@ -32,7 +32,7 @@ const Card = ({ children, className = "" }) => (
 );
 
 const Label = ({ children, htmlFor }) => (
-  <label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">
+  <label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
     {children}
   </label>
 );
@@ -163,39 +163,39 @@ export default function YouthRankingPage() {
           <p className="nl-kicker">Youth Scouting</p>
           <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold tracking-normal text-white md:text-4xl">Eyeball youth ranking</h1>
-              <p className="mt-2 max-w-3xl text-sm text-[#A0A8A3]">
+              <h1 className="text-3xl font-semibold tracking-normal text-foreground md:text-4xl">Eyeball youth ranking</h1>
+              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 Age-adjusted cohorts with position-specific scoring, birth-year context and competition-level percentiles.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-2 text-right">
-              <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2">
-                <p className="text-lg font-semibold text-white">{formatNumber(meta?.counts?.rows || 0)}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6F7772]">Rows</p>
+              <div className="rounded-md border border-border bg-secondary px-3 py-2">
+                <p className="text-lg font-semibold text-foreground">{formatNumber(meta?.counts?.rows || 0)}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Rows</p>
               </div>
-              <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2">
-                <p className="text-lg font-semibold text-white">{formatNumber(meta?.counts?.players || 0)}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#6F7772]">Players</p>
+              <div className="rounded-md border border-border bg-secondary px-3 py-2">
+                <p className="text-lg font-semibold text-foreground">{formatNumber(meta?.counts?.players || 0)}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Players</p>
               </div>
-              <div className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2">
-                <p className="text-lg font-semibold text-[#8CC7A7]">{formatNumber(total)}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8CC7A7]">Cohort</p>
+              <div className="rounded-md border border-primary/25 bg-accent px-3 py-2">
+                <p className="text-lg font-semibold text-primary">{formatNumber(total)}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">Cohort</p>
               </div>
             </div>
           </div>
         </header>
 
         <Card className="nl-filter-bar p-0">
-          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="nl-kicker">Cohort builder</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Filter the youth universe</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Filter the youth universe</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+              <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                 {formatNumber(total)} players
               </span>
-              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-[#A0A8A3]">
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-muted-foreground">
                 {activeFilterCount} custom filters
               </span>
               <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={() => updateFilter(DEFAULT_FILTERS)}>
@@ -282,8 +282,8 @@ export default function YouthRankingPage() {
                 ["Club", formatFilterValue(filters.club, "All clubs")],
                 ["Minutes", `${filters.min_minutes}+`],
               ].map(([label, value]) => (
-                <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-[#A0A8A3]">
-                  <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+                <span key={label} className="rounded-md border border-border bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                  <span className="text-foreground">{label}</span> <span className="text-foreground">{value}</span>
                 </span>
               ))}
             </div>
@@ -291,22 +291,22 @@ export default function YouthRankingPage() {
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 border-b border-border px-4 py-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-white">Ranking results</p>
-              <p className="mt-0.5 text-xs font-semibold text-[#6F7772]">
+              <p className="text-sm font-semibold text-foreground">Ranking results</p>
+              <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
                 Page {page + 1} / {totalPages} - {formatNumber(total)} rows
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-[#A0A8A3]">
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-muted-foreground">
                 Sorted by Score
               </span>
             </div>
           </div>
 
           {error ? (
-            <div className="p-4 text-sm font-semibold text-rose-200">{error}</div>
+            <div className="p-4 text-sm font-semibold text-rose-700">{error}</div>
           ) : loading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 8 }).map((_, index) => <div key={index} className="nl-skeleton h-14 rounded-md" />)}
@@ -314,15 +314,15 @@ export default function YouthRankingPage() {
           ) : items.length === 0 ? (
             <div className="p-6">
               <div className="nl-empty-state">
-                <p className="text-sm font-semibold text-white">No youth players match these filters.</p>
-                <p className="mt-1 text-xs text-[#6F7772]">Broaden the cohort or lower the minutes threshold.</p>
+                <p className="text-sm font-semibold text-foreground">No youth players match these filters.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Broaden the cohort or lower the minutes threshold.</p>
               </div>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-[1120px] w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-[#6F7772]">
+                  <tr className="border-b border-border text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                     <th className="w-14 px-4 py-3">Rank</th>
                     <th className="px-4 py-3">Player</th>
                     <th className="px-4 py-3">Club / level</th>
@@ -332,44 +332,44 @@ export default function YouthRankingPage() {
                     <th className="px-4 py-3 text-right">Rating</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-border">
                   {items.map((row, index) => (
                     <tr key={row.id} className="align-middle">
                       <td className="px-4 py-3">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 text-xs font-semibold text-[#8CC7A7]">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-md border border-primary/25 bg-accent text-xs font-semibold text-primary">
                           {page * filters.limit + index + 1}
                         </span>
                       </td>
                       <td className="px-4 py-3">
                         <Link href={`/youth-scouting/reports?youth_id=${row.id}`} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-3">
-                          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-xs font-semibold text-[#8CC7A7]">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-secondary text-xs font-semibold text-primary">
                             {initials(row.display_name)}
                           </span>
                           <span className="min-w-0">
-                            <span className="block truncate font-semibold text-white">{row.display_name}</span>
-                            <span className="block truncate text-xs text-[#A0A8A3]">
+                            <span className="block truncate font-semibold text-foreground">{row.display_name}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
                               {[row.nationality_label || row.nationality_code, row.birth_year ? `Born ${row.birth_year}` : null].filter(Boolean).join(" - ") || "Youth profile"}
                             </span>
                           </span>
                         </Link>
                       </td>
                       <td className="px-4 py-3">
-                        <p className="truncate font-medium text-white">{row.club_name || "-"}</p>
-                        <p className="truncate text-xs text-[#6F7772]">{[row.championship, row.calendar || formatYouthSeason(row.season)].filter(Boolean).join(" - ") || "-"}</p>
+                        <p className="truncate font-medium text-foreground">{row.club_name || "-"}</p>
+                        <p className="truncate text-xs text-muted-foreground">{[row.championship, row.calendar || formatYouthSeason(row.season)].filter(Boolean).join(" - ") || "-"}</p>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex max-w-[320px] flex-wrap gap-1.5">
                           {[row.position_group, row.position, row.age_category, `${formatNumber(row.minutes_played)} mins`].filter(Boolean).map((item) => (
-                            <span key={item} className="rounded-md border border-white/10 bg-white/[0.035] px-2 py-1 text-[11px] font-semibold text-[#A0A8A3]">{item}</span>
+                            <span key={item} className="rounded-md border border-border bg-secondary px-2 py-1 text-[11px] font-semibold text-muted-foreground">{item}</span>
                           ))}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <p className="text-xl font-semibold text-[#8CC7A7]">{formatScore(row.score)}</p>
-                        <p className="text-[11px] text-[#6F7772]">Score</p>
+                        <p className="text-xl font-semibold text-primary">{formatScore(row.score)}</p>
+                        <p className="text-[11px] text-muted-foreground">Score</p>
                       </td>
-                      <td className="px-4 py-3 text-right text-white">{formatNumber(row.minutes_played)}</td>
-                      <td className="px-4 py-3 text-right text-white">{formatScore(row.rating)}</td>
+                      <td className="px-4 py-3 text-right text-foreground">{formatNumber(row.minutes_played)}</td>
+                      <td className="px-4 py-3 text-right text-foreground">{formatScore(row.rating)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -377,8 +377,8 @@ export default function YouthRankingPage() {
             </div>
           )}
 
-          <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
-            <p className="text-xs font-semibold text-[#6F7772]">
+          <div className="flex flex-col gap-3 border-t border-border px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs font-semibold text-muted-foreground">
               Showing {items.length ? page * filters.limit + 1 : 0}-{Math.min(total, (page + 1) * filters.limit)} of {formatNumber(total)}
             </p>
             <div className="flex items-center gap-2">
@@ -391,7 +391,7 @@ export default function YouthRankingPage() {
               <button type="button" className="nl-button-secondary px-3" disabled={page === 0 || loading} onClick={() => setPage((current) => Math.max(0, current - 1))}>
                 Prev
               </button>
-              <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-[#A0A8A3]">{page + 1} / {totalPages}</span>
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-muted-foreground">{page + 1} / {totalPages}</span>
               <button type="button" className="nl-button-secondary px-3" disabled={page + 1 >= totalPages || loading} onClick={() => setPage((current) => current + 1)}>
                 Next
               </button>

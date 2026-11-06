@@ -18,13 +18,13 @@ import {
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
 const Card = ({ children, className = "" }) => (
-  <div className={`glass-panel rounded-xl p-4 border border-white/5 ${className}`}>
+  <div className={`glass-panel rounded-xl p-4 border border-border ${className}`}>
     {children}
   </div>
 );
 
 const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+  <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
     {children}
   </label>
 );
@@ -348,8 +348,8 @@ export default function StatsResearchPage() {
         "<b>%{customdata[0]}</b><br>" +
         "%{customdata[1]} · %{customdata[2]}<br>" +
         "%{customdata[3]}<br><br>" +
-        `<span style="color:#A0A8A3">${metricXLabel}</span>: %{x:.2f}<br>` +
-        `<span style="color:#A0A8A3">${metricYLabel}</span>: %{y:.2f}` +
+        `<span style="color:#526176">${metricXLabel}</span>: %{x:.2f}<br>` +
+        `<span style="color:#526176">${metricYLabel}</span>: %{y:.2f}` +
         "<extra></extra>",
     };
     const highlightTrace = {
@@ -360,7 +360,7 @@ export default function StatsResearchPage() {
       name: "Target quadrant",
       text: highlightedRows.map((row) => (highlightInfo.labelKeys.has(rowKey(row)) ? row.name || "" : "")),
       textposition: "top center",
-      textfont: { color: "#DDF3E8", size: 10, family: "Inter, system-ui, sans-serif" },
+      textfont: { color: "#166534", size: 10, family: "Inter, system-ui, sans-serif" },
       marker: {
         color: "#559A78",
         size: 11,
@@ -372,9 +372,9 @@ export default function StatsResearchPage() {
         "<b>%{customdata[0]}</b><br>" +
         "%{customdata[1]} · %{customdata[2]}<br>" +
         "%{customdata[3]}<br><br>" +
-        `<span style="color:#8CC7A7">Target quadrant</span><br>` +
-        `<span style="color:#A0A8A3">${metricXLabel}</span>: %{x:.2f}<br>` +
-        `<span style="color:#A0A8A3">${metricYLabel}</span>: %{y:.2f}` +
+        `<span style="color:#15803d">Target quadrant</span><br>` +
+        `<span style="color:#526176">${metricXLabel}</span>: %{x:.2f}<br>` +
+        `<span style="color:#526176">${metricYLabel}</span>: %{y:.2f}` +
         "<extra></extra>",
       showlegend: false,
     };
@@ -414,7 +414,7 @@ export default function StatsResearchPage() {
         xanchor: highlightInfo.xLower ? "left" : "right",
         yanchor: highlightInfo.yLower ? "bottom" : "top",
         showarrow: false,
-        font: { size: 11, color: "#8CC7A7" },
+        font: { size: 11, color: "#15803d" },
         bgcolor: "rgba(47,125,92,0.14)",
         bordercolor: "rgba(85,154,120,0.22)",
         borderpad: 4,
@@ -438,7 +438,7 @@ export default function StatsResearchPage() {
         xref: "x",
         yref: "paper",
         showarrow: false,
-        font: { size: 10, color: "rgba(243,245,244,0.58)" },
+        font: { size: 10, color: "#64748b" },
         yanchor: "bottom",
       });
     }
@@ -460,7 +460,7 @@ export default function StatsResearchPage() {
         xref: "paper",
         yref: "y",
         showarrow: false,
-        font: { size: 10, color: "rgba(243,245,244,0.58)" },
+        font: { size: 10, color: "#64748b" },
         xanchor: "left",
       });
     }
@@ -468,35 +468,35 @@ export default function StatsResearchPage() {
       autosize: true,
       plot_bgcolor: "rgba(5,7,6,0)",
       paper_bgcolor: "rgba(5,7,6,0)",
-      font: { color: "#A0A8A3", family: "Inter, system-ui, sans-serif" },
+      font: { color: "#526176", family: "Inter, system-ui, sans-serif" },
       margin: { l: 56, r: 48, t: 26, b: 54 },
       hovermode: "closest",
       dragmode: "zoom",
       clickmode: "event+select",
       hoverlabel: {
-        bgcolor: "#0A0C0B",
+        bgcolor: "#ffffff",
         bordercolor: "#3A8967",
-        font: { color: "#F3F5F4", size: 12 },
+        font: { color: "#17243b", size: 12 },
         align: "left",
       },
       xaxis: {
-        title: { text: metricXLabel, font: { size: 12, color: "#DDE3DF" } },
+        title: { text: metricXLabel, font: { size: 12, color: "#334155" } },
         range: [xMin, xMax],
-        gridcolor: "rgba(255,255,255,0.055)",
+        gridcolor: "#e2e8f0",
         zeroline: false,
-        linecolor: "rgba(255,255,255,0.14)",
-        tickcolor: "rgba(255,255,255,0.14)",
-        tickfont: { size: 11, color: "#8D968F" },
+        linecolor: "#cbd5e1",
+        tickcolor: "#cbd5e1",
+        tickfont: { size: 11, color: "#526176" },
         ticks: "outside",
       },
       yaxis: {
-        title: { text: metricYLabel, font: { size: 12, color: "#DDE3DF" } },
+        title: { text: metricYLabel, font: { size: 12, color: "#334155" } },
         range: [yMin, yMax],
-        gridcolor: "rgba(255,255,255,0.055)",
+        gridcolor: "#e2e8f0",
         zeroline: false,
-        linecolor: "rgba(255,255,255,0.14)",
-        tickcolor: "rgba(255,255,255,0.14)",
-        tickfont: { size: 11, color: "#8D968F" },
+        linecolor: "#cbd5e1",
+        tickcolor: "#cbd5e1",
+        tickfont: { size: 11, color: "#526176" },
         ticks: "outside",
       },
       showlegend: false,
@@ -577,10 +577,10 @@ export default function StatsResearchPage() {
     return createPortal(
       <div
         ref={positionsMenuRef}
-        className="max-h-64 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-2xl p-3"
+        className="max-h-64 overflow-auto rounded-lg border border-slate-700 bg-card shadow-2xl p-3"
         style={positionsMenuStyle}
       >
-        <label className="flex items-center gap-2 text-sm text-slate-200 mb-2">
+        <label className="flex items-center gap-2 text-sm text-foreground mb-2">
           <input
             type="checkbox"
             checked={positionsAll}
@@ -593,7 +593,7 @@ export default function StatsResearchPage() {
         </label>
         <div className="space-y-2">
           {positions.map((pos) => (
-            <label key={pos.code} className="flex items-center gap-2 text-sm text-slate-200">
+            <label key={pos.code} className="flex items-center gap-2 text-sm text-foreground">
               <input
                 type="checkbox"
                 checked={!positionsAll && selectedPositions.includes(pos.code)}
@@ -620,28 +620,28 @@ export default function StatsResearchPage() {
     <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
             Stats Research
           </p>
-          <h1 className="text-4xl font-bold text-white tracking-tight">
+          <h1 className="text-4xl font-bold text-foreground tracking-tight">
             Metric discovery lab
           </h1>
-          <p className="text-slate-300 max-w-3xl">
+          <p className="text-foreground max-w-3xl">
             Explore performance relationships across leagues, positions and minutes thresholds to uncover stronger scouting angles.
           </p>
         </header>
 
         <Card className="nl-filter-bar p-0">
-          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="nl-kicker">Research filters</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Define the analytical cohort</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Define the analytical cohort</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+              <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                 {normalizedRows.length} players
               </span>
-              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
                 {activeFilterCount} custom filters
               </span>
               <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetFilters}>
@@ -743,8 +743,8 @@ export default function StatsResearchPage() {
               ["Positions", positionsSummary || "All"],
               ["Minutes", `${minMinutes}+`],
             ].map(([label, value]) => (
-              <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
-                <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+              <span key={label} className="rounded-md border border-border bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                <span className="text-foreground">{label}</span> <span className="text-foreground">{value}</span>
               </span>
             ))}
           </div>
@@ -759,27 +759,27 @@ export default function StatsResearchPage() {
 
         {loading ? (
           <Card>
-            <p className="text-slate-400">Loading stats...</p>
+            <p className="text-muted-foreground">Loading stats...</p>
           </Card>
         ) : normalizedRows.length === 0 ? (
           <Card>
-            <p className="text-slate-400">No players found with current filters.</p>
+            <p className="text-muted-foreground">No players found with current filters.</p>
           </Card>
         ) : (
           <>
             <Card className="overflow-hidden p-0">
-              <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-3 border-b border-border px-4 py-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-white">{chartTitle}</p>
+                  <p className="text-sm font-semibold text-foreground">{chartTitle}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
                     Median guides, target quadrant and Q3 highlights are computed from the current cohort.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+                  <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
                     {normalizedRows.length} plotted
                   </span>
-                  <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+                  <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                     {highlightInfo.highlights.length} target
                   </span>
                 </div>
@@ -802,15 +802,15 @@ export default function StatsResearchPage() {
             </Card>
 
             <Card>
-              <h3 className="text-lg font-semibold text-white mb-3">Results</h3>
+              <h3 className="text-lg font-semibold text-foreground mb-3">Results</h3>
               <div className="overflow-auto max-h-[520px] pr-2">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-900/95">
-                    <tr className="text-xs uppercase text-slate-400 border-b border-white/5">
+                  <thead className="sticky top-0 bg-card">
+                    <tr className="text-xs uppercase text-muted-foreground border-b border-border">
                       <th className="text-left py-2">
                         <button
                           type="button"
-                          className="cursor-pointer select-none hover:text-slate-200"
+                          className="cursor-pointer select-none hover:text-foreground"
                           onClick={() => handleTableSort("player")}
                         >
                           Player - Club - League {sortIndicator(tableSort, "player")}
@@ -819,7 +819,7 @@ export default function StatsResearchPage() {
                       <th className="text-left py-2">
                         <button
                           type="button"
-                          className="cursor-pointer select-none hover:text-slate-200"
+                          className="cursor-pointer select-none hover:text-foreground"
                           onClick={() => handleTableSort("metric_x")}
                         >
                           {metricXLabel} {sortIndicator(tableSort, "metric_x")}
@@ -828,7 +828,7 @@ export default function StatsResearchPage() {
                       <th className="text-left py-2">
                         <button
                           type="button"
-                          className="cursor-pointer select-none hover:text-slate-200"
+                          className="cursor-pointer select-none hover:text-foreground"
                           onClick={() => handleTableSort("metric_y")}
                         >
                           {metricYLabel} {sortIndicator(tableSort, "metric_y")}
@@ -842,15 +842,15 @@ export default function StatsResearchPage() {
                       return (
                         <tr
                           key={row.key}
-                          className={`border-b border-white/5 ${
+                          className={`border-b border-border ${
                             isHighlight ? "bg-emerald-400/20 text-emerald-50" : ""
                           }`}
                         >
-                          <td className="py-2 text-slate-200">
+                          <td className="py-2 text-foreground">
                             {row.player_id ? (
                               <button
                                 type="button"
-                                className="text-left hover:text-emerald-200"
+                                className="text-left hover:text-emerald-700"
                                 onClick={() =>
                                   window.open(
                                     `/report/${row.player_id}`,
@@ -865,8 +865,8 @@ export default function StatsResearchPage() {
                               row.label
                             )}
                           </td>
-                          <td className="py-2 text-slate-300">{formatValue(row.metric_x)}</td>
-                          <td className="py-2 text-slate-300">{formatValue(row.metric_y)}</td>
+                          <td className="py-2 text-foreground">{formatValue(row.metric_x)}</td>
+                          <td className="py-2 text-foreground">{formatValue(row.metric_y)}</td>
                         </tr>
                       );
                     })}

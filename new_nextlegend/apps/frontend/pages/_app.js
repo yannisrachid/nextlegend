@@ -17,7 +17,6 @@ const SCOUTING_LAB_PATHS = [
   "/stats-research",
   "/vizualisation",
   "/prospect",
-  "/ai",
 ];
 
 export default function App({ Component, pageProps }) {
@@ -83,8 +82,9 @@ export default function App({ Component, pageProps }) {
       <Head>
         <title>Next Legend | HD Sports</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" type="image/png" href="/logo_nl.png" />
-        <link rel="shortcut icon" href="/logo_nl.png" />
+        <link rel="icon" type="image/png" href="/favicon-blue.png" />
+        <link rel="shortcut icon" href="/favicon-blue.png" />
+        <link rel="apple-touch-icon" href="/logo-blue.png" />
       </Head>
       {!isLogin ? (
         <AppShell onLogout={handleLogout} shouldUseScoutingLab={shouldUseScoutingLab} me={me}>

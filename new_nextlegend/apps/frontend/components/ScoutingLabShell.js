@@ -24,10 +24,10 @@ export default function ScoutingLabShell({ children, me }) {
         {isLabHome ? (
           <div className="min-w-0 shrink-0 xl:w-[180px]">
             <p className="nl-kicker">Scouting Lab</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">Research desk</h2>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">Research desk</h2>
           </div>
         ) : null}
-        <nav className="flex w-full min-w-0 flex-1 gap-1 overflow-x-auto xl:w-auto">
+        <nav aria-label="Scouting modules" className="flex w-full min-w-0 flex-1 gap-1 overflow-x-auto xl:w-auto">
           {items.map((item) => {
             const isActive =
               router.pathname === item.href ||
@@ -36,14 +36,15 @@ export default function ScoutingLabShell({ children, me }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`min-w-[138px] rounded-md border px-3 py-2 transition ${
+                aria-current={isActive ? "page" : undefined}
+                title={item.desc}
+                className={`shrink-0 rounded-md border px-3 py-2 transition ${
                   isActive
-                    ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8]"
-                    : "border-white/10 bg-white/[0.035] text-white/70 hover:border-[#3A8967]/40 hover:bg-white/[0.06] hover:text-white"
+                    ? "border-primary/25 bg-accent text-primary"
+                    : "border-transparent bg-transparent text-muted-foreground hover:border-primary/25 hover:bg-secondary hover:text-foreground"
                 }`}
               >
                 <span className="block text-sm font-semibold">{item.label}</span>
-                <span className={`mt-1 block text-xs font-medium ${isActive ? "text-[#8CC7A7]" : "text-white/40"}`}>{item.desc}</span>
               </Link>
             );
           })}

@@ -51,13 +51,13 @@ const EXCLUDED_METRIC_PREFIXES = [
 ];
 
 const Card = ({ children, className = "" }) => (
-  <div className={`glass-panel rounded-xl p-4 border border-white/5 ${className}`}>
+  <div className={`glass-panel rounded-xl p-4 border border-border ${className}`}>
     {children}
   </div>
 );
 
 const Label = ({ children }) => (
-  <label className="text-xs uppercase tracking-[0.2em] text-slate-400">
+  <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
     {children}
   </label>
 );
@@ -283,9 +283,9 @@ const ComparisonRadarTooltip = ({ active, payload, players, contextLabel }) => {
   const point = payload[0]?.payload;
   if (!point) return null;
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-900/95 px-3 py-2 text-xs text-slate-100 shadow-xl">
-      <div className="font-semibold text-white">{point.metric}</div>
-      <div className="text-slate-400">{contextLabel}</div>
+    <div className="rounded-md border border-slate-700 bg-card px-3 py-2 text-xs text-foreground shadow-xl">
+      <div className="font-semibold text-foreground">{point.metric}</div>
+      <div className="text-muted-foreground">{contextLabel}</div>
       <div className="mt-2 space-y-1">
         {players.map((player, idx) => {
           const valueKey = `p${idx}`;
@@ -297,9 +297,9 @@ const ComparisonRadarTooltip = ({ active, payload, players, contextLabel }) => {
                   className="h-2 w-2 rounded-full"
                   style={{ backgroundColor: player.color }}
                 />
-                <span className="text-slate-200">{player.report.player.name}</span>
+                <span className="text-foreground">{player.report.player.name}</span>
               </span>
-              <span className="text-slate-300">
+              <span className="text-foreground">
                 {Number(point[valueKey] ?? 0).toFixed(0)} / {formatValue(point[rawKey])}
               </span>
             </div>
@@ -533,28 +533,28 @@ export default function ComparisonPage() {
     <main className="nl-page py-10 px-4">
       <div className="max-w-6xl mx-auto space-y-6">
         <header className="flex flex-col gap-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
             Comparison
           </p>
-          <h1 className="text-4xl font-bold text-white tracking-tight">
+          <h1 className="text-4xl font-bold text-foreground tracking-tight">
             Player comparison board
           </h1>
-          <p className="text-slate-300 max-w-3xl">
+          <p className="text-foreground max-w-3xl">
             Compare two to four profiles with shared radars, role context and a complete metric table for recruitment discussions.
           </p>
         </header>
 
         <Card className="relative z-30 nl-filter-bar p-0">
-          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="nl-kicker">Comparison setup</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Build a shared seasonal context</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Build a shared seasonal context</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+              <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                 {activeSelections.length}/4 selected
               </span>
-              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
                 {selectedSeason || "All seasons"}
               </span>
             </div>
@@ -631,9 +631,9 @@ export default function ComparisonPage() {
                   />
                 </div>
                 {search.showResults && search.query.trim().length >= 2 ? (
-                  <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-slate-900/95 shadow-xl">
+                  <div className="absolute z-50 mt-2 w-full max-h-72 overflow-auto rounded-lg border border-slate-700 bg-card shadow-xl">
                     {search.options.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-slate-400">
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
                         No matches found.
                       </div>
                     ) : (
@@ -641,7 +641,7 @@ export default function ComparisonPage() {
                         <button
                           key={`${player.id}-${player.seasonId || "latest"}`}
                           type="button"
-                          className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800/80"
+                          className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-card"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => search.handleSelect(player)}
                         >
@@ -655,7 +655,7 @@ export default function ComparisonPage() {
             ))}
           </div>
           <div className="flex items-center justify-between flex-wrap gap-3 mt-4">
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-muted-foreground">
               Select at least two players, then compare. Add up to four when the benchmark requires it.
             </p>
             <div className="flex items-center gap-2">
@@ -677,7 +677,7 @@ export default function ComparisonPage() {
                 className={`px-5 py-2 rounded-md text-sm font-semibold uppercase tracking-[0.2em] border transition ${
                   activeSelections.length < 2 || compareLoading
                     ? "border-slate-700 text-slate-500 cursor-not-allowed"
-                    : "border-emerald-400/60 text-emerald-200 hover:bg-emerald-400/10"
+                    : "border-emerald-400/60 text-emerald-700 hover:bg-emerald-400/10"
                 }`}
               >
                 {compareLoading ? "Comparing..." : "Compare"}
@@ -695,7 +695,7 @@ export default function ComparisonPage() {
 
         {comparison.length === 0 ? (
           <Card>
-            <p className="text-slate-400">
+            <p className="text-muted-foreground">
               Select two to four players to build a side-by-side recruitment view.
             </p>
           </Card>
@@ -703,16 +703,16 @@ export default function ComparisonPage() {
           <>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-1 space-y-4">
-                <h3 className="text-lg font-semibold text-white">Players</h3>
+                <h3 className="text-lg font-semibold text-foreground">Players</h3>
                 {comparison.map((item) => (
-                  <div key={item.report.player.player_id} className="border border-white/10 rounded-lg p-3">
+                  <div key={item.report.player.player_id} className="border border-border rounded-lg p-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm text-slate-400">Name</p>
+                      <p className="text-sm text-muted-foreground">Name</p>
                       <p className="text-sm font-semibold" style={{ color: item.color }}>
                         {item.report.player.name}
                       </p>
                     </div>
-                    <div className="mt-2 space-y-1 text-sm text-slate-300">
+                    <div className="mt-2 space-y-1 text-sm text-foreground">
                       <div className="flex items-center justify-between">
                         <span>Club</span>
                         <span>{item.report.player.team || "--"}</span>
@@ -744,7 +744,7 @@ export default function ComparisonPage() {
 
               <Card className="lg:col-span-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-semibold text-foreground">
                     Percentile Radar
                   </h3>
                   <div className="flex items-center gap-2">
@@ -758,8 +758,8 @@ export default function ComparisonPage() {
                         onClick={() => setRadarContext(option.key)}
                         className={`px-3 py-1 rounded-md text-xs uppercase tracking-[0.2em] border ${
                           radarContext === option.key
-                            ? "border-emerald-400/70 bg-emerald-400/20 text-emerald-200"
-                            : "border-slate-700 bg-slate-900/60 text-slate-300"
+                            ? "border-emerald-400/70 bg-emerald-400/20 text-emerald-700"
+                            : "border-slate-700 bg-card text-foreground"
                         }`}
                       >
                         {option.label}
@@ -808,13 +808,13 @@ export default function ComparisonPage() {
             </div>
 
             <Card>
-              <h3 className="text-lg font-semibold text-white mb-3">
+              <h3 className="text-lg font-semibold text-foreground mb-3">
                 Metrics Comparison
               </h3>
               <div className="max-h-[520px] overflow-auto pr-2">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-slate-900/95">
-                    <tr className="text-xs uppercase text-slate-400 border-b border-white/5">
+                  <thead className="sticky top-0 bg-card">
+                    <tr className="text-xs uppercase text-muted-foreground border-b border-border">
                       <th
                         className="text-left py-2 cursor-pointer select-none"
                         onClick={() => updateSort(setRadarSort, "metric")}
@@ -837,8 +837,8 @@ export default function ComparisonPage() {
                     {sortedRadarRows.map((row) => {
                       const rowMax = getRowMax(row.values);
                       return (
-                        <tr key={row.metricKey} className="border-b border-white/5">
-                          <td className="py-2 text-slate-200">{row.metricLabel}</td>
+                        <tr key={row.metricKey} className="border-b border-border">
+                          <td className="py-2 text-foreground">{row.metricLabel}</td>
                           {comparison.map((item, index) => {
                             const value = row.values[index];
                             const numeric = Number(value);
@@ -846,7 +846,7 @@ export default function ComparisonPage() {
                             return (
                               <td
                                 key={`${item.report.player.player_id}-${row.metricKey}`}
-                                className={`py-2 ${isBest ? "text-emerald-300 font-semibold" : "text-slate-300"}`}
+                                className={`py-2 ${isBest ? "text-emerald-700 font-semibold" : "text-foreground"}`}
                               >
                                 {formatValue(value)}
                               </td>
@@ -862,13 +862,13 @@ export default function ComparisonPage() {
 
             <Card>
               <div className="flex items-center justify-between gap-2 mb-3">
-                <h3 className="text-lg font-semibold text-white">
+                <h3 className="text-lg font-semibold text-foreground">
                   All Metrics
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowAllMetrics((prev) => !prev)}
-                  className="px-3 py-1 rounded-md text-xs uppercase tracking-[0.2em] border border-slate-700 text-slate-200 hover:border-slate-500"
+                  className="px-3 py-1 rounded-md text-xs uppercase tracking-[0.2em] border border-slate-700 text-foreground hover:border-slate-500"
                 >
                   {showAllMetrics ? "Hide" : "Show"}
                 </button>
@@ -876,8 +876,8 @@ export default function ComparisonPage() {
               {showAllMetrics ? (
                 <div className="max-h-[420px] overflow-auto pr-4">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-slate-900/95">
-                      <tr className="text-xs uppercase text-slate-400 border-b border-white/5">
+                    <thead className="sticky top-0 bg-card">
+                      <tr className="text-xs uppercase text-muted-foreground border-b border-border">
                         <th
                           className="text-left py-2 cursor-pointer select-none"
                           onClick={() => updateSort(setAllMetricsSort, "metric")}
@@ -901,8 +901,8 @@ export default function ComparisonPage() {
                       {sortedAllMetricsRows.map((row) => {
                         const rowMax = getRowMax(row.values);
                         return (
-                          <tr key={row.metricKey} className="border-b border-white/5">
-                            <td className="py-2 text-slate-200">{row.metricLabel}</td>
+                          <tr key={row.metricKey} className="border-b border-border">
+                            <td className="py-2 text-foreground">{row.metricLabel}</td>
                             {comparison.map((item, index) => {
                               const value = row.values[index];
                               const numeric = Number(value);
@@ -911,7 +911,7 @@ export default function ComparisonPage() {
                               return (
                                 <td
                                   key={`${item.report.player.player_id}-${row.metricKey}`}
-                                  className={`py-2 ${isBest ? "text-emerald-300 font-semibold" : "text-slate-300"}`}
+                                  className={`py-2 ${isBest ? "text-emerald-700 font-semibold" : "text-foreground"}`}
                                 >
                                   {formatValue(value)}
                                 </td>
@@ -924,20 +924,20 @@ export default function ComparisonPage() {
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   Expand to browse all metrics with the same colors and layout.
                 </p>
               )}
             </Card>
 
             <Card>
-              <h3 className="text-lg font-semibold text-white mb-3">
+              <h3 className="text-lg font-semibold text-foreground mb-3">
                 Summary Scores
               </h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-xs uppercase text-slate-400 border-b border-white/5">
+                    <tr className="text-xs uppercase text-muted-foreground border-b border-border">
                       <th
                         className="text-left py-2 cursor-pointer select-none"
                         onClick={() => updateSort(setSummarySort, "metric")}
@@ -961,8 +961,8 @@ export default function ComparisonPage() {
                     {sortedSummaryRows.map((row) => {
                       const rowMax = getRowMax(row.values);
                       return (
-                        <tr key={row.metricKey} className="border-b border-white/5">
-                          <td className="py-2 text-slate-200">{row.metricLabel}</td>
+                        <tr key={row.metricKey} className="border-b border-border">
+                          <td className="py-2 text-foreground">{row.metricLabel}</td>
                           {comparison.map((item, index) => {
                             const value = row.values[index];
                             const numeric = Number(value);
@@ -971,7 +971,7 @@ export default function ComparisonPage() {
                             return (
                               <td
                                 key={`${item.report.player.player_id}-${row.metricKey}`}
-                                className={`py-2 ${isBest ? "text-emerald-300 font-semibold" : "text-slate-300"}`}
+                                className={`py-2 ${isBest ? "text-emerald-700 font-semibold" : "text-foreground"}`}
                               >
                                 {formatValue(value)}
                               </td>

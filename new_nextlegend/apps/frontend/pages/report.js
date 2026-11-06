@@ -1085,7 +1085,7 @@ function ScoreHistory({ data }) {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="nl-kicker">Score history</p>
-          <h3 className="mt-2 text-xl font-black text-white">Rating evolution</h3>
+          <h3 className="mt-2 text-xl font-black text-foreground">Rating evolution</h3>
         </div>
       </div>
       <div className="h-72">
@@ -1119,13 +1119,13 @@ function InSeasonScoreSnapshots({ data }) {
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="nl-kicker">In-season snapshots</p>
-          <h3 className="mt-2 text-xl font-black text-white">Current season score tracking</h3>
-          <p className="mt-1 max-w-xl text-sm text-[#A0A8A3]">
+          <h3 className="mt-2 text-xl font-black text-foreground">Current season score tracking</h3>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
             Biweekly model snapshots with score, minutes coverage and stored scoring metrics.
           </p>
         </div>
         {delta != null ? (
-          <span className={`rounded-md border px-3 py-1 text-xs font-black ${delta >= 0 ? "border-[#3A8967]/35 bg-[#2F7D5C]/15 text-[#8CC7A7]" : "border-red-400/25 bg-red-500/10 text-red-200"}`}>
+          <span className={`rounded-md border px-3 py-1 text-xs font-black ${delta >= 0 ? "border-primary/25 bg-accent text-primary" : "border-red-400/25 bg-red-500/10 text-red-700"}`}>
             {delta >= 0 ? "+" : ""}{delta.toFixed(1)} since first snapshot
           </span>
         ) : null}
@@ -1150,10 +1150,10 @@ function InSeasonScoreSnapshots({ data }) {
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         {data.slice(-3).map((row) => (
-          <div key={`${row.snapshot_key}-${row.snapshot_date}`} className="rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2">
-            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#6F7772]">{row.label}</p>
-            <p className="mt-1 text-sm font-black text-white">{formatValue(row.global_score_adjusted, "score")} score</p>
-            <p className="text-xs text-[#A0A8A3]">{formatValue(row.minutes_played, "integer")} min - {row.minutes_ratio == null ? "-" : `${Math.round(Number(row.minutes_ratio) * 100)}%`} coverage</p>
+          <div key={`${row.snapshot_key}-${row.snapshot_date}`} className="rounded-lg border border-border bg-secondary px-3 py-2">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-muted-foreground">{row.label}</p>
+            <p className="mt-1 text-sm font-black text-foreground">{formatValue(row.global_score_adjusted, "score")} score</p>
+            <p className="text-xs text-muted-foreground">{formatValue(row.minutes_played, "integer")} min - {row.minutes_ratio == null ? "-" : `${Math.round(Number(row.minutes_ratio) * 100)}%`} coverage</p>
           </div>
         ))}
       </div>
@@ -1172,41 +1172,41 @@ function TransferHistoryCard({ transfers = [] }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="nl-kicker">Transfers</p>
-          <h3 className="mt-2 text-xl font-black text-white">Career movement timeline</h3>
+          <h3 className="mt-2 text-xl font-black text-foreground">Career movement timeline</h3>
           <p className="mt-1 text-sm text-slate-600">Most recent moves first, with fee and source context when available.</p>
         </div>
-        <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-1 text-xs font-black text-[#8CC7A7]">{items.length} moves</span>
+        <span className="rounded-md border border-primary/25 bg-accent px-3 py-1 text-xs font-black text-primary">{items.length} moves</span>
       </div>
       {items.length ? (
         <div className="mt-5 space-y-3">
           {items.map((transfer) => (
-            <div key={`${transfer.id}-${transfer.transfer_date || "date"}-${transfer.team_in_name || "in"}-${transfer.team_out_name || "out"}`} className="rounded-lg border border-white/10 bg-white/[0.025] p-4 shadow-sm">
+            <div key={`${transfer.id}-${transfer.transfer_date || "date"}-${transfer.team_in_name || "in"}-${transfer.team_out_name || "out"}`} className="rounded-lg border border-border bg-secondary p-4 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-white">{formatTransferDate(transfer.transfer_date)}</span>
-                    <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-[#8CC7A7]">{transfer.transfer_type || "Transfer"}</span>
+                    <span className="rounded-full bg-card px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-foreground">{formatTransferDate(transfer.transfer_date)}</span>
+                    <span className="rounded-md border border-primary/25 bg-accent px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-primary">{transfer.transfer_type || "Transfer"}</span>
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)] md:items-center">
-                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3">
+                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-secondary p-3">
                       <ClubLogo name={transfer.team_out_name} className="h-10 w-10 rounded" />
                       <div className="min-w-0">
-                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">From</p>
+                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-muted-foreground">From</p>
                         <p className="truncate text-sm font-extrabold text-slate-950">{transfer.team_out_name || "Free agent"}</p>
                       </div>
                     </div>
-                    <div className="hidden h-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-lg font-black text-slate-400 md:flex">-&gt;</div>
-                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-[#3A8967]/30 bg-[#2F7D5C]/15 p-3">
+                    <div className="hidden h-10 items-center justify-center rounded-md border border-border bg-secondary text-lg font-black text-muted-foreground md:flex">-&gt;</div>
+                    <div className="flex min-w-0 items-center gap-3 rounded-lg border border-primary/25 bg-accent p-3">
                       <ClubLogo name={transfer.team_in_name} className="h-10 w-10 rounded" />
                       <div className="min-w-0">
-                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#8CC7A7]">To</p>
+                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-primary">To</p>
                         <p className="truncate text-sm font-extrabold text-slate-950">{transfer.team_in_name || "Free agent"}</p>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div className="min-w-[170px] rounded-lg border border-white/10 bg-white/[0.035] p-3 text-left lg:text-right">
-                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">Fee</p>
+                <div className="min-w-[170px] rounded-lg border border-border bg-secondary p-3 text-left lg:text-right">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-muted-foreground">Fee</p>
                   <p className="mt-1 text-lg font-extrabold text-slate-950">{transferFeeLabel(transfer.transfer_fee)}</p>
                   <p className="mt-1 text-xs font-semibold text-slate-500">{transfer.league_name || transfer.team_name_context || "League to confirm"}</p>
                 </div>
@@ -1215,8 +1215,8 @@ function TransferHistoryCard({ transfers = [] }) {
           ))}
         </div>
       ) : (
-        <div className="mt-5 rounded-lg border border-dashed border-white/10 bg-white/[0.025] p-5">
-          <p className="text-sm font-extrabold text-white">No verified transfer history yet.</p>
+        <div className="mt-5 rounded-lg border border-dashed border-border bg-secondary p-5">
+          <p className="text-sm font-extrabold text-foreground">No verified transfer history yet.</p>
           <p className="mt-1 text-sm font-semibold text-slate-500">Import Transfermarkt movement data to enrich this report.</p>
         </div>
       )}
@@ -1566,8 +1566,8 @@ export default function ReportPage() {
             <div className={report ? "grid gap-5 lg:grid-cols-[170px_minmax(0,1fr)]" : ""}>
               {report ? (
                 <div className="w-full max-w-[170px]">
-                  <div className="h-[210px] overflow-hidden rounded-lg border border-[#3A8967]/25 bg-[#06100C] p-2 shadow-sm">
-                    <div className="h-full overflow-hidden rounded-md border border-white/10 bg-white/[0.04]">
+                  <div className="h-[210px] overflow-hidden rounded-lg border border-primary/25 bg-secondary p-2 shadow-sm">
+                    <div className="h-full overflow-hidden rounded-md border border-border bg-secondary">
                       {tmPhotoUrl ? (
                         <img src={tmPhotoUrl} alt={report.player.name || "Player"} className="h-full w-full object-cover" loading="lazy" />
                       ) : (
@@ -1577,16 +1577,16 @@ export default function ReportPage() {
                       )}
                     </div>
                   </div>
-                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2 shadow-sm">
+                  <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-secondary px-3 py-2 shadow-sm">
                     <ClubLogo name={report.player.team} className="h-8 w-8 rounded-md" />
-                    <span className="min-w-0 truncate text-xs font-black text-slate-300">{report.player.team || "No club"}</span>
+                    <span className="min-w-0 truncate text-xs font-black text-foreground">{report.player.team || "No club"}</span>
                   </div>
                 </div>
               ) : null}
 
               <div>
                 <p className="nl-kicker">Player report</p>
-                <h1 className="mt-3 max-w-4xl text-4xl font-black tracking-[-0.04em] text-white md:text-6xl">
+                <h1 className="mt-3 max-w-4xl text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
                   {report?.player?.name || "Professional scouting dossier"}
                 </h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
@@ -1595,11 +1595,11 @@ export default function ReportPage() {
                 {report ? (
                   <>
                     <div className="mt-5 flex flex-wrap items-center gap-2">
-                      <span className="rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-[#8CC7A7]">{positionMeta.short} - {positionMeta.label}</span>
-                      <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-bold text-slate-300">{report.player.team || "No club"}</span>
-                      <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-bold text-slate-300">{report.player.competition_name || "No competition"}</span>
+                      <span className="rounded-md border border-primary/25 bg-accent px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-primary">{positionMeta.short} - {positionMeta.label}</span>
+                      <span className="rounded-md border border-border bg-secondary px-3 py-1 text-xs font-bold text-foreground">{report.player.team || "No club"}</span>
+                      <span className="rounded-md border border-border bg-secondary px-3 py-1 text-xs font-bold text-foreground">{report.player.competition_name || "No competition"}</span>
                       {tmProfileUrl ? (
-                        <a href={tmProfileUrl} target="_blank" rel="noreferrer" className="rounded-md border border-sky-400/25 bg-sky-500/10 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-sky-200">
+                        <a href={tmProfileUrl} target="_blank" rel="noreferrer" className="rounded-md border border-sky-400/25 bg-sky-500/10 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-sky-700">
                           Transfermarkt
                         </a>
                       ) : null}
@@ -1607,7 +1607,7 @@ export default function ReportPage() {
                     {socialLinks.length > 0 ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {socialLinks.map((link) => (
-                          <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 py-1 text-xs font-black text-slate-300 transition hover:border-[#3A8967]/35 hover:text-[#8CC7A7]">
+                          <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md border border-border bg-secondary px-3 py-1 text-xs font-black text-foreground transition hover:border-primary/25 hover:text-primary">
                             <SocialIcon type={link.type} />
                             <span>{link.label}</span>
                           </a>
@@ -1626,21 +1626,21 @@ export default function ReportPage() {
                       </button>
                     </div>
                     {prospectMessage ? (
-                      <p className={`mt-3 text-xs font-semibold ${isProspect ? "text-[#8CC7A7]" : "text-amber-200"}`}>
+                      <p className={`mt-3 text-xs font-semibold ${isProspect ? "text-primary" : "text-amber-700"}`}>
                         {prospectMessage}
                       </p>
                     ) : null}
                     {hasTmData ? (
                       <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                         {tmDetails.map((item) => (
-                          <div key={item.label} className="rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2">
-                            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{item.label}</p>
+                          <div key={item.label} className="rounded-lg border border-border bg-secondary px-3 py-2">
+                            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">{item.label}</p>
                             {item.url ? (
-                              <a href={item.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-sm font-black text-[#8CC7A7] hover:text-white">
+                              <a href={item.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-sm font-black text-primary hover:text-foreground">
                                 {item.value || "Profile"}
                               </a>
                             ) : (
-                              <p className="mt-1 truncate text-sm font-black text-white">{item.value}</p>
+                              <p className="mt-1 truncate text-sm font-black text-foreground">{item.value}</p>
                             )}
                           </div>
                         ))}
@@ -1654,7 +1654,7 @@ export default function ReportPage() {
             </div>
 
             <div className="relative z-[9999] space-y-3 2xl:pt-2">
-              <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
+              <div className="rounded-lg border border-border bg-secondary p-3">
                 <label htmlFor="report-search-season" className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
                   Search season
                 </label>

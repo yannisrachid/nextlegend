@@ -151,12 +151,12 @@ export default function HdPlayersPage() {
                 {item.photo_url ? (
                   <img src={storageHref(item.photo_url)} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-6xl font-black text-white/[0.22]">
+                  <div className="flex h-full items-center justify-center text-6xl font-black text-foreground">
                     {initials(item.display_name)}
                   </div>
                 )}
                 <div className="absolute left-4 top-4 flex gap-2">
-                  <span className="rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs font-black text-white/80 backdrop-blur">
+                  <span className="rounded-full border border-border bg-secondary px-3 py-1 text-xs font-black text-foreground backdrop-blur">
                     {item.assigned_agent || "Unassigned"}
                   </span>
                 </div>

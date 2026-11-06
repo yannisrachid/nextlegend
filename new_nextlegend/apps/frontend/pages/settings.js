@@ -103,28 +103,28 @@ export default function SettingsPage() {
           </p>
         </header>
 
-        {error ? <Card className="border-rose-400/35 text-sm font-semibold text-rose-200">{error}</Card> : null}
+        {error ? <Card className="border-rose-400/35 text-sm font-semibold text-rose-700">{error}</Card> : null}
 
         <div className="grid gap-6 lg:grid-cols-[0.82fr_1.18fr]">
           <Card>
             <p className="nl-kicker">Signed in</p>
             <div className="mt-4 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/18 text-sm font-semibold text-[#DDF3E8]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-md border border-primary/25 bg-accent text-sm font-semibold text-primary">
                 {(me?.display_name || me?.username || "HD").slice(0, 2).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-base font-semibold text-white">{me?.display_name || me?.username || "Workspace user"}</p>
+                <p className="truncate text-base font-semibold text-foreground">{me?.display_name || me?.username || "Workspace user"}</p>
                 <p className="truncate text-sm text-slate-500">{me?.email || "No email configured"}</p>
               </div>
             </div>
             <dl className="mt-5 space-y-3 text-sm">
-              <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
+              <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
                 <dt className="text-slate-500">Username</dt>
-                <dd className="font-semibold text-white">{me?.username || "-"}</dd>
+                <dd className="font-semibold text-foreground">{me?.username || "-"}</dd>
               </div>
-              <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
+              <div className="flex items-center justify-between gap-4 border-t border-border pt-3">
                 <dt className="text-slate-500">Role</dt>
-                <dd className="font-semibold capitalize text-white">{me?.role || "user"}</dd>
+                <dd className="font-semibold capitalize text-foreground">{me?.role || "user"}</dd>
               </div>
             </dl>
           </Card>
@@ -134,9 +134,9 @@ export default function SettingsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="nl-kicker">Profile</p>
-                  <h2 className="mt-1 text-lg font-semibold text-white">Personal information</h2>
+                  <h2 className="mt-1 text-lg font-semibold text-foreground">Personal information</h2>
                 </div>
-                {profileStatus ? <span className="rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-1.5 text-xs font-semibold text-[#8CC7A7]">{profileStatus}</span> : null}
+                {profileStatus ? <span className="rounded-md border border-primary/25 bg-accent px-3 py-1.5 text-xs font-semibold text-primary">{profileStatus}</span> : null}
               </div>
               <form className="mt-5 grid gap-4 md:grid-cols-2" onSubmit={saveProfile}>
                 <Field label="Display name">
@@ -172,9 +172,9 @@ export default function SettingsPage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="nl-kicker">Security</p>
-                  <h2 className="mt-1 text-lg font-semibold text-white">Change password</h2>
+                  <h2 className="mt-1 text-lg font-semibold text-foreground">Change password</h2>
                 </div>
-                {passwordStatus ? <span className="rounded-md border border-[#3A8967]/35 bg-[#2F7D5C]/15 px-3 py-1.5 text-xs font-semibold text-[#8CC7A7]">{passwordStatus}</span> : null}
+                {passwordStatus ? <span className="rounded-md border border-primary/25 bg-accent px-3 py-1.5 text-xs font-semibold text-primary">{passwordStatus}</span> : null}
               </div>
               <form className="mt-5 grid gap-4" onSubmit={changePassword}>
                 <input

@@ -404,16 +404,16 @@ export default function RankingPage() {
         </header>
 
         <Card className="nl-filter-bar p-0">
-          <div className="flex flex-col gap-4 border-b border-white/10 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 border-b border-border px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="nl-kicker">Cohort builder</p>
-              <h2 className="mt-1 text-lg font-semibold text-white">Filter the player universe</h2>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Filter the player universe</h2>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 px-3 py-2 text-xs font-semibold text-[#8CC7A7]">
+              <span className="rounded-md border border-primary/25 bg-accent px-3 py-2 text-xs font-semibold text-primary">
                 {total} players
               </span>
-              <span className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-semibold text-slate-500">
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
                 {activeFilterCount} custom filters
               </span>
               <button type="button" className="nl-button-secondary px-3 py-2 text-xs" onClick={resetFilters}>
@@ -559,8 +559,8 @@ export default function RankingPage() {
                 ["Minutes", `${filters.min_minutes}+`],
                 ["Age", `${filters.age_min}-${filters.age_max}`],
               ].map(([label, value]) => (
-                <span key={label} className="rounded-md border border-white/10 bg-white/[0.035] px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
-                  <span className="text-white/45">{label}</span> <span className="text-white/80">{value}</span>
+                <span key={label} className="rounded-md border border-border bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-slate-500">
+                  <span className="text-foreground">{label}</span> <span className="text-foreground">{value}</span>
                 </span>
               ))}
             </div>
@@ -568,12 +568,12 @@ export default function RankingPage() {
         </Card>
 
         <Card className="overflow-hidden p-0">
-          <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 border-b border-border px-4 py-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-semibold text-white">Ranking results</p>
+              <p className="text-sm font-semibold text-foreground">Ranking results</p>
               <p className="mt-0.5 text-xs font-semibold text-slate-500">{pageLabel} · {total} players</p>
             </div>
-            <div className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">
+            <div className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">
               Sorted by Score
             </div>
           </div>
@@ -587,7 +587,7 @@ export default function RankingPage() {
           {loading ? (
             <div className="space-y-3 p-4">
               {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="grid grid-cols-[48px_minmax(0,1fr)_110px_110px] gap-3 rounded-md border border-white/10 bg-white/[0.025] p-3">
+                <div key={index} className="grid grid-cols-[48px_minmax(0,1fr)_110px_110px] gap-3 rounded-md border border-border bg-secondary p-3">
                   <div className="nl-skeleton h-10 w-10 rounded-full" />
                   <div className="space-y-2">
                     <div className="nl-skeleton h-3 w-1/3" />
@@ -609,7 +609,7 @@ export default function RankingPage() {
             <div className="overflow-x-auto">
               <table className="min-w-[980px] w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-white/10 text-[11px] uppercase tracking-[0.14em] text-slate-500">
+                  <tr className="border-b border-border text-[11px] uppercase tracking-[0.14em] text-slate-500">
                     <th className="w-14 px-4 py-3">Rank</th>
                     <th className="px-4 py-3">Player</th>
                     <th className="px-4 py-3">Context</th>
@@ -618,7 +618,7 @@ export default function RankingPage() {
                     <th className="px-4 py-3 text-right">Percentiles</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-border">
                   {items.map((row, idx) => {
                     const tmFields = row.tm_fields || {};
                     const tmPhotoUrl = toAbsoluteUrl(tmFields.tm_profile_image_url || tmFields.profile_image_url);
@@ -646,16 +646,16 @@ export default function RankingPage() {
                         }}
                       >
                         <td className="px-4 py-3">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-[#3A8967]/30 bg-[#2F7D5C]/15 text-xs font-semibold text-[#8CC7A7]">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-primary/25 bg-accent text-xs font-semibold text-primary">
                             {page * filters.limit + idx + 1}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex min-w-0 items-center gap-3">
                             {tmPhotoUrl ? (
-                              <img src={tmPhotoUrl} alt={row.name} className="h-10 w-10 rounded-md border border-white/10 object-cover" />
+                              <img src={tmPhotoUrl} alt={row.name} className="h-10 w-10 rounded-md border border-border object-cover" />
                             ) : (
-                              <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] text-xs font-semibold text-slate-500">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-secondary text-xs font-semibold text-slate-500">
                                 {getInitials(row.name)}
                               </div>
                             )}
@@ -663,13 +663,13 @@ export default function RankingPage() {
                               <div className="flex items-center gap-2">
                                 <p className="truncate font-semibold text-slate-950">{row.name}</p>
                                 {prospectIds.has(row.player_id) ? (
-                                  <span className="rounded-md border border-amber-300/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-200">
+                                  <span className="rounded-md border border-amber-300/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
                                     Prospect
                                   </span>
                                 ) : null}
                               </div>
                               {tmProfileUrl ? (
-                                <a href={tmProfileUrl} target="_blank" rel="noreferrer" className="text-xs text-[#8CC7A7] hover:text-white" onClick={(event) => event.stopPropagation()}>
+                                <a href={tmProfileUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:text-foreground" onClick={(event) => event.stopPropagation()}>
                                   Transfermarkt
                                 </a>
                               ) : null}
@@ -696,7 +696,7 @@ export default function RankingPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <p className="text-xl font-semibold text-[#8CC7A7]">{row.global_score_adjusted?.toFixed(1) ?? "—"}</p>
+                          <p className="text-xl font-semibold text-primary">{row.global_score_adjusted?.toFixed(1) ?? "—"}</p>
                           <p className="text-[11px] text-slate-500">Score</p>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -712,7 +712,7 @@ export default function RankingPage() {
               </table>
             </div>
           )}
-          <div className="flex flex-col gap-3 border-t border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 border-t border-border px-4 py-3 md:flex-row md:items-center md:justify-between">
             <p className="text-xs font-semibold text-slate-500">
               Showing {items.length ? page * filters.limit + 1 : 0}-{Math.min(total, (page + 1) * filters.limit)} of {total}
             </p>
@@ -739,7 +739,7 @@ export default function RankingPage() {
               >
                 Prev
               </button>
-              <span className="rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-xs font-semibold text-slate-500">{page + 1} / {totalPages}</span>
+              <span className="rounded-md border border-border bg-secondary px-3 py-2 text-xs font-semibold text-slate-500">{page + 1} / {totalPages}</span>
               <button
                 type="button"
                 className="nl-button-secondary px-3"
