@@ -50,7 +50,7 @@ def main():
         if len(rows)!=meta['rows']:
             raise ValueError('FM manifest count mismatch; entire import rolled back')
         targets=[dict(r) for r in session.execute(text("""WITH latest AS (
-          SELECT DISTINCT ON (ps.player_id) ps.player_id,ps.team_in_selected_period,ps.tm_player_name,ps.tm_birth_date,ps.tm_birth_year,pm.age source_age,ps.updated_at observed_at
+          SELECT DISTINCT ON (ps.player_id) ps.player_id,ps.team_in_selected_period,ps.tm_player_name,ps.tm_birth_date,substring(ps.tm_birth_date::text from '^[0-9]{4}')::int tm_birth_year,pm.age source_age,ps.updated_at observed_at
           FROM player_seasons ps LEFT JOIN player_metrics pm ON pm.player_season_id=ps.id
           ORDER BY ps.player_id,ps.calendar DESC,ps.minutes_played DESC NULLS LAST
         ), youth AS (
