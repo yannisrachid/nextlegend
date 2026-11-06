@@ -50,7 +50,7 @@ export default function PercentileBar({
         {segments.map((position) => (
           <span
             key={position}
-            className="pointer-events-none absolute top-0 h-full w-px bg-white/80"
+            className="pointer-events-none absolute top-0 h-full w-px bg-secondary"
             style={{ left: `${position}%` }}
             aria-hidden="true"
           />

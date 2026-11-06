@@ -316,7 +316,7 @@ const DocumentTilePreview = ({ doc }) => {
 };
 
 const FormRow = ({ label, children, action }) => (
-  <div className="grid gap-2 rounded-md border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
+  <div className="grid gap-2 rounded-md border border-border bg-secondary p-3 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
     <span className="block text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
     <span className="flex min-w-0 items-center gap-2">
       <span className="min-w-0 flex-1">{children}</span>
@@ -326,7 +326,7 @@ const FormRow = ({ label, children, action }) => (
 );
 
 const InfoPill = ({ label, children }) => (
-  <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+  <div className="rounded-md border border-border bg-secondary p-3">
     <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
     <p className="mt-1 min-w-0 truncate text-sm font-semibold text-slate-950">{children}</p>
   </div>
@@ -736,7 +736,7 @@ export default function HdPlayerDetailPage() {
               <div className="space-y-3">
                 <p className="text-rose-700">Unable to load this player room.</p>
                 <p className="text-xs text-slate-500">{message}</p>
-                <Link href="/hd-players" className="inline-flex rounded-md bg-slate-950 px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-white">
+                <Link href="/hd-players" className="inline-flex rounded-md bg-card px-4 py-2 text-xs font-black uppercase tracking-[0.2em] text-foreground">
                   Back to HD Players
                 </Link>
               </div>
@@ -787,7 +787,7 @@ export default function HdPlayerDetailPage() {
 
         <section className="surface-panel overflow-hidden rounded-lg">
           <div className="grid lg:grid-cols-[340px_minmax(0,1fr)]">
-            <div className="border-r border-white/10 bg-black/20 p-4">
+            <div className="border-r border-border bg-muted p-4">
               <div
                 className={`relative aspect-[4/5] overflow-hidden rounded-lg bg-[radial-gradient(circle_at_top_left,rgba(58,137,103,0.24),transparent_36%),linear-gradient(135deg,#090B0A,#131714)] ${
                   isPhotoDragging ? "ring-2 ring-[#559A78]" : ""
@@ -805,12 +805,12 @@ export default function HdPlayerDetailPage() {
                 {player.photo_url ? (
                   <img src={storageHref(player.photo_url)} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-6xl font-black text-white/18">
+                  <div className="flex h-full w-full items-center justify-center text-6xl font-black text-foreground">
                     {initials(player.display_name)}
                   </div>
                 )}
               </div>
-              <div className="mt-3 rounded-lg border border-white/10 bg-black/45 p-3">
+              <div className="mt-3 rounded-lg border border-border bg-muted p-3">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">PLAYER IMAGE</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <label className="nl-button-primary cursor-pointer">
@@ -898,12 +898,12 @@ export default function HdPlayerDetailPage() {
                       placeholder="Type a club name"
                     />
                     {currentClubOpen ? (
-                      <div className="absolute z-[9999] mt-2 max-h-64 w-full overflow-auto rounded-md border border-white/10 bg-[#0D100E] shadow-2xl">
+                      <div className="absolute z-[9999] mt-2 max-h-64 w-full overflow-auto rounded-md border border-border bg-card shadow-2xl">
                         {currentClubMatches.length ? currentClubMatches.map((club) => (
                           <button
                             key={club.id}
                             type="button"
-                            className="flex w-full items-center gap-3 border-b border-white/10 px-3 py-2.5 text-left text-sm text-slate-300 transition hover:bg-[#2F7D5C]/15 hover:text-white"
+                            className="flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left text-sm text-foreground transition hover:bg-accent hover:text-foreground"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => selectCurrentClub(club)}
                           >
@@ -986,7 +986,7 @@ export default function HdPlayerDetailPage() {
                   <button
                     type="button"
                     className={`rounded-md border px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] transition ${
-                      isYoungPlayer ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8]" : "border-white/10 bg-white/[0.035] text-white/65 hover:border-white/20 hover:text-white"
+                      isYoungPlayer ? "border-primary/25 bg-accent text-primary" : "border-border bg-secondary text-foreground hover:border-border hover:text-foreground"
                     }`}
                     onClick={() => markYoungPlayer(!isYoungPlayer)}
                   >
@@ -1021,7 +1021,7 @@ export default function HdPlayerDetailPage() {
                           <span className="text-xs font-semibold text-slate-500">{result.team || "-"} • {result.competition_name || "-"} • {result.calendar || "-"}</span>
                           </span>
                         </span>
-                        <span className="rounded bg-teal-700 px-3 py-1 text-xs font-bold text-white">Link</span>
+                        <span className="rounded bg-teal-700 px-3 py-1 text-xs font-bold text-foreground">Link</span>
                       </button>
                     ))}
                   </div>
@@ -1052,7 +1052,7 @@ export default function HdPlayerDetailPage() {
               </div>
               ) : null}
               {isYoungPlayer ? (
-                <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.025] p-4">
+                <div className="mt-5 rounded-lg border border-border bg-secondary p-4">
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     {[
                       ["calendar", "Calendar", "2026/2027"],
@@ -1185,7 +1185,7 @@ export default function HdPlayerDetailPage() {
                         <td className="px-3 py-2">
                           <div className="flex items-center justify-between gap-3">
                             <span>{value(row.notes)}</span>
-                            <button type="button" className="text-xs font-bold text-rose-300 hover:text-rose-200" onClick={() => removeProspectClub(row.id)}>
+                            <button type="button" className="text-xs font-bold text-rose-700 hover:text-rose-700" onClick={() => removeProspectClub(row.id)}>
                               Remove
                             </button>
                           </div>
@@ -1260,8 +1260,8 @@ export default function HdPlayerDetailPage() {
                     </FormRow>
                   </div>
                 </div>
-                <div className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
-                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#8CC7A7]">Season objectives</p>
+                <div className="rounded-lg border border-border bg-secondary p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-primary">Season objectives</p>
                   <h3 className="mt-1 text-lg font-extrabold text-slate-950">Player objectives</h3>
                   <textarea
                     className="nl-field mt-4 min-h-[154px]"
@@ -1325,8 +1325,8 @@ export default function HdPlayerDetailPage() {
                     type="button"
                     className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
                       documentFilter === type.value
-                        ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8]"
-                        : "border-white/10 bg-white/[0.035] text-white/60 hover:border-white/20 hover:text-white"
+                        ? "border-primary/25 bg-accent text-primary"
+                        : "border-border bg-secondary text-foreground hover:border-border hover:text-foreground"
                     }`}
                     onClick={() => setDocumentFilter(type.value)}
                   >
@@ -1390,7 +1390,7 @@ export default function HdPlayerDetailPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-white">
+                            <span className="rounded-full bg-card px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-foreground">
                               {formatTransferDate(transfer.transfer_date)}
                             </span>
                             <span className="rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-teal-700">
@@ -1402,7 +1402,7 @@ export default function HdPlayerDetailPage() {
                               </span>
                             ) : null}
                             {transfer.match_type === "manual" ? (
-                              <span className="rounded-full border border-[#3A8967]/40 bg-[#2F7D5C]/20 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-[#DDF3E8]">
+                              <span className="rounded-full border border-primary/25 bg-accent px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-primary">
                                 Manual
                               </span>
                             ) : null}
@@ -1415,7 +1415,7 @@ export default function HdPlayerDetailPage() {
                                 <p className="truncate text-sm font-extrabold text-slate-950">{transfer.team_out_name || "Free agent"}</p>
                               </div>
                             </div>
-                            <div className="hidden h-10 items-center justify-center rounded-full border border-slate-200 bg-white text-lg font-black text-slate-400 md:flex">
+                            <div className="hidden h-10 items-center justify-center rounded-full border border-slate-200 bg-white text-lg font-black text-muted-foreground md:flex">
                               →
                             </div>
                             <div className="flex min-w-0 items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
@@ -1432,7 +1432,7 @@ export default function HdPlayerDetailPage() {
                           <p className="mt-1 text-lg font-extrabold text-slate-950">{transferFeeLabel(transfer.transfer_fee)}</p>
                           <p className="mt-1 text-xs font-semibold text-slate-500">{transfer.league_name || transfer.team_name_context || "League to confirm"}</p>
                           {transfer.match_type === "manual" ? (
-                            <button type="button" className="mt-3 text-xs font-bold text-rose-300 hover:text-rose-200" onClick={() => removeManualTransfer(transfer.id)}>
+                            <button type="button" className="mt-3 text-xs font-bold text-rose-700 hover:text-rose-700" onClick={() => removeManualTransfer(transfer.id)}>
                               Remove manual move
                             </button>
                           ) : null}
@@ -1459,13 +1459,13 @@ export default function HdPlayerDetailPage() {
           <section className="surface-panel rounded-lg border-rose-500/25 bg-rose-950/10 p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-300">Admin controls</p>
-                <h2 className="mt-2 text-xl font-semibold text-white">Archive this player room</h2>
-                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-700">Admin controls</p>
+                <h2 className="mt-2 text-xl font-semibold text-foreground">Archive this player room</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
                   This hides the player from the application. The database record and related data remain recoverable.
                 </p>
               </div>
-              <button type="button" className="rounded-md border border-rose-400/35 bg-rose-500/12 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/20" onClick={() => setArchiveModalOpen(true)}>
+              <button type="button" className="rounded-md border border-rose-400/35 bg-rose-500/12 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-300/60 hover:bg-rose-500/20" onClick={() => setArchiveModalOpen(true)}>
                 Delete player
               </button>
             </div>
@@ -1473,9 +1473,9 @@ export default function HdPlayerDetailPage() {
         ) : null}
 
         {documentModalOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-            <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-white/10 bg-[#080B0A] shadow-2xl">
-              <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-card p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+            <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-border p-5">
                 <div>
                   <p className="nl-kicker">Document upload</p>
                   <h3 className="mt-2 text-2xl font-semibold text-slate-950">Add player document</h3>
@@ -1503,7 +1503,7 @@ export default function HdPlayerDetailPage() {
                 </FormRow>
                 <label
                   className={`flex min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition ${
-                    isDocDragging ? "border-[#559A78] bg-[#2F7D5C]/14" : "border-white/15 bg-white/[0.025] hover:border-[#3A8967]/50 hover:bg-[#2F7D5C]/10"
+                    isDocDragging ? "border-primary/25 bg-accent" : "border-border bg-secondary hover:border-primary/25 hover:bg-accent"
                   }`}
                   onDragOver={(event) => {
                     event.preventDefault();
@@ -1515,7 +1515,7 @@ export default function HdPlayerDetailPage() {
                     addDocumentFile(event.dataTransfer.files?.[0]);
                   }}
                 >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-md border border-[#3A8967]/40 bg-[#2F7D5C]/20 text-xl font-semibold text-[#DDF3E8]">+</span>
+                  <span className="flex h-10 w-10 items-center justify-center rounded-md border border-primary/25 bg-accent text-xl font-semibold text-primary">+</span>
                   <span className="mt-3 text-lg font-extrabold text-slate-950">Drop the file here</span>
                   <span className="mt-1 text-sm font-semibold text-slate-500">or click to select it. The file name is captured automatically.</span>
                   <input
@@ -1531,9 +1531,9 @@ export default function HdPlayerDetailPage() {
         ) : null}
 
         {prospectModalOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-            <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-white/10 bg-[#080B0A] shadow-2xl">
-              <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-card p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+            <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-border p-5">
                 <div>
                   <p className="nl-kicker">Prospect club</p>
                   <h3 className="mt-2 text-2xl font-semibold text-slate-950">Add a club target</h3>
@@ -1550,12 +1550,12 @@ export default function HdPlayerDetailPage() {
                       placeholder="Type a club name"
                     />
                     {prospectForm.club_name && !prospectForm.club_id ? (
-                      <div className="absolute z-[9999] mt-2 max-h-64 w-full overflow-auto rounded-md border border-white/10 bg-[#0D100E] shadow-2xl">
+                      <div className="absolute z-[9999] mt-2 max-h-64 w-full overflow-auto rounded-md border border-border bg-card shadow-2xl">
                         {clubMatches.length ? clubMatches.map((club) => (
                           <button
                             key={club.id}
                             type="button"
-                            className="flex w-full items-center gap-3 border-b border-white/10 px-3 py-2.5 text-left text-sm text-slate-300 transition hover:bg-[#2F7D5C]/15 hover:text-white"
+                            className="flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left text-sm text-foreground transition hover:bg-accent hover:text-foreground"
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => selectProspectClub(club)}
                           >
@@ -1588,7 +1588,7 @@ export default function HdPlayerDetailPage() {
                   <textarea className="nl-field min-h-[90px]" value={prospectForm.notes} onChange={(event) => setProspectForm((prev) => ({ ...prev, notes: event.target.value }))} placeholder="Context, timing, next step..." />
                 </FormRow>
               </div>
-              <div className="flex justify-end gap-2 border-t border-white/10 p-5">
+              <div className="flex justify-end gap-2 border-t border-border p-5">
                 <button type="button" className="nl-button-secondary" onClick={() => setProspectModalOpen(false)}>Cancel</button>
                 <button type="button" className="nl-button-primary" onClick={addProspectClub}>Add prospect</button>
               </div>
@@ -1597,9 +1597,9 @@ export default function HdPlayerDetailPage() {
         ) : null}
 
         {transferModalOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
-            <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-white/10 bg-[#080B0A] shadow-2xl">
-              <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-card p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+            <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-border p-5">
                 <div>
                   <p className="nl-kicker">Manual transfer</p>
                   <h3 className="mt-2 text-2xl font-semibold text-slate-950">Add career movement</h3>
@@ -1631,7 +1631,7 @@ export default function HdPlayerDetailPage() {
                   </FormRow>
                 </div>
               </div>
-              <div className="flex justify-end gap-2 border-t border-white/10 p-5">
+              <div className="flex justify-end gap-2 border-t border-border p-5">
                 <button type="button" className="nl-button-secondary" onClick={() => setTransferModalOpen(false)}>Cancel</button>
                 <button type="button" className="nl-button-primary" onClick={addManualTransfer}>Add transfer</button>
               </div>
@@ -1641,17 +1641,17 @@ export default function HdPlayerDetailPage() {
 
         {archiveModalOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" role="dialog" aria-modal="true">
-            <div className="w-full max-w-xl overflow-hidden rounded-lg border border-rose-400/25 bg-[#080B0A] shadow-2xl">
-              <div className="border-b border-white/10 p-5">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-300">Confirm deletion</p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">Delete player room?</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  This action will hide <span className="font-semibold text-white">{player.display_name}</span> from the application. The data will remain in the database and can be recovered by an administrator.
+            <div className="w-full max-w-xl overflow-hidden rounded-lg border border-rose-400/25 bg-card shadow-2xl">
+              <div className="border-b border-border p-5">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-700">Confirm deletion</p>
+                <h3 className="mt-2 text-2xl font-semibold text-foreground">Delete player room?</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  This action will hide <span className="font-semibold text-foreground">{player.display_name}</span> from the application. The data will remain in the database and can be recovered by an administrator.
                 </p>
               </div>
               <div className="space-y-4 p-5">
                 <label className="block">
-                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                  <span className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
                     Type the player name to confirm
                   </span>
                   <input
@@ -1663,7 +1663,7 @@ export default function HdPlayerDetailPage() {
                   />
                 </label>
               </div>
-              <div className="flex flex-col-reverse gap-2 border-t border-white/10 p-5 sm:flex-row sm:justify-end">
+              <div className="flex flex-col-reverse gap-2 border-t border-border p-5 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   className="nl-button-secondary"
@@ -1677,7 +1677,7 @@ export default function HdPlayerDetailPage() {
                 </button>
                 <button
                   type="button"
-                  className="rounded-md border border-rose-400/35 bg-rose-500/16 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:border-rose-300/60 hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+                  className="rounded-md border border-rose-400/35 bg-rose-500/16 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-300/60 hover:bg-rose-500/25 disabled:cursor-not-allowed disabled:opacity-45"
                   onClick={archivePlayer}
                   disabled={archiving || archiveConfirmName.trim() !== player.display_name}
                 >
@@ -1689,7 +1689,7 @@ export default function HdPlayerDetailPage() {
         ) : null}
 
         {selectedDoc ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-card p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
             <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-200 bg-white shadow-2xl">
               <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
                 <div>

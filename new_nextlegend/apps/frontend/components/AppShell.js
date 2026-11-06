@@ -3,7 +3,9 @@ import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 
 const PRIMARY_NAV = [
-  { href: "/", label: "HQ", icon: "grid" },
+  { href: "/", label: "Home", icon: "grid" },
+  { href: "/ai", label: "AI Assistant", icon: "spark" },
+  { href: "/hq", label: "HQ", icon: "grid" },
   { href: "/hd-players", label: "HD Players", icon: "users" },
   { href: "/crm", label: "Network", icon: "network" },
   { href: "/scouting-lab", label: "Scouting", icon: "radar" },
@@ -21,7 +23,6 @@ const SCOUTING_NAV = [
   { href: "/stats-research", label: "Research", icon: "search" },
   { href: "/vizualisation", label: "Visuals", icon: "chart" },
   { href: "/prospect", label: "Prospect", icon: "target" },
-  { href: "/ai", label: "AI Assistant", icon: "spark" },
 ];
 
 const YOUTH_NAV = [
@@ -36,7 +37,8 @@ const ADMIN_NAV = [
 ];
 
 const ROUTE_META = [
-  { match: /^\/$/, title: "HQ", eyebrow: "Workspace", desc: "Priorities, portfolio and team execution." },
+  { match: /^\/$/, title: "Home", eyebrow: "Workspace", desc: "Your next scouting move, in focus." },
+  { match: /^\/hq$/, title: "HQ", eyebrow: "Workspace", desc: "Priorities, portfolio and team execution." },
   { match: /^\/hd-players/, title: "HD Players", eyebrow: "Portfolio", desc: "Player rooms, documents and representation strategy." },
   { match: /^\/crm/, title: "Network", eyebrow: "CRM", desc: "Clubs, players, contacts and relationship graph." },
   { match: /^\/scouting-lab$/, title: "Scouting Lab", eyebrow: "Intelligence", desc: "Research modules and decision support." },
@@ -103,17 +105,18 @@ function NavLink({ item, active, onClick, collapsed = false }) {
   return (
     <Link
       href={item.href}
+      aria-current={active ? "page" : undefined}
       onClick={onClick}
       title={collapsed ? item.label : undefined}
       aria-label={collapsed ? item.label : undefined}
       className={`group flex items-center rounded-md border text-sm font-medium transition ${
         active
-          ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8]"
-          : "border-transparent text-[#A0A8A3] hover:border-white/10 hover:bg-white/[0.045] hover:text-[#F3F5F4]"
-      } ${collapsed ? "justify-center px-2 py-2.5" : "gap-3 px-3 py-2.5"}`}
+          ? "border-transparent bg-accent text-primary"
+          : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
+      } ${collapsed ? "justify-center px-2 py-2.5" : "gap-2.5 px-3 py-1.5"}`}
     >
       <span className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
-        active ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#7BC39B]" : "border-white/10 bg-white/[0.03] text-[#6F7772] group-hover:text-[#A0A8A3]"
+        active ? "border-transparent bg-accent text-primary" : "border-border bg-secondary text-muted-foreground group-hover:text-muted-foreground"
       }`}>
         <Icon name={item.icon} className="h-3.5 w-3.5" />
       </span>
@@ -154,12 +157,12 @@ function CommandPalette({ open, onClose, items }) {
 
   return (
     <div className="fixed inset-0 z-[7000] flex items-start justify-center bg-black/70 px-4 pt-[12vh] backdrop-blur-md" role="dialog" aria-modal="true">
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-white/10 bg-[#080B0A] shadow-[0_40px_120px_rgba(0,0,0,0.62)]">
-        <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
-          <Icon name="command" className="h-4 w-4 text-[#559A78]" />
+      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+          <Icon name="command" className="h-4 w-4 text-primary" />
           <input
             autoFocus
-            className="h-10 min-w-0 flex-1 bg-transparent text-sm text-[#F3F5F4] outline-none placeholder:text-[#6F7772]"
+            className="h-10 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search pages and modules"
@@ -170,9 +173,9 @@ function CommandPalette({ open, onClose, items }) {
         </div>
         <div className="max-h-[420px] overflow-auto p-2">
           {results.length === 0 ? (
-            <div className="rounded-md border border-dashed border-white/10 bg-white/[0.03] px-4 py-8 text-center">
-              <p className="text-sm font-medium text-[#F3F5F4]">No result</p>
-              <p className="mt-1 text-xs text-[#6F7772]">Try another page or module name.</p>
+            <div className="rounded-md border border-dashed border-border bg-secondary px-4 py-8 text-center">
+              <p className="text-sm font-medium text-foreground">No result</p>
+              <p className="mt-1 text-xs text-muted-foreground">Try another page or module name.</p>
             </div>
           ) : (
             results.map((item) => (
@@ -180,16 +183,16 @@ function CommandPalette({ open, onClose, items }) {
                 key={item.href}
                 type="button"
                 onClick={() => go(item.href)}
-                className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-[#A0A8A3] transition hover:bg-white/[0.055] hover:text-[#F3F5F4]"
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-muted-foreground transition hover:bg-secondary hover:text-foreground"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-[#559A78]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border bg-secondary text-primary">
                   <Icon name={item.icon} className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{item.label}</span>
-                  <span className="block truncate text-xs text-[#6F7772]">{item.section}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{item.section}</span>
                 </span>
-                <span className="text-xs text-[#6F7772]">Open</span>
+                <span className="text-xs text-muted-foreground">Open</span>
               </button>
             ))
           )}
@@ -201,12 +204,12 @@ function CommandPalette({ open, onClose, items }) {
 
 function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = [], utilityItems = [], me, onLogout, activeFor, onNavigate, collapsed = false, onToggleCollapse }) {
   return (
-    <aside className={`relative flex h-full flex-col overflow-auto border-r border-white/10 bg-[#060807]/95 py-4 text-[#F3F5F4] shadow-[inset_-1px_0_0_rgba(255,255,255,0.035)] transition-all duration-200 ${collapsed ? "gap-4 px-3" : "gap-5 px-4"}`}>
+    <aside className={`relative flex h-full flex-col overflow-auto border-r border-border bg-card py-4 text-foreground shadow-sm transition-all duration-200 ${collapsed ? "gap-4 px-3" : "gap-5 px-4"}`}>
       {onToggleCollapse ? (
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="absolute right-2 top-1/2 z-20 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#0A0C0B] text-[#A0A8A3] shadow-[0_12px_28px_rgba(0,0,0,0.35)] transition hover:border-[#3A8967]/45 hover:bg-[#101311] hover:text-white lg:flex"
+          className="absolute right-2 top-1/2 z-20 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition hover:border-primary/25 hover:bg-card hover:text-foreground lg:flex"
           aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
           title={collapsed ? "Expand navigation" : "Collapse navigation"}
         >
@@ -214,20 +217,20 @@ function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = []
         </button>
       ) : null}
 
-      <Link href="/" onClick={onNavigate} className={`flex items-center rounded-md border border-white/10 bg-white/[0.035] transition hover:bg-white/[0.055] ${collapsed ? "justify-center p-2" : "gap-3 p-3"}`}>
+      <Link href="/" onClick={onNavigate} className={`flex items-center rounded-md border border-border bg-secondary transition hover:bg-secondary ${collapsed ? "justify-center p-2" : "gap-3 p-3"}`}>
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white">
-          <img src="/logo_nl.png" alt="Next Legend" className="h-7 w-7 object-contain" />
+          <img src="/logo-blue.png" alt="Next Legend" className="h-7 w-7 object-contain" />
         </span>
         {collapsed ? null : (
           <span>
-            <span className="block text-sm font-semibold text-[#F3F5F4]">Next Legend</span>
-            <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6F7772]">HD Sports</span>
+            <span className="block text-sm font-semibold text-foreground">Next Legend</span>
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">HD Sports</span>
           </span>
         )}
       </Link>
 
       <div className="space-y-2">
-        {collapsed ? null : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Main</p>}
+        {collapsed ? null : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Main</p>}
         <nav className="space-y-1">
           {items.map((item) => (
             <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
@@ -236,7 +239,7 @@ function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = []
       </div>
 
       <div className="space-y-2">
-        {collapsed ? <div className="mx-auto h-px w-8 bg-white/10" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Scouting modules</p>}
+        {collapsed ? <div className="mx-auto h-px w-8 bg-secondary" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Scouting modules</p>}
         <nav className="space-y-1">
           {scoutingItems.map((item) => (
             <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
@@ -246,7 +249,7 @@ function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = []
 
       {youthItems.length ? (
         <div className="space-y-2">
-          {collapsed ? <div className="mx-auto h-px w-8 bg-white/10" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Youth scouting</p>}
+          {collapsed ? <div className="mx-auto h-px w-8 bg-secondary" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Youth scouting</p>}
           <nav className="space-y-1">
             {youthItems.map((item) => (
               <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
@@ -257,7 +260,7 @@ function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = []
 
       {adminItems.length ? (
         <div className="space-y-2">
-          {collapsed ? <div className="mx-auto h-px w-8 bg-white/10" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">Administration</p>}
+          {collapsed ? <div className="mx-auto h-px w-8 bg-secondary" /> : <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Administration</p>}
           <nav className="space-y-1">
             {adminItems.map((item) => (
               <NavLink key={item.href} item={item} active={activeFor(item)} onClick={onNavigate} collapsed={collapsed} />
@@ -266,7 +269,7 @@ function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = []
         </div>
       ) : null}
 
-      <div className="mt-auto space-y-3 border-t border-white/10 pt-4">
+      <div className="mt-auto space-y-3 border-t border-border pt-4">
         {utilityItems.length ? (
           <nav className="space-y-1">
             {utilityItems.map((item) => (
@@ -278,7 +281,7 @@ function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = []
           <button
             type="button"
             onClick={onLogout}
-            className="flex h-10 w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.035] text-xs font-semibold text-[#A0A8A3] transition hover:bg-white/[0.06] hover:text-white"
+            className="flex h-10 w-full items-center justify-center rounded-md border border-border bg-secondary text-xs font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
             title="Logout"
             aria-label="Logout"
           >
@@ -286,9 +289,9 @@ function MainNavigation({ items, scoutingItems, youthItems = [], adminItems = []
           </button>
         ) : (
           <>
-            <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
-              <p className="text-sm font-medium text-[#F3F5F4]">{me?.display_name || me?.username || "HD Sports"}</p>
-              <p className="mt-1 truncate text-xs text-[#6F7772]">{me?.email || me?.role || "Workspace user"}</p>
+            <div className="rounded-md border border-border bg-secondary p-3">
+              <p className="text-sm font-medium text-foreground">{me?.display_name || me?.username || "HD Sports"}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{me?.email || me?.role || "Workspace user"}</p>
             </div>
             <button type="button" onClick={onLogout} className="nl-button-secondary w-full justify-center">
               Logout
@@ -375,28 +378,28 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
   };
 
   return (
-    <div className="min-h-screen bg-[#050706]">
-      <div className={`transition-[padding] duration-200 ${navCollapsed ? "lg:pl-[88px]" : "lg:pl-[292px]"}`}>
-        <header className="sticky top-0 z-50 border-b border-white/10 bg-[#050706]/90 backdrop-blur-xl">
+    <div className="min-h-screen bg-card">
+      <div className={`transition-[padding] duration-200 ${navCollapsed ? "lg:pl-[76px]" : "lg:pl-[248px]"}`}>
+        <header className="sticky top-0 z-50 border-b border-border bg-card ">
           <div className="flex min-h-[64px] items-center justify-between gap-3 px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button type="button" className="nl-icon-button lg:hidden" onClick={() => setMobileMenuOpen(true)} aria-label="Open navigation">
                 <Icon name="menu" className="h-4 w-4" />
               </button>
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#6F7772]">{meta.eyebrow}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{meta.eyebrow}</p>
                 <div className="flex min-w-0 items-baseline gap-3">
-                  <h1 className="truncate text-base font-semibold text-[#F3F5F4] md:text-lg">{meta.title}</h1>
-                  <p className="hidden max-w-[540px] truncate text-xs text-[#A0A8A3] xl:block">{meta.desc}</p>
+                  <h1 className="truncate text-base font-semibold text-foreground md:text-lg">{meta.title}</h1>
+                  <p className="hidden max-w-[540px] truncate text-xs text-muted-foreground xl:block">{meta.desc}</p>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setCommandOpen(true)} className="hidden h-9 items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 text-sm text-[#A0A8A3] transition hover:bg-white/[0.06] hover:text-[#F3F5F4] md:inline-flex">
+              <button type="button" onClick={() => setCommandOpen(true)} className="hidden h-9 items-center gap-2 rounded-md border border-border bg-secondary px-3 text-sm text-muted-foreground transition hover:bg-secondary hover:text-foreground md:inline-flex">
                 <Icon name="command" className="h-3.5 w-3.5" />
                 Search
-                <span className="ml-2 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-[#6F7772]">Cmd K</span>
+                <span className="ml-2 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">Cmd K</span>
               </button>
             </div>
           </div>
@@ -405,7 +408,7 @@ export default function AppShell({ children, onLogout, shouldUseScoutingLab, me 
         <div className="min-h-[calc(100vh-64px)]">{children}</div>
       </div>
 
-      <div className={`fixed bottom-0 left-0 top-0 z-[60] hidden transition-[width] duration-200 lg:block ${navCollapsed ? "w-[88px]" : "w-[292px]"}`}>
+      <div className={`fixed bottom-0 left-0 top-0 z-[60] hidden transition-[width] duration-200 lg:block ${navCollapsed ? "w-[76px]" : "w-[248px]"}`}>
         <MainNavigation
           items={PRIMARY_NAV}
           scoutingItems={scoutingItems}

@@ -102,24 +102,24 @@ const emptyForm = {
 };
 
 const Card = ({ children, className = "" }) => (
-  <div className={`glass-panel rounded-lg border border-white/5 p-4 ${className}`}>{children}</div>
+  <div className={`glass-panel rounded-lg border border-border p-4 ${className}`}>{children}</div>
 );
 
 const Label = ({ children }) => (
-  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{children}</p>
+  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{children}</p>
 );
 
 const TextInput = (props) => (
   <input
     {...props}
-    className={`w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary ${props.className || ""}`}
+    className={`w-full rounded-md border border-slate-700 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary ${props.className || ""}`}
   />
 );
 
 const Select = ({ children, ...props }) => (
   <select
     {...props}
-    className={`w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary ${props.className || ""}`}
+    className={`w-full rounded-md border border-slate-700 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary ${props.className || ""}`}
   >
     {children}
   </select>
@@ -128,16 +128,16 @@ const Select = ({ children, ...props }) => (
 const TextArea = (props) => (
   <textarea
     {...props}
-    className={`w-full rounded-md border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-primary ${props.className || ""}`}
+    className={`w-full rounded-md border border-slate-700 bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-primary ${props.className || ""}`}
   />
 );
 
 const Badge = ({ children, tone = "default" }) => {
   const tones = {
-    default: "border-slate-700 bg-slate-900 text-slate-200",
+    default: "border-slate-700 bg-card text-foreground",
     green: "border-primary/50 bg-primary/10 text-primary",
-    amber: "border-amber-400/40 bg-amber-400/10 text-amber-200",
-    red: "border-red-400/40 bg-red-400/10 text-red-200",
+    amber: "border-amber-400/40 bg-amber-400/10 text-amber-700",
+    red: "border-red-400/40 bg-red-400/10 text-red-700",
   };
   return (
     <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${tones[tone] || tones.default}`}>
@@ -210,7 +210,7 @@ const EditableWorkbookSheet = ({
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-[1040px] w-full border-collapse text-left text-sm">
-          <thead className={`${sheet.headerClass || "bg-[#1f4e78]"} text-xs uppercase tracking-[0.08em] text-white`}>
+          <thead className={`${sheet.headerClass || "bg-[#1f4e78]"} text-xs uppercase tracking-[0.08em] text-foreground`}>
             <tr>
               <th className="w-12 border border-slate-300 px-3 py-2 text-center">#</th>
               {sheet.columns.map((column, columnIndex) => (
@@ -370,7 +370,7 @@ const MatchingPlayerCard = ({ candidate, selected, onToggle }) => {
           {photoUrl ? (
             <img src={photoUrl} alt="" className="h-full w-full object-cover" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-slate-900 text-sm font-black text-white">
+            <div className="flex h-full w-full items-center justify-center bg-card text-sm font-black text-foreground">
               {initials(candidate.name)}
             </div>
           )}
@@ -383,7 +383,7 @@ const MatchingPlayerCard = ({ candidate, selected, onToggle }) => {
                 {[candidate.position, candidate.second_position, candidate.age ? `${candidate.age} yrs` : ""].filter(Boolean).join(" / ") || "Profile"}
               </p>
             </div>
-            <span className={`rounded-full px-2 py-1 text-[11px] font-black ${selected ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600"}`}>
+            <span className={`rounded-full px-2 py-1 text-[11px] font-black ${selected ? "bg-teal-700 text-foreground" : "bg-slate-100 text-slate-600"}`}>
               {selected ? "Selected" : "Select"}
             </span>
           </div>
@@ -397,8 +397,8 @@ const MatchingPlayerCard = ({ candidate, selected, onToggle }) => {
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <div className="rounded-md bg-slate-950 p-2 text-white">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Match</p>
+        <div className="rounded-md bg-card p-2 text-foreground">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-muted-foreground">Match</p>
           <p className="mt-1 text-lg font-black">{formatMetric(candidate.match_score)}</p>
         </div>
         <div className="rounded-md bg-teal-50 p-2 text-teal-950">
@@ -417,7 +417,7 @@ const MatchingPlayerCard = ({ candidate, selected, onToggle }) => {
         <div className="mt-4 grid grid-cols-2 gap-2">
           {keyMetrics.map((metric) => (
             <div key={metric.label} className="rounded-md border border-slate-200 px-2 py-1.5">
-              <p className="truncate text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">{metric.label}</p>
+              <p className="truncate text-[10px] font-black uppercase tracking-[0.1em] text-muted-foreground">{metric.label}</p>
               <p className="mt-1 text-sm font-black text-slate-900">{formatMetric(metric.value)}</p>
             </div>
           ))}
@@ -966,7 +966,7 @@ export default function MercatoPage() {
         id: "matching",
         label: "Matching shortlist",
         columns: ["Club", "Need", "Player", "Score", "Status", "Agent note"],
-        headerClass: "bg-slate-800",
+        headerClass: "bg-card",
         rows: items.flatMap((requestItem) => (requestItem.needs || []).flatMap((need) => (need.candidates || []).map((candidate) => makeRow(`candidate-${candidate.id}`, [
           requestItem.club_name,
           need.position,
@@ -1449,19 +1449,19 @@ export default function MercatoPage() {
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Card>
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Active needs</p>
-            <p className="mt-2 text-3xl font-semibold text-white">{kpis.active_requests || 0}</p>
+            <p className="mt-2 text-3xl font-semibold text-foreground">{kpis.active_requests || 0}</p>
           </Card>
           <Card>
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Clubs covered</p>
-            <p className="mt-2 text-3xl font-semibold text-white">{kpis.clubs_count || 0}</p>
+            <p className="mt-2 text-3xl font-semibold text-foreground">{kpis.clubs_count || 0}</p>
           </Card>
           <Card>
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Shortlisted players</p>
-            <p className="mt-2 text-3xl font-semibold text-white">{kpis.shortlisted_players || 0}</p>
+            <p className="mt-2 text-3xl font-semibold text-foreground">{kpis.shortlisted_players || 0}</p>
           </Card>
           <Card>
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Urgent needs</p>
-            <p className="mt-2 text-3xl font-semibold text-white">{kpis.urgent_requests || 0}</p>
+            <p className="mt-2 text-3xl font-semibold text-foreground">{kpis.urgent_requests || 0}</p>
           </Card>
         </section>
 
@@ -1507,8 +1507,8 @@ export default function MercatoPage() {
           </div>
         </Card>
 
-        {error ? <Card className="border-red-400/30 text-red-200">{error}</Card> : null}
-        {message ? <Card className="border-primary/30 text-slate-200">{message}</Card> : null}
+        {error ? <Card className="border-red-400/30 text-red-700">{error}</Card> : null}
+        {message ? <Card className="border-primary/30 text-foreground">{message}</Card> : null}
 
         <section className="surface-panel overflow-hidden rounded-lg">
           <div className="border-b border-slate-200 bg-slate-50">
@@ -1519,12 +1519,12 @@ export default function MercatoPage() {
                   type="button"
                   className={`whitespace-nowrap rounded-md border px-4 py-2 text-sm font-extrabold transition ${
                     activeSheet === tab.id
-                      ? "border-[#3A8967]/40 bg-[#2F7D5C]/20 text-[#DDF3E8] shadow-[inset_0_0_0_1px_rgba(85,154,120,0.12)]"
-                      : "border-transparent text-slate-600 hover:border-white/10 hover:bg-white/[0.07] hover:text-white"
+                      ? "border-primary/25 bg-accent text-primary shadow-[inset_0_0_0_1px_rgba(85,154,120,0.12)]"
+                      : "border-transparent text-slate-600 hover:border-border hover:bg-secondary hover:text-foreground"
                   }`}
                   onClick={() => setActiveSheet(tab.id)}
                 >
-                  {tab.label} <span className="ml-2 text-xs text-slate-400">{tab.count}</span>
+                  {tab.label} <span className="ml-2 text-xs text-muted-foreground">{tab.count}</span>
                 </button>
               ))}
             </div>
@@ -1633,17 +1633,17 @@ export default function MercatoPage() {
                       </div>
                       <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
                         <div className="rounded-md bg-slate-50 p-2">
-                          <p className="font-black uppercase tracking-[0.1em] text-slate-400">Age</p>
+                          <p className="font-black uppercase tracking-[0.1em] text-muted-foreground">Age</p>
                           <p className="mt-1 font-black text-slate-900">
                             {matchingNeed.need.age_min || "-"} - {matchingNeed.need.age_max || "-"}
                           </p>
                         </div>
                         <div className="rounded-md bg-slate-50 p-2">
-                          <p className="font-black uppercase tracking-[0.1em] text-slate-400">Budget</p>
+                          <p className="font-black uppercase tracking-[0.1em] text-muted-foreground">Budget</p>
                           <p className="mt-1 font-black text-slate-900">{formatMoney(matchingNeed.request.budget_max)}</p>
                         </div>
                         <div className="rounded-md bg-slate-50 p-2">
-                          <p className="font-black uppercase tracking-[0.1em] text-slate-400">Level</p>
+                          <p className="font-black uppercase tracking-[0.1em] text-muted-foreground">Level</p>
                           <p className="mt-1 font-black text-slate-900">{formatMetric(matchingNeed.need.required_player_level)}</p>
                         </div>
                       </div>
@@ -1702,7 +1702,7 @@ export default function MercatoPage() {
                           <button
                             key={competition}
                             type="button"
-                            className="rounded-full bg-teal-700 px-3 py-1 text-xs font-black text-white"
+                            className="rounded-full bg-teal-700 px-3 py-1 text-xs font-black text-foreground"
                             onClick={() => toggleMatchingCompetition(competition)}
                           >
                             {competition} x
@@ -1794,13 +1794,13 @@ export default function MercatoPage() {
 
       {showForm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-700 bg-slate-950 p-5 shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-700 bg-card p-5 shadow-2xl">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-white">New Mercato need</h2>
-                <p className="text-sm text-slate-400">Enter the club need and matching constraints.</p>
+                <h2 className="text-xl font-semibold text-foreground">New Mercato need</h2>
+                <p className="text-sm text-muted-foreground">Enter the club need and matching constraints.</p>
               </div>
-              <button type="button" className="text-sm text-slate-300" onClick={() => setShowForm(false)}>
+              <button type="button" className="text-sm text-foreground" onClick={() => setShowForm(false)}>
                 Close
               </button>
             </div>
@@ -1820,7 +1820,7 @@ export default function MercatoPage() {
                   placeholder="Type a club name"
                 />
                 {form.club_query && !form.club_id ? (
-                  <div className="max-h-48 overflow-auto rounded-md border border-slate-800 bg-slate-950">
+                  <div className="max-h-48 overflow-auto rounded-md border border-slate-800 bg-card">
                     {filteredClubOptions.length === 0 ? (
                       <p className="px-3 py-2 text-sm text-slate-500">No matching club.</p>
                     ) : (
@@ -1828,7 +1828,7 @@ export default function MercatoPage() {
                         <button
                           key={club.id}
                           type="button"
-                          className="block w-full border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-slate-900"
+                          className="block w-full border-b border-slate-800 px-3 py-2 text-left text-sm hover:bg-card"
                           onClick={() =>
                             setForm((prev) => ({
                               ...prev,
@@ -1928,7 +1928,7 @@ export default function MercatoPage() {
             </div>
 
             <div className="mt-5 flex justify-end gap-3">
-              <button type="button" className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200" onClick={() => setShowForm(false)}>
+              <button type="button" className="rounded-full border border-slate-700 px-4 py-2 text-sm text-foreground" onClick={() => setShowForm(false)}>
                 Cancel
               </button>
               <button

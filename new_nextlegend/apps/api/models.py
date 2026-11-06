@@ -271,7 +271,7 @@ class AIConversationDetail(BaseModel):
 
 class AIMessageCreate(BaseModel):
     user_id: str
-    prompt: str
+    prompt: str = Field(..., min_length=1, max_length=16000)
     mode: Optional[str] = None
     player_id: Optional[int] = None
     player_season_id: Optional[int] = None

@@ -8,10 +8,10 @@ export function PageHeader({ eyebrow, title, description, actions, className = "
       <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0">
           {eyebrow ? <p className="nl-kicker">{eyebrow}</p> : null}
-          <h1 className="mt-2 max-w-4xl text-3xl font-semibold leading-tight text-slate-950 md:text-4xl">
+          <h1 className="mt-2 max-w-4xl text-2xl font-semibold leading-tight text-foreground">
             {title}
           </h1>
-          {description ? <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">{description}</p> : null}
+          {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{description}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
       </div>
@@ -22,7 +22,7 @@ export function PageHeader({ eyebrow, title, description, actions, className = "
 export function MetricCard({ label, value, sub, tone = "default" }) {
   const toneClass =
     tone === "success"
-      ? "border-[#3A8967]/40 bg-[#2F7D5C]/15"
+      ? "border-primary/25 bg-accent"
       : tone === "warning"
         ? "border-amber-300/25 bg-amber-400/10"
         : tone === "danger"
@@ -52,7 +52,7 @@ export function SkeletonRows({ rows = 4 }) {
   return (
     <div className="space-y-3">
       {Array.from({ length: rows }).map((_, index) => (
-        <div key={index} className="grid grid-cols-[44px_minmax(0,1fr)_120px] gap-3 rounded-lg border border-white/10 bg-white/[0.025] p-3">
+        <div key={index} className="grid grid-cols-[44px_minmax(0,1fr)_120px] gap-3 rounded-lg border border-border bg-secondary p-3">
           <div className="nl-skeleton h-10 w-10 rounded-full" />
           <div className="space-y-2">
             <div className="nl-skeleton h-3 w-2/5" />

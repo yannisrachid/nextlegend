@@ -26,8 +26,8 @@ export default function ScoutingLabPage() {
           <Panel className="p-5">
             <div className="grid gap-3 md:grid-cols-3">
               {MODULES.filter((module) => module.primary).map((module) => (
-                <Link key={module.href} href={module.href} className="rounded-lg border border-[#3A8967]/30 bg-[#2F7D5C]/15 p-4 transition hover:-translate-y-0.5 hover:border-[#3A8967]/50 hover:bg-[#2F7D5C]/20">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8CC7A7]">{module.metric}</p>
+                <Link key={module.href} href={module.href} className="rounded-lg border border-primary/25 bg-accent p-4 transition hover:-translate-y-0.5 hover:border-primary/25 hover:bg-accent">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{module.metric}</p>
                   <h2 className="mt-2 text-xl font-semibold text-slate-950">{module.title}</h2>
                   <p className="mt-2 text-sm leading-6 text-slate-600">{module.desc}</p>
                 </Link>
@@ -39,8 +39,8 @@ export default function ScoutingLabPage() {
             <p className="nl-kicker">Workflow</p>
             <div className="mt-4 space-y-3">
               {["Build a cohort", "Open the dossier", "Compare targets", "Export the evidence"].map((label, index) => (
-                <div key={label} className="flex items-center gap-3 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#2F7D5C]/20 text-xs font-semibold text-[#8CC7A7]">
+                <div key={label} className="flex items-center gap-3 rounded-md border border-border bg-secondary px-3 py-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-xs font-semibold text-primary">
                     {index + 1}
                   </span>
                   <span className="text-sm font-medium text-slate-700">{label}</span>
@@ -52,11 +52,11 @@ export default function ScoutingLabPage() {
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {MODULES.filter((module) => !module.primary).map((module) => (
-            <Link key={module.href} href={module.href} className="surface-panel rounded-lg p-4 transition hover:-translate-y-0.5 hover:border-[#3A8967]/40 hover:bg-white/[0.06]">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8CC7A7]">{module.metric}</p>
+            <Link key={module.href} href={module.href} className="surface-panel rounded-lg p-4 transition hover:-translate-y-0.5 hover:border-primary/25 hover:bg-secondary">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{module.metric}</p>
               <h2 className="mt-2 text-lg font-semibold text-slate-950">{module.title}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">{module.desc}</p>
-              <span className="mt-4 inline-flex text-sm font-semibold text-[#8CC7A7]">Launch</span>
+              <span className="mt-4 inline-flex text-sm font-semibold text-primary">Launch</span>
             </Link>
           ))}
         </section>
