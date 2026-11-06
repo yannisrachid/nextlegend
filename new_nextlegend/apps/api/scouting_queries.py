@@ -57,7 +57,7 @@ def compile_query(args, youth_metrics=()):
     params={'season':a.season,'min_age':a.min_age,'max_age':a.max_age,'min_minutes':a.min_minutes,'limit':a.limit,'min_group_size':a.min_group_size}
     fields={'score':'ps.global_score_adjusted' if pro else 'ps.score','age':'pm.age' if pro else 'ps.age','minutes':'ps.minutes_played','fm_pa':'f.pa','fm_ca':'f.ca'}
     if pro:
-        fields.update({k:'pm.'+k for k in METRICS});fields['market_value_eur']='ps.tm_market_value_eur'
+        fields.update({k:'pm.'+k for k in METRICS});fields['market_value_eur']="CASE WHEN (to_jsonb(ps)->>'tm_market_value_eur') ~ '^[0-9]+([.][0-9]+)?$' THEN (to_jsonb(ps)->>'tm_market_value_eur')::double precision END"
     else:
         for i,k in enumerate(youth_metrics):
             if not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_]{0,79}',k): continue
